@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>TI4 Companion - Authentic Art Edition</title>
+  <title>TI4 Companion - Structured Art Edition</title>
   <!-- React & ReactDOM -->
   <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
@@ -32,45 +32,45 @@
   <script type="text/babel">
     const { useState } = React;
 
-    // Идеология путей под твои имена файлов .webp в корне репозитория
+    // Пути обновлены к папке ./factions/
     const ALL_FACTIONS = [
       // Базовая игра
-      { id: 'sol', name: 'Федерация Сол', color: '#3b82f6', exp: 'base', iconUrl: './federation-of-sol.webp' },
-      { id: 'jolnar', name: 'Университеты Джол-Нара', color: '#06b6d4', exp: 'base', iconUrl: './universities-of-jol-nar.webp' },
-      { id: 'hacan', name: 'Эмират Хакан', color: '#eab308', exp: 'base', iconUrl: './emirates-of-hacan.webp' },
-      { id: 'xxcha', name: 'Королевство Ззча', color: '#22c55e', exp: 'base', iconUrl: './xxcha-kingdom.webp' },
-      { id: 'nekro', name: 'Вирус Некро', color: '#ef4444', exp: 'base', iconUrl: './nekro-virus.webp' },
-      { id: 'saar', name: 'Кланы Сааров', color: '#a855f7', exp: 'base', iconUrl: './clan-of-saar.webp' },
-      { id: 'l1z1x', name: 'Иерархия L1Z1X', color: '#64748b', exp: 'base', iconUrl: './l1z1x-mindnet.webp' },
-      { id: 'letnev', name: 'Баронат Летнев', color: '#475569', exp: 'base', iconUrl: './barony-of-letnev.webp' },
-      { id: 'arborec', name: 'Древостой Арбореков', color: '#15803d', exp: 'base', iconUrl: './arborec.webp' },
-      { id: 'creuss', name: 'Призраки Крёсса', color: '#38bdf8', exp: 'base', iconUrl: './ghosts-of-creuss.webp' },
-      { id: 'mentak', name: 'Коалиция Ментака', color: '#f97316', exp: 'base', iconUrl: './mentak-coalition.webp' },
-      { id: 'muaat', name: 'Уполномоченные Муаата', color: '#dc2626', exp: 'base', iconUrl: './embers-of-muaat.webp' },
-      { id: 'naalu', name: 'Валлиада Наалу', color: '#84cc16', exp: 'base', iconUrl: './naalu-collective.webp' },
-      { id: 'saardakk', name: 'Сардакк Ноур', color: '#991b1b', exp: 'base', iconUrl: './sardakk-norr.webp' },
-      { id: 'yin', name: 'Братство Инь', color: '#e2e8f0', exp: 'base', iconUrl: './yin-brotherhood.webp' },
-      { id: 'yssaril', name: 'Племена Иссарилов', color: '#166534', exp: 'base', iconUrl: './yssaril-tribes.webp' },
-      { id: 'winnu', name: 'Винну', color: '#a855f7', exp: 'base', iconUrl: './winnu.webp' },
+      { id: 'sol', name: 'Федерация Сол', color: '#3b82f6', exp: 'base', iconUrl: './factions/federation-of-sol.webp' },
+      { id: 'jolnar', name: 'Университеты Джол-Нара', color: '#06b6d4', exp: 'base', iconUrl: './factions/universities-of-jol-nar.webp' },
+      { id: 'hacan', name: 'Эмират Хакан', color: '#eab308', exp: 'base', iconUrl: './factions/emirates-of-hacan.webp' },
+      { id: 'xxcha', name: 'Королевство Ззча', color: '#22c55e', exp: 'base', iconUrl: './factions/xxcha-kingdom.webp' },
+      { id: 'nekro', name: 'Вирус Некро', color: '#ef4444', exp: 'base', iconUrl: './factions/nekro-virus.webp' },
+      { id: 'saar', name: 'Кланы Сааров', color: '#a855f7', exp: 'base', iconUrl: './factions/clan-of-saar.webp' },
+      { id: 'l1z1x', name: 'Иерархия L1Z1X', color: '#64748b', exp: 'base', iconUrl: './factions/l1z1x-mindnet.webp' },
+      { id: 'letnev', name: 'Баронат Летнев', color: '#475569', exp: 'base', iconUrl: './factions/barony-of-letnev.webp' },
+      { id: 'arborec', name: 'Древостой Арбореков', color: '#15803d', exp: 'base', iconUrl: './factions/arborec.webp' },
+      { id: 'creuss', name: 'Призраки Крёсса', color: '#38bdf8', exp: 'base', iconUrl: './factions/ghosts-of-creuss.webp' },
+      { id: 'mentak', name: 'Коалиция Ментака', color: '#f97316', exp: 'base', iconUrl: './factions/mentak-coalition.webp' },
+      { id: 'muaat', name: 'Уполномоченные Муаата', color: '#dc2626', exp: 'base', iconUrl: './factions/embers-of-muaat.webp' },
+      { id: 'naalu', name: 'Валлиада Наалу', color: '#84cc16', exp: 'base', iconUrl: './factions/naalu-collective.webp' },
+      { id: 'saardakk', name: 'Сардакк Ноур', color: '#991b1b', exp: 'base', iconUrl: './factions/sardakk-norr.webp' },
+      { id: 'yin', name: 'Братство Инь', color: '#e2e8f0', exp: 'base', iconUrl: './factions/yin-brotherhood.webp' },
+      { id: 'yssaril', name: 'Племена Иссарилов', color: '#166534', exp: 'base', iconUrl: './factions/yssaril-tribes.webp' },
+      { id: 'winnu', name: 'Винну', color: '#a855f7', exp: 'base', iconUrl: './factions/winnu.webp' },
 
       // Prophecy of Kings (PoK)
-      { id: 'argent', name: 'Летный Альянс Аргентов', color: '#facc15', exp: 'pok', iconUrl: './argent-flight.webp' },
-      { id: 'empyrean', name: 'Эмпиреи', color: '#818cf8', exp: 'pok', iconUrl: './empyrean.webp' },
-      { id: 'mahact', name: 'Генетическая Империя Махакт', color: '#fbbf24', exp: 'pok', iconUrl: './mahact-gene-sorcerers.webp' },
-      { id: 'naazrokha', name: 'Альянс Нааз-Роха', color: '#10b981', exp: 'pok', iconUrl: './naaz-rokha-alliance.webp' },
-      { id: 'nomad', name: 'Кочевник (Nomad)', color: '#f43f5e', exp: 'pok', iconUrl: './nomad.webp' },
-      { id: 'titans', name: 'Титаны Ула', color: '#a1a1aa', exp: 'pok', iconUrl: './titans-of-ul.webp' },
-      { id: 'vuilraith', name: 'Кабала Вуил’Райт', color: '#b91c1c', exp: 'pok', iconUrl: './vuil-raith-cabal.webp' },
+      { id: 'argent', name: 'Летный Альянс Аргентов', color: '#facc15', exp: 'pok', iconUrl: './factions/argent-flight.webp' },
+      { id: 'empyrean', name: 'Эмпиреи', color: '#818cf8', exp: 'pok', iconUrl: './factions/empyrean.webp' },
+      { id: 'mahact', name: 'Генетическая Империя Махакт', color: '#fbbf24', exp: 'pok', iconUrl: './factions/mahact-gene-sorcerers.webp' },
+      { id: 'naazrokha', name: 'Альянс Нааз-Роха', color: '#10b981', exp: 'pok', iconUrl: './factions/naaz-rokha-alliance.webp' },
+      { id: 'nomad', name: 'Кочевник (Nomad)', color: '#f43f5e', exp: 'pok', iconUrl: './factions/nomad.webp' },
+      { id: 'titans', name: 'Титаны Ула', color: '#a1a1aa', exp: 'pok', iconUrl: './factions/titans-of-ul.webp' },
+      { id: 'vuilraith', name: 'Кабала Вуил’Райт', color: '#b91c1c', exp: 'pok', iconUrl: './factions/vuil-raith-cabal.webp' },
 
       // Thunder's Edge (TE) и модули
-      { id: 'keleres_argent', name: 'Совет Келерес (Аргенты)', color: '#38bdf8', exp: 'te', iconUrl: './council-keleres-argent.webp' },
-      { id: 'keleres_mentak', name: 'Совет Келерес (Ментак)', color: '#38bdf8', exp: 'te', iconUrl: './council-keleres-mentak.webp' },
-      { id: 'keleres_xxcha', name: 'Совет Келерес (Ззча)', color: '#38bdf8', exp: 'te', iconUrl: './council-keleres-xxcha.webp' },
-      { id: 'crimson', name: 'Багряное Восстание', color: '#dc2626', exp: 'te', iconUrl: './crimson-rebellion.webp' },
-      { id: 'deepwrought', name: 'Школа Глубин', color: '#0284c7', exp: 'te', iconUrl: './deepwrought-scholarate.webp' },
-      { id: 'firmament', name: 'Твердь Небесная', color: '#475569', exp: 'te', iconUrl: './firmament-obsidian.webp' },
-      { id: 'bastion', name: 'Последний Оплот', color: '#ca8a04', exp: 'te', iconUrl: './last-bastion.webp' },
-      { id: 'ralnel', name: 'Консорциум Рал-Нель', color: '#2563eb', exp: 'te', iconUrl: './ral-nel-consortium.webp' }
+      { id: 'keleres_argent', name: 'Совет Келерес (Аргенты)', color: '#38bdf8', exp: 'te', iconUrl: './factions/council-keleres-argent.webp' },
+      { id: 'keleres_mentak', name: 'Совет Келерес (Ментак)', color: '#38bdf8', exp: 'te', iconUrl: './factions/council-keleres-mentak.webp' },
+      { id: 'keleres_xxcha', name: 'Совет Келерес (Ззча)', color: '#38bdf8', exp: 'te', iconUrl: './factions/council-keleres-xxcha.webp' },
+      { id: 'crimson', name: 'Багряное Восстание', color: '#dc2626', exp: 'te', iconUrl: './factions/crimson-rebellion.webp' },
+      { id: 'deepwrought', name: 'Школа Глубин', color: '#0284c7', exp: 'te', iconUrl: './factions/deepwrought-scholarate.webp' },
+      { id: 'firmament', name: 'Твердь Небесная', color: '#475569', exp: 'te', iconUrl: './factions/firmament-obsidian.webp' },
+      { id: 'bastion', name: 'Последний Оплот', color: '#ca8a04', exp: 'te', iconUrl: './factions/last-bastion.webp' },
+      { id: 'ralnel', name: 'Консорциум Рал-Нель', color: '#2563eb', exp: 'te', iconUrl: './factions/ral-nel-consortium.webp' }
     ];
 
     const STRATEGY_CARDS = [
@@ -390,7 +390,6 @@
                       <div key={p.id} className={`p-4 rounded-2xl border flex flex-col justify-between space-y-3 ${isWinner ? 'bg-amber-950/40 border-amber-500 animate-pulse' : 'bg-slate-900 border-slate-800'}`}>
                         
                         <div className="flex items-start gap-3">
-                          {/* Картинка герба из твоего локального репозитория */}
                           <div className="w-16 h-16 rounded-2xl bg-slate-950 border border-slate-800 flex items-center justify-center p-1 flex-shrink-0 shadow-inner overflow-hidden" style={{ borderColor: `${faction?.color}aa` }}>
                             <img 
                               src={faction?.iconUrl} 
