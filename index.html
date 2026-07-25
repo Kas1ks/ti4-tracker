@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>TI4 Companion - Ultimate Edition</title>
+  <title>TI4 Companion - Authentic Art Edition</title>
   <!-- React & ReactDOM -->
   <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
@@ -32,89 +32,41 @@
   <script type="text/babel">
     const { useState } = React;
 
-    // Графические SVG-гербы для фракций
-    const FACTION_EMBLEMS = {
-      sol: (color) => (
-        <svg viewBox="0 0 100 100" className="w-full h-full p-1" style={{ filter: `drop-shadow(0 0 6px ${color}88)` }}>
-          <circle cx="50" cy="50" r="28" fill="none" stroke={color} strokeWidth="6" />
-          <path d="M50 5 L50 18 M50 82 L50 95 M5 50 L18 50 M82 50 L95 50 M18 18 L27 27 M73 73 L82 82 M18 82 L27 73 M73 27 L82 18" stroke={color} strokeWidth="5" strokeLinecap="round" />
-        </svg>
-      ),
-      jolnar: (color) => (
-        <svg viewBox="0 0 100 100" className="w-full h-full p-1" style={{ filter: `drop-shadow(0 0 6px ${color}88)` }}>
-          <path d="M50 10 L85 30 L85 70 L50 90 L15 70 L15 30 Z" fill="none" stroke={color} strokeWidth="5" />
-          <circle cx="50" cy="50" r="14" fill={color} />
-          <path d="M50 25 L50 36 M50 64 L50 75 M28 50 L36 50 M64 50 L72 50" stroke={color} strokeWidth="4" />
-        </svg>
-      ),
-      hacan: (color) => (
-        <svg viewBox="0 0 100 100" className="w-full h-full p-1" style={{ filter: `drop-shadow(0 0 6px ${color}88)` }}>
-          <polygon points="50,10 90,40 75,85 25,85 10,40" fill="none" stroke={color} strokeWidth="5" />
-          <path d="M35 40 L50 25 L65 40 L50 70 Z" fill={color} />
-        </svg>
-      ),
-      nekro: (color) => (
-        <svg viewBox="0 0 100 100" className="w-full h-full p-1" style={{ filter: `drop-shadow(0 0 6px ${color}88)` }}>
-          <path d="M50 10 L80 25 L80 60 L50 90 L20 60 L20 25 Z" fill="none" stroke={color} strokeWidth="5" />
-          <circle cx="38" cy="42" r="7" fill={color} />
-          <circle cx="62" cy="42" r="7" fill={color} />
-          <path d="M42 65 L50 58 L58 65 L54 75 L46 75 Z" fill={color} />
-        </svg>
-      ),
-      xxcha: (color) => (
-        <svg viewBox="0 0 100 100" className="w-full h-full p-1" style={{ filter: `drop-shadow(0 0 6px ${color}88)` }}>
-          <path d="M50 10 C 20 10, 10 30, 10 50 C 10 80, 50 90, 50 90 C 50 90, 90 80, 90 50 C 90 30, 80 10, 50 10 Z" fill="none" stroke={color} strokeWidth="5" />
-          <circle cx="50" cy="45" r="16" fill="none" stroke={color} strokeWidth="4" />
-        </svg>
-      ),
-      saar: (color) => (
-        <svg viewBox="0 0 100 100" className="w-full h-full p-1" style={{ filter: `drop-shadow(0 0 6px ${color}88)` }}>
-          <circle cx="50" cy="50" r="35" fill="none" stroke={color} strokeWidth="5" />
-          <path d="M20 50 Q 50 20, 80 50 Q 50 80, 20 50 Z" fill={color} opacity="0.6" />
-        </svg>
-      ),
-      default: (color) => (
-        <svg viewBox="0 0 100 100" className="w-full h-full p-1" style={{ filter: `drop-shadow(0 0 6px ${color}88)` }}>
-          <polygon points="50,10 90,50 50,90 10,50" fill="none" stroke={color} strokeWidth="5" />
-          <circle cx="50" cy="50" r="10" fill={color} />
-        </svg>
-      )
-    };
-
+    // Ссылки на графические эмблемы/арты фракций
     const ALL_FACTIONS = [
       // Базовая игра
-      { id: 'sol', name: 'Федерация Сол', color: '#3b82f6', exp: 'base' },
-      { id: 'jolnar', name: 'Университеты Джол-Нара', color: '#06b6d4', exp: 'base' },
-      { id: 'hacan', name: 'Эмират Хакан', color: '#eab308', exp: 'base' },
-      { id: 'xxcha', name: 'Королевство Ззча', color: '#22c55e', exp: 'base' },
-      { id: 'nekro', name: 'Вирус Некро', color: '#ef4444', exp: 'base' },
-      { id: 'saar', name: 'Кланы Сааров', color: '#a855f7', exp: 'base' },
-      { id: 'l1z1x', name: 'Иерархия L1Z1X', color: '#64748b', exp: 'base' },
-      { id: 'letnev', name: 'Баронат Летнев', color: '#475569', exp: 'base' },
-      { id: 'arborec', name: 'Древостой Арбореков', color: '#15803d', exp: 'base' },
-      { id: 'creuss', name: 'Призраки Крёсса', color: '#38bdf8', exp: 'base' },
-      { id: 'mentak', name: 'Коалиция Ментака', color: '#f97316', exp: 'base' },
-      { id: 'muaat', name: 'Уполномоченные Муаата', color: '#dc2626', exp: 'base' },
-      { id: 'naalu', name: 'Валлиада Наалу', color: '#84cc16', exp: 'base' },
-      { id: 'saardakk', name: 'Сардакк Ноур', color: '#991b1b', exp: 'base' },
-      { id: 'yin', name: 'Братство Инь', color: '#e2e8f0', exp: 'base' },
-      { id: 'yssaril', name: 'Племена Иссарилов', color: '#166534', exp: 'base' },
+      { id: 'sol', name: 'Федерация Сол', color: '#3b82f6', exp: 'base', iconUrl: 'https://raw.githubusercontent.com/TI4-Companion/ti4-assets/main/factions/sol.png' },
+      { id: 'jolnar', name: 'Университеты Джол-Нара', color: '#06b6d4', exp: 'base', iconUrl: 'https://raw.githubusercontent.com/TI4-Companion/ti4-assets/main/factions/jolnar.png' },
+      { id: 'hacan', name: 'Эмират Хакан', color: '#eab308', exp: 'base', iconUrl: 'https://raw.githubusercontent.com/TI4-Companion/ti4-assets/main/factions/hacan.png' },
+      { id: 'xxcha', name: 'Королевство Ззча', color: '#22c55e', exp: 'base', iconUrl: 'https://raw.githubusercontent.com/TI4-Companion/ti4-assets/main/factions/xxcha.png' },
+      { id: 'nekro', name: 'Вирус Некро', color: '#ef4444', exp: 'base', iconUrl: 'https://raw.githubusercontent.com/TI4-Companion/ti4-assets/main/factions/nekro.png' },
+      { id: 'saar', name: 'Кланы Сааров', color: '#a855f7', exp: 'base', iconUrl: 'https://raw.githubusercontent.com/TI4-Companion/ti4-assets/main/factions/saar.png' },
+      { id: 'l1z1x', name: 'Иерархия L1Z1X', color: '#64748b', exp: 'base', iconUrl: 'https://raw.githubusercontent.com/TI4-Companion/ti4-assets/main/factions/l1z1x.png' },
+      { id: 'letnev', name: 'Баронат Летнев', color: '#475569', exp: 'base', iconUrl: 'https://raw.githubusercontent.com/TI4-Companion/ti4-assets/main/factions/letnev.png' },
+      { id: 'arborec', name: 'Древостой Арбореков', color: '#15803d', exp: 'base', iconUrl: 'https://raw.githubusercontent.com/TI4-Companion/ti4-assets/main/factions/arborec.png' },
+      { id: 'creuss', name: 'Призраки Крёсса', color: '#38bdf8', exp: 'base', iconUrl: 'https://raw.githubusercontent.com/TI4-Companion/ti4-assets/main/factions/creuss.png' },
+      { id: 'mentak', name: 'Коалиция Ментака', color: '#f97316', exp: 'base', iconUrl: 'https://raw.githubusercontent.com/TI4-Companion/ti4-assets/main/factions/mentak.png' },
+      { id: 'muaat', name: 'Уполномоченные Муаата', color: '#dc2626', exp: 'base', iconUrl: 'https://raw.githubusercontent.com/TI4-Companion/ti4-assets/main/factions/muaat.png' },
+      { id: 'naalu', name: 'Валлиада Наалу', color: '#84cc16', exp: 'base', iconUrl: 'https://raw.githubusercontent.com/TI4-Companion/ti4-assets/main/factions/naalu.png' },
+      { id: 'saardakk', name: 'Сардакк Ноур', color: '#991b1b', exp: 'base', iconUrl: 'https://raw.githubusercontent.com/TI4-Companion/ti4-assets/main/factions/saardakk.png' },
+      { id: 'yin', name: 'Братство Инь', color: '#e2e8f0', exp: 'base', iconUrl: 'https://raw.githubusercontent.com/TI4-Companion/ti4-assets/main/factions/yin.png' },
+      { id: 'yssaril', name: 'Племена Иссарилов', color: '#166534', exp: 'base', iconUrl: 'https://raw.githubusercontent.com/TI4-Companion/ti4-assets/main/factions/yssaril.png' },
 
       // Prophecy of Kings (PoK)
-      { id: 'argent', name: 'Летный Альянс Аргентов', color: '#facc15', exp: 'pok' },
-      { id: 'empyrean', name: 'Эмпиреи', color: '#818cf8', exp: 'pok' },
-      { id: 'mahact', name: 'Генетическая Империя Махакт', color: '#fbbf24', exp: 'pok' },
-      { id: 'naazrokha', name: 'Альянс Нааз-Роха', color: '#10b981', exp: 'pok' },
-      { id: 'nomad', name: 'Кочевник (Nomad)', color: '#f43f5e', exp: 'pok' },
-      { id: 'titans', name: 'Титаны Ула', color: '#a1a1aa', exp: 'pok' },
-      { id: 'vuilraith', name: 'Кабала Вуил’Райт', color: '#b91c1c', exp: 'pok' },
+      { id: 'argent', name: 'Летный Альянс Аргентов', color: '#facc15', exp: 'pok', iconUrl: 'https://raw.githubusercontent.com/TI4-Companion/ti4-assets/main/factions/argent.png' },
+      { id: 'empyrean', name: 'Эмпиреи', color: '#818cf8', exp: 'pok', iconUrl: 'https://raw.githubusercontent.com/TI4-Companion/ti4-assets/main/factions/empyrean.png' },
+      { id: 'mahact', name: 'Генетическая Империя Махакт', color: '#fbbf24', exp: 'pok', iconUrl: 'https://raw.githubusercontent.com/TI4-Companion/ti4-assets/main/factions/mahact.png' },
+      { id: 'naazrokha', name: 'Альянс Нааз-Роха', color: '#10b981', exp: 'pok', iconUrl: 'https://raw.githubusercontent.com/TI4-Companion/ti4-assets/main/factions/naazrokha.png' },
+      { id: 'nomad', name: 'Кочевник (Nomad)', color: '#f43f5e', exp: 'pok', iconUrl: 'https://raw.githubusercontent.com/TI4-Companion/ti4-assets/main/factions/nomad.png' },
+      { id: 'titans', name: 'Титаны Ула', color: '#a1a1aa', exp: 'pok', iconUrl: 'https://raw.githubusercontent.com/TI4-Companion/ti4-assets/main/factions/titans.png' },
+      { id: 'vuilraith', name: 'Кабала Вуил’Райт', color: '#b91c1c', exp: 'pok', iconUrl: 'https://raw.githubusercontent.com/TI4-Companion/ti4-assets/main/factions/vuilraith.png' },
 
       // Thunder's Edge (TE)
-      { id: 'keleres', name: 'Совет Келерес', color: '#38bdf8', exp: 'te' },
-      { id: 'vaefar', name: 'Завет Ваэфар', color: '#c084fc', exp: 'te' },
-      { id: 'muckha', name: 'Конгломерат Мукха', color: '#854d0e', exp: 'te' },
-      { id: 'deepseers', name: 'Оракулы Глубин', color: '#0284c7', exp: 'te' },
-      { id: 'ralnor', name: 'Доминион Ралнор', color: '#e11d48', exp: 'te' }
+      { id: 'keleres', name: 'Совет Келерес', color: '#38bdf8', exp: 'te', iconUrl: 'https://raw.githubusercontent.com/TI4-Companion/ti4-assets/main/factions/keleres.png' },
+      { id: 'vaefar', name: 'Завет Ваэфар', color: '#c084fc', exp: 'te', iconUrl: 'https://raw.githubusercontent.com/TI4-Companion/ti4-assets/main/factions/vaefar.png' },
+      { id: 'muckha', name: 'Конгломерат Мукха', color: '#854d0e', exp: 'te', iconUrl: 'https://raw.githubusercontent.com/TI4-Companion/ti4-assets/main/factions/muckha.png' },
+      { id: 'deepseers', name: 'Оракулы Глубин', color: '#0284c7', exp: 'te', iconUrl: 'https://raw.githubusercontent.com/TI4-Companion/ti4-assets/main/factions/deepseers.png' },
+      { id: 'ralnor', name: 'Доминион Ралнор', color: '#e11d48', exp: 'te', iconUrl: 'https://raw.githubusercontent.com/TI4-Companion/ti4-assets/main/factions/ralnor.png' }
     ];
 
     const STRATEGY_CARDS = [
@@ -164,11 +116,6 @@
         if (f.exp === 'te' && useTe) return true;
         return false;
       });
-
-      const renderEmblem = (factionId, color) => {
-        const renderFn = FACTION_EMBLEMS[factionId] || FACTION_EMBLEMS.default;
-        return renderFn(color);
-      };
 
       const getPlayerScore = (playerId) => {
         const p = players.find(x => x.id === playerId);
@@ -275,8 +222,13 @@
                   {(() => {
                     const fact = ALL_FACTIONS.find(f => f.id === activePlayer.factionId);
                     return (
-                      <div className="w-9 h-9 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-center p-0.5">
-                        {renderEmblem(activePlayer.factionId, fact?.color || '#3b82f6')}
+                      <div className="w-10 h-10 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-center p-1 overflow-hidden shadow">
+                        <img 
+                          src={fact?.iconUrl} 
+                          alt={fact?.name} 
+                          className="w-full h-full object-contain"
+                          onError={(e) => { e.target.onerror = null; e.target.src='https://placehold.co/100x100/030712/38bdf8?text=TI4'; }}
+                        />
                       </div>
                     );
                   })()}
@@ -349,8 +301,8 @@
                         <div key={p.id} className={`p-3 rounded-xl border flex items-center justify-between ${isActive ? 'bg-cyan-950/60 border-cyan-400 shadow-md' : isPassed ? 'opacity-40 bg-slate-950 border-slate-900' : 'bg-slate-950 border-slate-800'}`}>
                           <div className="flex items-center gap-3">
                             <span className="font-orbitron font-bold text-xs text-slate-500">#{idx + 1}</span>
-                            <div className="w-7 h-7 rounded-lg bg-slate-900 border border-slate-800 flex items-center justify-center p-0.5">
-                              {renderEmblem(p.factionId, fact?.color || '#3b82f6')}
+                            <div className="w-8 h-8 rounded-lg bg-slate-900 border border-slate-800 flex items-center justify-center p-0.5 overflow-hidden">
+                              <img src={fact?.iconUrl} alt={fact?.name} className="w-full h-full object-contain" />
                             </div>
                             <div>
                               <div className="font-bold text-sm text-white">{p.name} {isActive && <span className="text-[9px] bg-cyan-500 text-black px-1 rounded font-extrabold ml-1">ХОД</span>}</div>
@@ -420,7 +372,7 @@
 
             {activeTab === 'scoreboard' && (
               <div className="space-y-4">
-                <h2 className="font-orbitron font-bold text-base text-white">Игроки и Гербы Фракций</h2>
+                <h2 className="font-orbitron font-bold text-base text-white">Игроки и Арты Настольной Игры</h2>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                   {players.map(p => {
@@ -432,9 +384,14 @@
                       <div key={p.id} className={`p-4 rounded-2xl border flex flex-col justify-between space-y-3 ${isWinner ? 'bg-amber-950/40 border-amber-500 animate-pulse' : 'bg-slate-900 border-slate-800'}`}>
                         
                         <div className="flex items-start gap-3">
-                          {/* Графический векторный герб */}
-                          <div className="w-14 h-14 rounded-2xl bg-slate-950 border border-slate-800 flex items-center justify-center p-1 flex-shrink-0 shadow-inner">
-                            {renderEmblem(p.factionId, faction?.color || '#3b82f6')}
+                          {/* Реальный арт / логотип фракции */}
+                          <div className="w-16 h-16 rounded-2xl bg-slate-950 border border-slate-800 flex items-center justify-center p-1.5 flex-shrink-0 shadow-inner overflow-hidden">
+                            <img 
+                              src={faction?.iconUrl} 
+                              alt={faction?.name} 
+                              className="w-full h-full object-contain"
+                              onError={(e) => { e.target.onerror = null; e.target.src='https://placehold.co/100x100/030712/38bdf8?text=TI4'; }}
+                            />
                           </div>
 
                           <div className="flex-grow">
