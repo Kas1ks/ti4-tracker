@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>TI4 Companion - Emblem Edition</title>
+  <title>TI4 Companion - Ultimate Edition</title>
   <!-- React & ReactDOM -->
   <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
@@ -67,6 +67,12 @@
           <circle cx="50" cy="45" r="16" fill="none" stroke={color} strokeWidth="4" />
         </svg>
       ),
+      saar: (color) => (
+        <svg viewBox="0 0 100 100" className="w-full h-full p-1" style={{ filter: `drop-shadow(0 0 6px ${color}88)` }}>
+          <circle cx="50" cy="50" r="35" fill="none" stroke={color} strokeWidth="5" />
+          <path d="M20 50 Q 50 20, 80 50 Q 50 80, 20 50 Z" fill={color} opacity="0.6" />
+        </svg>
+      ),
       default: (color) => (
         <svg viewBox="0 0 100 100" className="w-full h-full p-1" style={{ filter: `drop-shadow(0 0 6px ${color}88)` }}>
           <polygon points="50,10 90,50 50,90 10,50" fill="none" stroke={color} strokeWidth="5" />
@@ -76,6 +82,7 @@
     };
 
     const ALL_FACTIONS = [
+      // Базовая игра
       { id: 'sol', name: 'Федерация Сол', color: '#3b82f6', exp: 'base' },
       { id: 'jolnar', name: 'Университеты Джол-Нара', color: '#06b6d4', exp: 'base' },
       { id: 'hacan', name: 'Эмират Хакан', color: '#eab308', exp: 'base' },
@@ -84,15 +91,30 @@
       { id: 'saar', name: 'Кланы Сааров', color: '#a855f7', exp: 'base' },
       { id: 'l1z1x', name: 'Иерархия L1Z1X', color: '#64748b', exp: 'base' },
       { id: 'letnev', name: 'Баронат Летнев', color: '#475569', exp: 'base' },
-      
-      // PoK
+      { id: 'arborec', name: 'Древостой Арбореков', color: '#15803d', exp: 'base' },
+      { id: 'creuss', name: 'Призраки Крёсса', color: '#38bdf8', exp: 'base' },
+      { id: 'mentak', name: 'Коалиция Ментака', color: '#f97316', exp: 'base' },
+      { id: 'muaat', name: 'Уполномоченные Муаата', color: '#dc2626', exp: 'base' },
+      { id: 'naalu', name: 'Валлиада Наалу', color: '#84cc16', exp: 'base' },
+      { id: 'saardakk', name: 'Сардакк Ноур', color: '#991b1b', exp: 'base' },
+      { id: 'yin', name: 'Братство Инь', color: '#e2e8f0', exp: 'base' },
+      { id: 'yssaril', name: 'Племена Иссарилов', color: '#166534', exp: 'base' },
+
+      // Prophecy of Kings (PoK)
       { id: 'argent', name: 'Летный Альянс Аргентов', color: '#facc15', exp: 'pok' },
+      { id: 'empyrean', name: 'Эмпиреи', color: '#818cf8', exp: 'pok' },
       { id: 'mahact', name: 'Генетическая Империя Махакт', color: '#fbbf24', exp: 'pok' },
+      { id: 'naazrokha', name: 'Альянс Нааз-Роха', color: '#10b981', exp: 'pok' },
+      { id: 'nomad', name: 'Кочевник (Nomad)', color: '#f43f5e', exp: 'pok' },
       { id: 'titans', name: 'Титаны Ула', color: '#a1a1aa', exp: 'pok' },
-      
-      // TE (Thunder's Edge)
+      { id: 'vuilraith', name: 'Кабала Вуил’Райт', color: '#b91c1c', exp: 'pok' },
+
+      // Thunder's Edge (TE)
       { id: 'keleres', name: 'Совет Келерес', color: '#38bdf8', exp: 'te' },
-      { id: 'vaefar', name: 'Завет Ваэфар', color: '#c084fc', exp: 'te' }
+      { id: 'vaefar', name: 'Завет Ваэфар', color: '#c084fc', exp: 'te' },
+      { id: 'muckha', name: 'Конгломерат Мукха', color: '#854d0e', exp: 'te' },
+      { id: 'deepseers', name: 'Оракулы Глубин', color: '#0284c7', exp: 'te' },
+      { id: 'ralnor', name: 'Доминион Ралнор', color: '#e11d48', exp: 'te' }
     ];
 
     const STRATEGY_CARDS = [
@@ -106,18 +128,35 @@
       { id: 8, name: '8. Экспансия', initiative: 8, color: 'border-purple-500 bg-purple-950/40 text-purple-300' }
     ];
 
+    const DEFAULT_OBJECTIVES = [
+      { id: 'obj_1', title: 'Укрепить границы', stage: 1, points: 1, desc: 'Иметь сооружения на 2 планетах вне родной системы' },
+      { id: 'obj_2', title: 'Расширить владения', stage: 1, points: 1, desc: 'Контролировать 6 планет вне родной системы' }
+    ];
+
     function App() {
       const [targetScore, setTargetScore] = useState(10);
-      const [activeTab, setActiveTab] = useState('scoreboard');
+      const [currentRound, setCurrentRound] = useState(1);
+      const [activeTab, setActiveTab] = useState('turns');
+      
       const [usePok, setUsePok] = useState(true);
       const [useTe, setUseTe] = useState(true);
 
       const [players, setPlayers] = useState([
         { id: 1, name: 'Игрок 1', factionId: 'sol', secrets: 0, extra: 0, breakthrough: false },
         { id: 2, name: 'Игрок 2', factionId: 'jolnar', secrets: 0, extra: 0, breakthrough: false },
-        { id: 3, name: 'Игрок 3', factionId: 'nekro', secrets: 0, extra: 0, breakthrough: true },
-        { id: 4, name: 'Игрок 4', factionId: 'hacan', secrets: 0, extra: 0, breakthrough: false },
+        { id: 3, name: 'Игрок 3', factionId: 'hacan', secrets: 0, extra: 0, breakthrough: false },
+        { id: 4, name: 'Игрок 4', factionId: 'xxcha', secrets: 0, extra: 0, breakthrough: false },
+        { id: 5, name: 'Игрок 5', factionId: 'nekro', secrets: 0, extra: 0, breakthrough: false },
+        { id: 6, name: 'Игрок 6', factionId: 'saar', secrets: 0, extra: 0, breakthrough: false },
       ]);
+
+      const [objectives, setObjectives] = useState(DEFAULT_OBJECTIVES);
+      const [completions, setCompletions] = useState({});
+      
+      const [strategyPicks, setStrategyPicks] = useState({});
+      const [turnOrder, setTurnOrder] = useState([]);
+      const [activeTurnIdx, setActiveTurnIdx] = useState(0);
+      const [passed, setPassed] = useState({});
 
       const availableFactions = ALL_FACTIONS.filter(f => {
         if (f.exp === 'base') return true;
@@ -131,70 +170,299 @@
         return renderFn(color);
       };
 
+      const getPlayerScore = (playerId) => {
+        const p = players.find(x => x.id === playerId);
+        if (!p) return 0;
+        let score = p.secrets + p.extra;
+        objectives.forEach(obj => {
+          if (completions[`${playerId}_${obj.id}`]) score += obj.points;
+        });
+        return score;
+      };
+
+      const toggleCompletion = (pId, oId) => {
+        const key = `${pId}_${oId}`;
+        setCompletions(prev => ({ ...prev, [key]: !prev[key] }));
+      };
+
+      const addCustomObj = () => {
+        const title = prompt('Введите название цели:');
+        if (!title) return;
+        const stage = prompt('Этап цели (1 или 2):', '1');
+        const points = Number(stage) === 2 ? 2 : 1;
+        setObjectives(prev => [...prev, { id: 'custom_' + Date.now(), title, stage: Number(stage), points, desc: 'Пользовательская цель' }]);
+      };
+
+      const startActionPhase = () => {
+        const ordered = [...players]
+          .filter(p => strategyPicks[p.id])
+          .sort((a,b) => (strategyPicks[a.id] || 99) - (strategyPicks[b.id] || 99));
+
+        if (ordered.length === 0) {
+          alert('Выберите карты стратегий для игроков!');
+          return;
+        }
+        setTurnOrder(ordered);
+        setActiveTurnIdx(0);
+        setPassed({});
+      };
+
+      const nextTurn = () => {
+        if (turnOrder.length === 0) return;
+        let next = (activeTurnIdx + 1) % turnOrder.length;
+        let count = 0;
+        while (passed[turnOrder[next].id] && count < turnOrder.length) {
+          next = (next + 1) % turnOrder.length;
+          count++;
+        }
+        setActiveTurnIdx(next);
+      };
+
+      const passTurn = (pId) => {
+        setPassed(prev => ({ ...prev, [pId]: true }));
+        nextTurn();
+      };
+
+      const activePlayer = turnOrder[activeTurnIdx];
+
       return (
         <div className="max-w-7xl mx-auto min-h-screen flex flex-col bg-slate-950 text-slate-100">
           
-          <header className="bg-slate-900 border-b border-slate-800 p-4 sticky top-0 z-30 shadow-xl flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <i className="fa-solid fa-khanda text-cyan-400 text-xl"></i>
-              <span className="font-orbitron font-extrabold text-lg md:text-xl text-white tracking-wider">TI4 TRACKER</span>
+          <header className="bg-slate-900 border-b border-slate-800 p-4 sticky top-0 z-30 shadow-xl">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <i className="fa-solid fa-khanda text-cyan-400 text-xl"></i>
+                <span className="font-orbitron font-extrabold text-lg md:text-xl text-white tracking-wider">TI4 TRACKER</span>
+              </div>
+
+              <nav className="hidden md:flex bg-slate-950 p-1 rounded-xl border border-slate-800">
+                <button onClick={() => setActiveTab('turns')} className={`px-4 py-1.5 rounded-lg text-xs font-bold transition ${activeTab === 'turns' ? 'bg-cyan-500 text-black' : 'text-slate-400'}`}>
+                  <i className="fa-solid fa-stopwatch mr-1"></i> Ходы & Стратегии
+                </button>
+                <button onClick={() => setActiveTab('objectives')} className={`px-4 py-1.5 rounded-lg text-xs font-bold transition ${activeTab === 'objectives' ? 'bg-cyan-500 text-black' : 'text-slate-400'}`}>
+                  <i className="fa-solid fa-list-check mr-1"></i> Задания
+                </button>
+                <button onClick={() => setActiveTab('scoreboard')} className={`px-4 py-1.5 rounded-lg text-xs font-bold transition ${activeTab === 'scoreboard' ? 'bg-cyan-500 text-black' : 'text-slate-400'}`}>
+                  <i className="fa-solid fa-trophy mr-1"></i> Таблица ПО
+                </button>
+              </nav>
+
+              <div className="flex items-center gap-2">
+                <button 
+                  onClick={() => setUsePok(!usePok)} 
+                  className={`text-[11px] font-bold px-2 py-1 rounded-lg border transition ${usePok ? 'bg-purple-950 border-purple-500 text-purple-300' : 'bg-slate-800 border-slate-700 text-slate-500'}`}>
+                  PoK
+                </button>
+                <button 
+                  onClick={() => setUseTe(!useTe)} 
+                  className={`text-[11px] font-bold px-2 py-1 rounded-lg border transition ${useTe ? 'bg-amber-950 border-amber-500 text-amber-300' : 'bg-slate-800 border-slate-700 text-slate-500'}`}>
+                  TE
+                </button>
+                <select 
+                  value={targetScore} 
+                  onChange={(e) => setTargetScore(Number(e.target.value))}
+                  className="bg-slate-800 border border-slate-700 text-xs font-bold px-2 py-1 rounded-lg text-amber-400 focus:outline-none">
+                  <option value={10}>10 ПО</option>
+                  <option value={12}>12 ПО</option>
+                  <option value={14}>14 ПО</option>
+                </select>
+              </div>
             </div>
 
-            <div className="flex items-center gap-2">
-              <button 
-                onClick={() => setUsePok(!usePok)} 
-                className={`text-[11px] font-bold px-2 py-1 rounded-lg border transition ${usePok ? 'bg-purple-950 border-purple-500 text-purple-300' : 'bg-slate-800 border-slate-700 text-slate-500'}`}>
-                PoK
-              </button>
-              <button 
-                onClick={() => setUseTe(!useTe)} 
-                className={`text-[11px] font-bold px-2 py-1 rounded-lg border transition ${useTe ? 'bg-amber-950 border-amber-500 text-amber-300' : 'bg-slate-800 border-slate-700 text-slate-500'}`}>
-                TE
-              </button>
-            </div>
+            {turnOrder.length > 0 && activePlayer && (
+              <div className="bg-slate-950 border border-cyan-500/50 p-3 rounded-2xl flex items-center justify-between mt-3 shadow-[0_0_15px_rgba(6,182,212,0.15)]">
+                <div className="flex items-center gap-3">
+                  {(() => {
+                    const fact = ALL_FACTIONS.find(f => f.id === activePlayer.factionId);
+                    return (
+                      <div className="w-9 h-9 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-center p-0.5">
+                        {renderEmblem(activePlayer.factionId, fact?.color || '#3b82f6')}
+                      </div>
+                    );
+                  })()}
+                  <div>
+                    <div className="text-[10px] text-cyan-400 font-bold uppercase tracking-wider">Сейчас ходит:</div>
+                    <div className="font-bold text-white text-base md:text-lg leading-none">{activePlayer.name}</div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button onClick={nextTurn} className="bg-cyan-500 text-black font-extrabold px-4 py-1.5 rounded-xl text-xs md:text-sm flex items-center gap-1 shadow">
+                    Завершить ход <i className="fa-solid fa-forward"></i>
+                  </button>
+                  <button onClick={() => passTurn(activePlayer.id)} className="bg-red-950 text-red-300 font-bold px-3 py-1.5 rounded-xl text-xs border border-red-800">
+                    Пас
+                  </button>
+                </div>
+              </div>
+            )}
           </header>
 
           <main className="p-4 md:p-6 flex-grow space-y-6">
 
-            <div className="space-y-4">
-              <h2 className="font-orbitron font-bold text-base text-white">Игроки и Графические Гербы</h2>
+            {activeTab === 'turns' && (
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div className="md:col-span-2 bg-slate-900 border border-slate-800 p-4 md:p-6 rounded-2xl space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h2 className="font-orbitron font-bold text-sm md:text-base text-amber-400 uppercase">1. Выбор Карт Стратегий</h2>
+                    <button onClick={startActionPhase} className="bg-amber-500 text-black font-extrabold px-4 py-2 rounded-xl text-xs md:text-sm shadow">
+                      Старт Фазы Ходов
+                    </button>
+                  </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-4">
-                {players.map(p => {
-                  const faction = ALL_FACTIONS.find(f => f.id === p.factionId);
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    {STRATEGY_CARDS.map(card => {
+                      const pickedPlayerId = Object.keys(strategyPicks).find(pId => strategyPicks[pId] === card.id);
 
-                  return (
-                    <div key={p.id} className="p-4 rounded-2xl border bg-slate-900 border-slate-800 flex items-start gap-4">
-                      
-                      {/* Графический векторный герб */}
-                      <div className="w-16 h-16 rounded-2xl bg-slate-950 border border-slate-800 flex items-center justify-center p-1 flex-shrink-0">
-                        {renderEmblem(p.factionId, faction?.color || '#3b82f6')}
-                      </div>
-
-                      <div className="flex-grow space-y-2">
-                        <div className="flex items-center justify-between">
-                          <input 
-                            type="text" 
-                            value={p.name} 
-                            onChange={(e) => setPlayers(players.map(x => x.id === p.id ? {...x, name: e.target.value} : x))}
-                            className="bg-transparent font-bold text-lg text-white focus:outline-none focus:border-b border-cyan-400 w-32"
-                          />
-                          <div className="font-orbitron font-black text-xl px-3 py-1 rounded-xl bg-slate-950 text-cyan-400 border border-slate-800">
-                            0 ПО
-                          </div>
-                        </div>
-
-                        {/* Выбор Фракции */}
-                        <div className="bg-slate-950 p-2 rounded-xl border border-slate-800 flex items-center justify-between">
-                          <span className="text-[10px] uppercase font-bold text-slate-500">Фракция:</span>
+                      return (
+                        <div key={card.id} className={`p-3 rounded-xl border flex flex-col justify-between h-28 ${card.color}`}>
+                          <div className="font-orbitron font-extrabold text-xs md:text-sm mb-1">{card.name}</div>
                           <select 
-                            value={p.factionId} 
-                            onChange={(e) => setPlayers(players.map(x => x.id === p.id ? {...x, factionId: e.target.value} : x))}
-                            className="bg-transparent text-xs font-bold text-slate-200 focus:outline-none text-right">
-                            {availableFactions.map(f => (
-                              <option key={f.id} value={f.id} className="bg-slate-900 text-white">{f.name}</option>
+                            value={pickedPlayerId || ''} 
+                            onChange={(e) => {
+                              const pId = Number(e.target.value);
+                              setStrategyPicks(prev => ({ ...prev, [pId]: card.id }));
+                            }}
+                            className="bg-black/60 text-[11px] font-bold p-1.5 rounded border border-white/20 text-white focus:outline-none">
+                            <option value="">-- Чья карта --</option>
+                            {players.map(p => (
+                              <option key={p.id} value={p.id}>{p.name}</option>
                             ))}
                           </select>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div className="bg-slate-900 border border-slate-800 p-4 md:p-6 rounded-2xl space-y-3">
+                  <h2 className="font-orbitron font-bold text-sm md:text-base text-cyan-400 uppercase mb-2">2. Очередность Хода</h2>
+                  {turnOrder.length === 0 ? (
+                    <div className="text-xs text-slate-500 italic">Выберите карты стратегий и нажмите «Старт Фазы Ходов»</div>
+                  ) : (
+                    turnOrder.map((p, idx) => {
+                      const isActive = idx === activeTurnIdx;
+                      const isPassed = passed[p.id];
+                      const card = STRATEGY_CARDS.find(c => c.id === strategyPicks[p.id]);
+                      const fact = ALL_FACTIONS.find(f => f.id === p.factionId);
+
+                      return (
+                        <div key={p.id} className={`p-3 rounded-xl border flex items-center justify-between ${isActive ? 'bg-cyan-950/60 border-cyan-400 shadow-md' : isPassed ? 'opacity-40 bg-slate-950 border-slate-900' : 'bg-slate-950 border-slate-800'}`}>
+                          <div className="flex items-center gap-3">
+                            <span className="font-orbitron font-bold text-xs text-slate-500">#{idx + 1}</span>
+                            <div className="w-7 h-7 rounded-lg bg-slate-900 border border-slate-800 flex items-center justify-center p-0.5">
+                              {renderEmblem(p.factionId, fact?.color || '#3b82f6')}
+                            </div>
+                            <div>
+                              <div className="font-bold text-sm text-white">{p.name} {isActive && <span className="text-[9px] bg-cyan-500 text-black px-1 rounded font-extrabold ml-1">ХОД</span>}</div>
+                              <div className="text-[11px] text-slate-400">{card?.name || 'Нет карты'}</div>
+                            </div>
+                          </div>
+                          <span className="text-xs font-bold text-amber-400 bg-slate-900 px-2 py-1 rounded border border-slate-800">
+                            Ин. {card?.initiative}
+                          </span>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+            )}
+
+            {activeTab === 'objectives' && (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <h2 className="font-orbitron font-bold text-base text-white">Открытые Публичные Задания</h2>
+                  <button onClick={addCustomObj} className="bg-blue-600 text-white font-bold px-4 py-2 rounded-xl text-xs flex items-center gap-1 shadow">
+                    <i className="fa-solid fa-plus"></i> Добавить цель
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {objectives.map(obj => (
+                    <div key={obj.id} className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3 shadow-lg flex flex-col justify-between">
+                      <div>
+                        <div className="flex items-center justify-between mb-2">
+                          <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded ${obj.stage === 2 ? 'bg-red-950 text-red-400 border border-red-800' : 'bg-blue-950 text-blue-400 border border-blue-800'}`}>
+                            Этап {obj.stage} ({obj.points} ПО)
+                          </span>
+                        </div>
+                        <h3 className="font-bold text-base text-white">{obj.title}</h3>
+                        <p className="text-xs text-slate-400 mt-1">{obj.desc}</p>
+                      </div>
+
+                      <div className="border-t border-slate-800/80 pt-3">
+                        <div className="text-[11px] font-bold text-slate-400 mb-2 uppercase">Кто выполнил:</div>
+                        <div className="grid grid-cols-2 gap-2">
+                          {players.map(p => {
+                            const isDone = !!completions[`${p.id}_${obj.id}`];
+                            const faction = ALL_FACTIONS.find(f => f.id === p.factionId);
+
+                            return (
+                              <button
+                                key={p.id}
+                                onClick={() => toggleCompletion(p.id, obj.id)}
+                                className={`p-2 rounded-xl border text-xs font-bold flex items-center justify-between transition ${isDone ? 'bg-cyan-500/20 border-cyan-400 text-cyan-300' : 'bg-slate-950 border-slate-800 text-slate-400'}`}>
+                                <div className="flex items-center gap-2 truncate">
+                                  <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: faction?.color }}></span>
+                                  <span className="truncate">{p.name}</span>
+                                </div>
+                                <i className={`fa-solid ${isDone ? 'fa-square-check text-cyan-400 text-sm' : 'fa-square text-slate-700 text-sm'}`}></i>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {activeTab === 'scoreboard' && (
+              <div className="space-y-4">
+                <h2 className="font-orbitron font-bold text-base text-white">Игроки и Гербы Фракций</h2>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {players.map(p => {
+                    const score = getPlayerScore(p.id);
+                    const faction = ALL_FACTIONS.find(f => f.id === p.factionId);
+                    const isWinner = score >= targetScore;
+
+                    return (
+                      <div key={p.id} className={`p-4 rounded-2xl border flex flex-col justify-between space-y-3 ${isWinner ? 'bg-amber-950/40 border-amber-500 animate-pulse' : 'bg-slate-900 border-slate-800'}`}>
+                        
+                        <div className="flex items-start gap-3">
+                          {/* Графический векторный герб */}
+                          <div className="w-14 h-14 rounded-2xl bg-slate-950 border border-slate-800 flex items-center justify-center p-1 flex-shrink-0 shadow-inner">
+                            {renderEmblem(p.factionId, faction?.color || '#3b82f6')}
+                          </div>
+
+                          <div className="flex-grow">
+                            <div className="flex items-center justify-between">
+                              <input 
+                                type="text" 
+                                value={p.name} 
+                                onChange={(e) => setPlayers(players.map(x => x.id === p.id ? {...x, name: e.target.value} : x))}
+                                className="bg-transparent font-bold text-base text-white focus:outline-none focus:border-b border-cyan-400 w-28"
+                              />
+                              <div className={`font-orbitron font-black text-xl px-2.5 py-0.5 rounded-xl ${isWinner ? 'bg-amber-500 text-black' : 'bg-slate-950 text-cyan-400 border border-slate-800'}`}>
+                                {score} ПО
+                              </div>
+                            </div>
+
+                            {/* Выбор Фракции */}
+                            <div className="mt-2 bg-slate-950 p-1.5 rounded-xl border border-slate-800 flex items-center justify-between">
+                              <span className="text-[10px] uppercase font-bold text-slate-500">Фракция:</span>
+                              <select 
+                                value={p.factionId} 
+                                onChange={(e) => setPlayers(players.map(x => x.id === p.id ? {...x, factionId: e.target.value} : x))}
+                                className="bg-transparent text-xs font-bold text-slate-200 focus:outline-none text-right max-w-[130px] truncate">
+                                {availableFactions.map(f => (
+                                  <option key={f.id} value={f.id} className="bg-slate-900 text-white">{f.name}</option>
+                                ))}
+                              </select>
+                            </div>
+                          </div>
                         </div>
 
                         {/* Переключатель Прорыва (Breakthrough) */}
@@ -208,15 +476,45 @@
                             </button>
                           </div>
                         )}
-                      </div>
 
-                    </div>
-                  );
-                })}
+                        {/* Секретки и Мекатол */}
+                        <div className="flex items-center justify-between text-xs text-slate-400 border-t border-slate-800/80 pt-2">
+                          <div>Секретки: <span className="text-amber-400 font-bold">{p.secrets}</span> 
+                            <button onClick={() => setPlayers(players.map(x => x.id === p.id ? {...x, secrets: x.secrets + 1} : x))} className="ml-1 px-1.5 py-0.5 bg-slate-800 rounded text-cyan-400 font-bold">+</button>
+                          </div>
+                          <div>Мекатол/Реликвии: <span className="text-purple-400 font-bold">{p.extra}</span>
+                            <button onClick={() => setPlayers(players.map(x => x.id === p.id ? {...x, extra: x.extra + 1} : x))} className="ml-1 px-1.5 py-0.5 bg-slate-800 rounded text-cyan-400 font-bold">+</button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
-            </div>
+            )}
 
           </main>
+
+          <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-slate-900/95 backdrop-blur-md border-t border-slate-800 p-2 flex justify-around z-40">
+            <button 
+              onClick={() => setActiveTab('turns')} 
+              className={`flex flex-col items-center gap-1 py-1 px-3 rounded-xl text-[11px] font-bold transition ${activeTab === 'turns' ? 'text-cyan-400' : 'text-slate-400'}`}>
+              <i className="fa-solid fa-stopwatch text-base"></i>
+              <span>Ходы</span>
+            </button>
+            <button 
+              onClick={() => setActiveTab('objectives')} 
+              className={`flex flex-col items-center gap-1 py-1 px-3 rounded-xl text-[11px] font-bold transition ${activeTab === 'objectives' ? 'text-cyan-400' : 'text-slate-400'}`}>
+              <i className="fa-solid fa-list-check text-base"></i>
+              <span>Задания</span>
+            </button>
+            <button 
+              onClick={() => setActiveTab('scoreboard')} 
+              className={`flex flex-col items-center gap-1 py-1 px-3 rounded-xl text-[11px] font-bold transition ${activeTab === 'scoreboard' ? 'text-cyan-400' : 'text-slate-400'}`}>
+              <i className="fa-solid fa-trophy text-base"></i>
+              <span>Счет</span>
+            </button>
+          </nav>
 
         </div>
       );
