@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>TI4 Companion - Epic Edition</title>
+  <title>TI4 Companion - Thunder's Edge Edition</title>
   <!-- React & ReactDOM -->
   <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
@@ -32,34 +32,41 @@
   <script type="text/babel">
     const { useState } = React;
 
-    // Расширенный список фракций (База + Prophecy of Kings)
+    // Все фракции: База + Prophecy of Kings (PoK) + Thunder's Edge (TE)
     const ALL_FACTIONS = [
-      // Базовая игра
-      { id: 'sol', name: 'Федерация Сол', icon: 'fa-sun', color: '#3b82f6', pok: false },
-      { id: 'jolnar', name: 'Университеты Джол-Нара', icon: 'fa-flask', color: '#06b6d4', pok: false },
-      { id: 'hacan', name: 'Эмират Хакан', icon: 'fa-coins', color: '#eab308', pok: false },
-      { id: 'xxcha', name: 'Королевство Ззча', icon: 'fa-shield-halved', color: '#22c55e', pok: false },
-      { id: 'nekro', name: 'Вирус Некро', icon: 'fa-skull', color: '#ef4444', pok: false },
-      { id: 'saar', name: 'Кланы Сааров', icon: 'fa-meteor', color: '#a855f7', pok: false },
-      { id: 'l1z1x', name: 'Иерархия L1Z1X', icon: 'fa-robot', color: '#64748b', pok: false },
-      { id: 'letnev', name: 'Баронат Летнев', icon: 'fa-chess-knight', color: '#475569', pok: false },
-      { id: 'arborec', name: 'Древостой Арбореков', icon: 'fa-tree', color: '#15803d', pok: false },
-      { id: 'creuss', name: 'Призраки Крёсса', icon: 'fa-ghost', color: '#38bdf8', pok: false },
-      { id: 'mentak', name: 'Коалиция Ментака', icon: 'fa-skull-crossbones', color: '#f97316', pok: false },
-      { id: 'muaat', name: 'Уполномоченные Муаата', icon: 'fa-fire', color: '#dc2626', pok: false },
-      { id: 'naalu', name: 'Валлиада Наалу', icon: 'fa-eye', color: '#84cc16', pok: false },
-      { id: 'saardakk', name: 'Сардакк Ноур', icon: 'fa-bug', color: '#991b1b', pok: false },
-      { id: 'yin', name: 'Братство Инь', icon: 'fa-dna', color: '#e2e8f0', pok: false },
-      { id: 'yssaril', name: 'Племена Иссарилов', icon: 'fa-user-ninja', color: '#166534', pok: false },
+      // --- Базовая игра ---
+      { id: 'sol', name: 'Федерация Сол', icon: 'fa-sun', color: '#3b82f6', exp: 'base' },
+      { id: 'jolnar', name: 'Университеты Джол-Нара', icon: 'fa-flask', color: '#06b6d4', exp: 'base' },
+      { id: 'hacan', name: 'Эмират Хакан', icon: 'fa-coins', color: '#eab308', exp: 'base' },
+      { id: 'xxcha', name: 'Королевство Ззча', icon: 'fa-shield-halved', color: '#22c55e', exp: 'base' },
+      { id: 'nekro', name: 'Вирус Некро', icon: 'fa-skull', color: '#ef4444', exp: 'base' },
+      { id: 'saar', name: 'Кланы Сааров', icon: 'fa-meteor', color: '#a855f7', exp: 'base' },
+      { id: 'l1z1x', name: 'Иерархия L1Z1X', icon: 'fa-robot', color: '#64748b', exp: 'base' },
+      { id: 'letnev', name: 'Баронат Летнев', icon: 'fa-chess-knight', color: '#475569', exp: 'base' },
+      { id: 'arborec', name: 'Древостой Арбореков', icon: 'fa-tree', color: '#15803d', exp: 'base' },
+      { id: 'creuss', name: 'Призраки Крёсса', icon: 'fa-ghost', color: '#38bdf8', exp: 'base' },
+      { id: 'mentak', name: 'Коалиция Ментака', icon: 'fa-skull-crossbones', color: '#f97316', exp: 'base' },
+      { id: 'muaat', name: 'Уполномоченные Муаата', icon: 'fa-fire', color: '#dc2626', exp: 'base' },
+      { id: 'naalu', name: 'Валлиада Наалу', icon: 'fa-eye', color: '#84cc16', exp: 'base' },
+      { id: 'saardakk', name: 'Сардакк Ноур', icon: 'fa-bug', color: '#991b1b', exp: 'base' },
+      { id: 'yin', name: 'Братство Инь', icon: 'fa-dna', color: '#e2e8f0', exp: 'base' },
+      { id: 'yssaril', name: 'Племена Иссарилов', icon: 'fa-user-ninja', color: '#166534', exp: 'base' },
 
-      // Prophecy of Kings (PoK)
-      { id: 'argent', name: 'Летный Альянс Аргентов', icon: 'fa-feather-pointed', color: '#facc15', pok: true },
-      { id: 'empyrean', name: 'Эмпиреи', icon: 'fa-infinity', color: '#818cf8', pok: true },
-      { id: 'mahact', name: 'Генетическая Империя Махакт', icon: 'fa-crown', color: '#fbbf24', pok: true },
-      { id: 'naazrokha', name: 'Альянс Нааз-Роха', icon: 'fa-handshake', color: '#10b981', pok: true },
-      { id: 'nomad', name: 'Кочевник (Nomad)', icon: 'fa-compass', color: '#f43f5e', pok: true },
-      { id: 'titans', name: 'Титаны Ула', icon: 'fa-monument', color: '#a1a1aa', pok: true },
-      { id: 'vuilraith', name: 'Кабала Вуил’Райт', icon: 'fa-spaghetti-monster-flying', color: '#b91c1c', pok: true }
+      // --- Prophecy of Kings (PoK) ---
+      { id: 'argent', name: 'Летный Альянс Аргентов', icon: 'fa-feather-pointed', color: '#facc15', exp: 'pok' },
+      { id: 'empyrean', name: 'Эмпиреи', icon: 'fa-infinity', color: '#818cf8', exp: 'pok' },
+      { id: 'mahact', name: 'Генетическая Империя Махакт', icon: 'fa-crown', color: '#fbbf24', exp: 'pok' },
+      { id: 'naazrokha', name: 'Альянс Нааз-Роха', icon: 'fa-handshake', color: '#10b981', exp: 'pok' },
+      { id: 'nomad', name: 'Кочевник (Nomad)', icon: 'fa-compass', color: '#f43f5e', exp: 'pok' },
+      { id: 'titans', name: 'Титаны Ула', icon: 'fa-monument', color: '#a1a1aa', exp: 'pok' },
+      { id: 'vuilraith', name: 'Кабала Вуил’Райт', icon: 'fa-spaghetti-monster-flying', color: '#b91c1c', exp: 'pok' },
+
+      // --- Thunder's Edge (TE & Codices) ---
+      { id: 'keleres', name: 'Совет Келерес', icon: 'fa-building-columns', color: '#38bdf8', exp: 'te' },
+      { id: 'vaefar', name: 'Завет Ваэфар', icon: 'fa-bolt-lightning', color: '#c084fc', exp: 'te' },
+      { id: 'muckha', name: 'Конгломерат Мукха', icon: 'fa-recycle', color: '#854d0e', exp: 'te' },
+      { id: 'deepseers', name: 'Оракулы Глубин (Deepseers)', icon: 'fa-water', color: '#0284c7', exp: 'te' },
+      { id: 'ralnor', name: 'Доминион Ралнор', icon: 'fa-shield-cat', color: '#e11d48', exp: 'te' }
     ];
 
     const STRATEGY_CARDS = [
@@ -82,15 +89,18 @@
       const [targetScore, setTargetScore] = useState(10);
       const [currentRound, setCurrentRound] = useState(1);
       const [activeTab, setActiveTab] = useState('turns');
+      
+      // Переключатели дополнений
       const [usePok, setUsePok] = useState(true);
+      const [useTe, setUseTe] = useState(true);
 
       const [players, setPlayers] = useState([
-        { id: 1, name: 'Игрок 1', factionId: 'sol', secrets: 0, extra: 0 },
-        { id: 2, name: 'Игрок 2', factionId: 'jolnar', secrets: 0, extra: 0 },
-        { id: 3, name: 'Игрок 3', factionId: 'hacan', secrets: 0, extra: 0 },
-        { id: 4, name: 'Игрок 4', factionId: 'xxcha', secrets: 0, extra: 0 },
-        { id: 5, name: 'Игрок 5', factionId: 'nekro', secrets: 0, extra: 0 },
-        { id: 6, name: 'Игрок 6', factionId: 'saar', secrets: 0, extra: 0 },
+        { id: 1, name: 'Игрок 1', factionId: 'sol', secrets: 0, extra: 0, breakthrough: false },
+        { id: 2, name: 'Игрок 2', factionId: 'jolnar', secrets: 0, extra: 0, breakthrough: false },
+        { id: 3, name: 'Игрок 3', factionId: 'hacan', secrets: 0, extra: 0, breakthrough: false },
+        { id: 4, name: 'Игрок 4', factionId: 'xxcha', secrets: 0, extra: 0, breakthrough: false },
+        { id: 5, name: 'Игрок 5', factionId: 'nekro', secrets: 0, extra: 0, breakthrough: false },
+        { id: 6, name: 'Игрок 6', factionId: 'saar', secrets: 0, extra: 0, breakthrough: false },
       ]);
 
       const [objectives, setObjectives] = useState(DEFAULT_OBJECTIVES);
@@ -101,7 +111,13 @@
       const [activeTurnIdx, setActiveTurnIdx] = useState(0);
       const [passed, setPassed] = useState({});
 
-      const availableFactions = ALL_FACTIONS.filter(f => usePok || !f.pok);
+      // Фильтрация доступных фракций
+      const availableFactions = ALL_FACTIONS.filter(f => {
+        if (f.exp === 'base') return true;
+        if (f.exp === 'pok' && usePok) return true;
+        if (f.exp === 'te' && useTe) return true;
+        return false;
+      });
 
       const getPlayerScore = (playerId) => {
         const p = players.find(x => x.id === playerId);
@@ -183,8 +199,13 @@
               <div className="flex items-center gap-2">
                 <button 
                   onClick={() => setUsePok(!usePok)} 
-                  className={`text-xs font-bold px-2.5 py-1 rounded-full border transition ${usePok ? 'bg-purple-950 border-purple-500 text-purple-300' : 'bg-slate-800 border-slate-700 text-slate-400'}`}>
-                  PoK: {usePok ? 'ВКЛ' : 'ВЫКЛ'}
+                  className={`text-[11px] font-bold px-2 py-1 rounded-lg border transition ${usePok ? 'bg-purple-950 border-purple-500 text-purple-300' : 'bg-slate-800 border-slate-700 text-slate-500'}`}>
+                  PoK
+                </button>
+                <button 
+                  onClick={() => setUseTe(!useTe)} 
+                  className={`text-[11px] font-bold px-2 py-1 rounded-lg border transition ${useTe ? 'bg-amber-950 border-amber-500 text-amber-300' : 'bg-slate-800 border-slate-700 text-slate-500'}`}>
+                  TE
                 </button>
                 <select 
                   value={targetScore} 
@@ -391,6 +412,18 @@
                             ))}
                           </select>
                         </div>
+
+                        {/* Переключатель Прорыва (Breakthroughиз Thunder's Edge) */}
+                        {useTe && (
+                          <div className="flex items-center justify-between bg-amber-950/20 p-2 rounded-xl border border-amber-900/30 text-xs">
+                            <span className="text-amber-300 font-bold">⚡ Прорыв (Breakthrough):</span>
+                            <button 
+                              onClick={() => setPlayers(players.map(x => x.id === p.id ? {...x, breakthrough: !x.breakthrough} : x))}
+                              className={`px-2 py-0.5 rounded font-bold transition ${p.breakthrough ? 'bg-amber-500 text-black' : 'bg-slate-800 text-slate-400'}`}>
+                              {p.breakthrough ? 'АКТИВЕН' : 'НЕТ'}
+                            </button>
+                          </div>
+                        )}
 
                         {/* Секретки и Мекатол */}
                         <div className="flex items-center justify-between text-xs text-slate-400 border-t border-slate-800/80 pt-2">
