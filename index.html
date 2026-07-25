@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>TI4 Companion - Authentic Board Game Art</title>
+  <title>TI4 Companion - Local Art Edition</title>
   <!-- React & ReactDOM -->
   <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
@@ -32,41 +32,41 @@
   <script type="text/babel">
     const { useState } = React;
 
-    // Список фракций с ссылками на оригинальные графические гербы из базы TTS TI4
+    // Список фракций с привязкой к локальным изображениям (.webp) в корне репозитория
     const ALL_FACTIONS = [
       // Базовая игра
-      { id: 'sol', name: 'Федерация Сол', color: '#3b82f6', exp: 'base', iconUrl: 'https://raw.githubusercontent.com/ti4-sdk/ti4-card-images/main/factions/sol.png' },
-      { id: 'jolnar', name: 'Университеты Джол-Нара', color: '#06b6d4', exp: 'base', iconUrl: 'https://raw.githubusercontent.com/ti4-sdk/ti4-card-images/main/factions/jolnar.png' },
-      { id: 'hacan', name: 'Эмират Хакан', color: '#eab308', exp: 'base', iconUrl: 'https://raw.githubusercontent.com/ti4-sdk/ti4-card-images/main/factions/hacan.png' },
-      { id: 'xxcha', name: 'Королевство Ззча', color: '#22c55e', exp: 'base', iconUrl: 'https://raw.githubusercontent.com/ti4-sdk/ti4-card-images/main/factions/xxcha.png' },
-      { id: 'nekro', name: 'Вирус Некро', color: '#ef4444', exp: 'base', iconUrl: 'https://raw.githubusercontent.com/ti4-sdk/ti4-card-images/main/factions/nekro.png' },
-      { id: 'saar', name: 'Кланы Сааров', color: '#a855f7', exp: 'base', iconUrl: 'https://raw.githubusercontent.com/ti4-sdk/ti4-card-images/main/factions/saar.png' },
-      { id: 'l1z1x', name: 'Иерархия L1Z1X', color: '#64748b', exp: 'base', iconUrl: 'https://raw.githubusercontent.com/ti4-sdk/ti4-card-images/main/factions/l1z1x.png' },
-      { id: 'letnev', name: 'Баронат Летнев', color: '#475569', exp: 'base', iconUrl: 'https://raw.githubusercontent.com/ti4-sdk/ti4-card-images/main/factions/letnev.png' },
-      { id: 'arborec', name: 'Древостой Арбореков', color: '#15803d', exp: 'base', iconUrl: 'https://raw.githubusercontent.com/ti4-sdk/ti4-card-images/main/factions/arborec.png' },
-      { id: 'creuss', name: 'Призраки Крёсса', color: '#38bdf8', exp: 'base', iconUrl: 'https://raw.githubusercontent.com/ti4-sdk/ti4-card-images/main/factions/creuss.png' },
-      { id: 'mentak', name: 'Коалиция Ментака', color: '#f97316', exp: 'base', iconUrl: 'https://raw.githubusercontent.com/ti4-sdk/ti4-card-images/main/factions/mentak.png' },
-      { id: 'muaat', name: 'Уполномоченные Муаата', color: '#dc2626', exp: 'base', iconUrl: 'https://raw.githubusercontent.com/ti4-sdk/ti4-card-images/main/factions/muaat.png' },
-      { id: 'naalu', name: 'Валлиада Наалу', color: '#84cc16', exp: 'base', iconUrl: 'https://raw.githubusercontent.com/ti4-sdk/ti4-card-images/main/factions/naalu.png' },
-      { id: 'saardakk', name: 'Сардакк Ноур', color: '#991b1b', exp: 'base', iconUrl: 'https://raw.githubusercontent.com/ti4-sdk/ti4-card-images/main/factions/saardakk.png' },
-      { id: 'yin', name: 'Братство Инь', color: '#e2e8f0', exp: 'base', iconUrl: 'https://raw.githubusercontent.com/ti4-sdk/ti4-card-images/main/factions/yin.png' },
-      { id: 'yssaril', name: 'Племена Иссарилов', color: '#166534', exp: 'base', iconUrl: 'https://raw.githubusercontent.com/ti4-sdk/ti4-card-images/main/factions/yssaril.png' },
+      { id: 'sol', name: 'Федерация Сол', color: '#3b82f6', exp: 'base', iconUrl: './sol.webp' },
+      { id: 'jolnar', name: 'Университеты Джол-Нара', color: '#06b6d4', exp: 'base', iconUrl: './jolnar.webp' },
+      { id: 'hacan', name: 'Эмират Хакан', color: '#eab308', exp: 'base', iconUrl: './hacan.webp' },
+      { id: 'xxcha', name: 'Королевство Ззча', color: '#22c55e', exp: 'base', iconUrl: './xxcha.webp' },
+      { id: 'nekro', name: 'Вирус Некро', color: '#ef4444', exp: 'base', iconUrl: './nekro.webp' },
+      { id: 'saar', name: 'Кланы Сааров', color: '#a855f7', exp: 'base', iconUrl: './saar.webp' },
+      { id: 'l1z1x', name: 'Иерархия L1Z1X', color: '#64748b', exp: 'base', iconUrl: './l1z1x.webp' },
+      { id: 'letnev', name: 'Баронат Летнев', color: '#475569', exp: 'base', iconUrl: './letnev.webp' },
+      { id: 'arborec', name: 'Древостой Арбореков', color: '#15803d', exp: 'base', iconUrl: './arborec.webp' },
+      { id: 'creuss', name: 'Призраки Крёсса', color: '#38bdf8', exp: 'base', iconUrl: './creuss.webp' },
+      { id: 'mentak', name: 'Коалиция Ментака', color: '#f97316', exp: 'base', iconUrl: './mentak.webp' },
+      { id: 'muaat', name: 'Уполномоченные Муаата', color: '#dc2626', exp: 'base', iconUrl: './muaat.webp' },
+      { id: 'naalu', name: 'Валлиада Наалу', color: '#84cc16', exp: 'base', iconUrl: './naalu.webp' },
+      { id: 'saardakk', name: 'Сардакк Ноур', color: '#991b1b', exp: 'base', iconUrl: './saardakk.webp' },
+      { id: 'yin', name: 'Братство Инь', color: '#e2e8f0', exp: 'base', iconUrl: './yin.webp' },
+      { id: 'yssaril', name: 'Племена Иссарилов', color: '#166534', exp: 'base', iconUrl: './yssaril.webp' },
 
       // Prophecy of Kings (PoK)
-      { id: 'argent', name: 'Летный Альянс Аргентов', color: '#facc15', exp: 'pok', iconUrl: 'https://raw.githubusercontent.com/ti4-sdk/ti4-card-images/main/factions/argent.png' },
-      { id: 'empyrean', name: 'Эмпиреи', color: '#818cf8', exp: 'pok', iconUrl: 'https://raw.githubusercontent.com/ti4-sdk/ti4-card-images/main/factions/empyrean.png' },
-      { id: 'mahact', name: 'Генетическая Империя Махакт', color: '#fbbf24', exp: 'pok', iconUrl: 'https://raw.githubusercontent.com/ti4-sdk/ti4-card-images/main/factions/mahact.png' },
-      { id: 'naazrokha', name: 'Альянс Нааз-Роха', color: '#10b981', exp: 'pok', iconUrl: 'https://raw.githubusercontent.com/ti4-sdk/ti4-card-images/main/factions/naazrokha.png' },
-      { id: 'nomad', name: 'Кочевник (Nomad)', color: '#f43f5e', exp: 'pok', iconUrl: 'https://raw.githubusercontent.com/ti4-sdk/ti4-card-images/main/factions/nomad.png' },
-      { id: 'titans', name: 'Титаны Ула', color: '#a1a1aa', exp: 'pok', iconUrl: 'https://raw.githubusercontent.com/ti4-sdk/ti4-card-images/main/factions/titans.png' },
-      { id: 'vuilraith', name: 'Кабала Вуил’Райт', color: '#b91c1c', exp: 'pok', iconUrl: 'https://raw.githubusercontent.com/ti4-sdk/ti4-card-images/main/factions/vuilraith.png' },
+      { id: 'argent', name: 'Летный Альянс Аргентов', color: '#facc15', exp: 'pok', iconUrl: './argent.webp' },
+      { id: 'empyrean', name: 'Эмпиреи', color: '#818cf8', exp: 'pok', iconUrl: './empyrean.webp' },
+      { id: 'mahact', name: 'Генетическая Империя Махакт', color: '#fbbf24', exp: 'pok', iconUrl: './mahact.webp' },
+      { id: 'naazrokha', name: 'Альянс Нааз-Роха', color: '#10b981', exp: 'pok', iconUrl: './naazrokha.webp' },
+      { id: 'nomad', name: 'Кочевник (Nomad)', color: '#f43f5e', exp: 'pok', iconUrl: './nomad.webp' },
+      { id: 'titans', name: 'Титаны Ула', color: '#a1a1aa', exp: 'pok', iconUrl: './titans.webp' },
+      { id: 'vuilraith', name: 'Кабала Вуил’Райт', color: '#b91c1c', exp: 'pok', iconUrl: './vuilraith.webp' },
 
       // Thunder's Edge (TE)
-      { id: 'keleres', name: 'Совет Келерес', color: '#38bdf8', exp: 'te', iconUrl: 'https://raw.githubusercontent.com/ti4-sdk/ti4-card-images/main/factions/keleres.png' },
-      { id: 'vaefar', name: 'Завет Ваэфар', color: '#c084fc', exp: 'te', iconUrl: 'https://raw.githubusercontent.com/ti4-sdk/ti4-card-images/main/factions/vaefar.png' },
-      { id: 'muckha', name: 'Конгломерат Мукха', color: '#854d0e', exp: 'te', iconUrl: 'https://raw.githubusercontent.com/ti4-sdk/ti4-card-images/main/factions/muckha.png' },
-      { id: 'deepseers', name: 'Оракулы Глубин', color: '#0284c7', exp: 'te', iconUrl: 'https://raw.githubusercontent.com/ti4-sdk/ti4-card-images/main/factions/deepseers.png' },
-      { id: 'ralnor', name: 'Доминион Ралнор', color: '#e11d48', exp: 'te', iconUrl: 'https://raw.githubusercontent.com/ti4-sdk/ti4-card-images/main/factions/ralnor.png' }
+      { id: 'keleres', name: 'Совет Келерес', color: '#38bdf8', exp: 'te', iconUrl: './keleres.webp' },
+      { id: 'vaefar', name: 'Завет Ваэфар', color: '#c084fc', exp: 'te', iconUrl: './vaefar.webp' },
+      { id: 'muckha', name: 'Конгломерат Мукха', color: '#854d0e', exp: 'te', iconUrl: './muckha.webp' },
+      { id: 'deepseers', name: 'Оракулы Глубин', color: '#0284c7', exp: 'te', iconUrl: './deepseers.webp' },
+      { id: 'ralnor', name: 'Доминион Ралнор', color: '#e11d48', exp: 'te', iconUrl: './ralnor.webp' }
     ];
 
     const STRATEGY_CARDS = [
@@ -95,7 +95,7 @@
       const [players, setPlayers] = useState([
         { id: 1, name: 'Игрок 1', factionId: 'sol', secrets: 0, extra: 0, breakthrough: false },
         { id: 2, name: 'Игрок 2', factionId: 'jolnar', secrets: 0, extra: 0, breakthrough: false },
-        { id: 3, name: 'Игрок 3', factionId: 'hacan', secrets: 0, extra: 0, breakthrough: false },
+        { id: 3, name: 'Игрок 3', factionId: 'arborec', secrets: 0, extra: 0, breakthrough: false },
         { id: 4, name: 'Игрок 4', factionId: 'xxcha', secrets: 0, extra: 0, breakthrough: false },
         { id: 5, name: 'Игрок 5', factionId: 'nekro', secrets: 0, extra: 0, breakthrough: false },
         { id: 6, name: 'Игрок 6', factionId: 'saar', secrets: 0, extra: 0, breakthrough: false },
@@ -221,12 +221,15 @@
                   {(() => {
                     const fact = ALL_FACTIONS.find(f => f.id === activePlayer.factionId);
                     return (
-                      <div className="w-10 h-10 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-center p-1 overflow-hidden shadow" style={{ backgroundColor: `${fact?.color}22` }}>
+                      <div className="w-10 h-10 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-center p-1 overflow-hidden shadow">
                         <img 
                           src={fact?.iconUrl} 
                           alt={fact?.name} 
                           className="w-full h-full object-contain"
-                          onError={(e) => { e.target.style.display='none'; e.target.parentElement.innerText = fact?.name?.[0] || '?'; }}
+                          onError={(e) => { 
+                            e.target.style.display = 'none'; 
+                            e.target.parentElement.innerHTML = `<span style="color:${fact?.color}" class="font-black text-base">${fact?.name?.[0]}</span>`; 
+                          }}
                         />
                       </div>
                     );
@@ -301,7 +304,15 @@
                           <div className="flex items-center gap-3">
                             <span className="font-orbitron font-bold text-xs text-slate-500">#{idx + 1}</span>
                             <div className="w-8 h-8 rounded-lg bg-slate-900 border border-slate-800 flex items-center justify-center p-0.5 overflow-hidden">
-                              <img src={fact?.iconUrl} alt={fact?.name} className="w-full h-full object-contain" />
+                              <img 
+                                src={fact?.iconUrl} 
+                                alt={fact?.name} 
+                                className="w-full h-full object-contain"
+                                onError={(e) => { 
+                                  e.target.style.display = 'none'; 
+                                  e.target.parentElement.innerHTML = `<span style="color:${fact?.color}" class="font-black text-xs">${fact?.name?.[0]}</span>`; 
+                                }}
+                              />
                             </div>
                             <div>
                               <div className="font-bold text-sm text-white">{p.name} {isActive && <span className="text-[9px] bg-cyan-500 text-black px-1 rounded font-extrabold ml-1">ХОД</span>}</div>
@@ -371,7 +382,7 @@
 
             {activeTab === 'scoreboard' && (
               <div className="space-y-4">
-                <h2 className="font-orbitron font-bold text-base text-white">Игроки и Арты Настольной Игры</h2>
+                <h2 className="font-orbitron font-bold text-base text-white">Игроки и Арты Фракций</h2>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                   {players.map(p => {
@@ -383,7 +394,7 @@
                       <div key={p.id} className={`p-4 rounded-2xl border flex flex-col justify-between space-y-3 ${isWinner ? 'bg-amber-950/40 border-amber-500 animate-pulse' : 'bg-slate-900 border-slate-800'}`}>
                         
                         <div className="flex items-start gap-3">
-                          {/* Оригинальный арт настолки */}
+                          {/* Контейнер локального арта из корня репозитория */}
                           <div className="w-16 h-16 rounded-2xl bg-slate-950 border border-slate-800 flex items-center justify-center p-1 flex-shrink-0 shadow-inner overflow-hidden" style={{ borderColor: `${faction?.color}aa` }}>
                             <img 
                               src={faction?.iconUrl} 
@@ -391,7 +402,7 @@
                               className="w-full h-full object-contain"
                               onError={(e) => { 
                                 e.target.style.display = 'none';
-                                e.target.parentElement.innerHTML = `<span style="color:${faction?.color}" class="font-black text-xl">${faction?.name?.[0]}</span>`;
+                                e.target.parentElement.innerHTML = `<span style="color:${faction?.color}" class="font-black text-2xl">${faction?.name?.[0]}</span>`;
                               }}
                             />
                           </div>
