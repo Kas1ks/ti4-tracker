@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>TI4 Companion - Game Cycle Edition</title>
+  <title>TI4 Companion - Game Cycle Edition v2</title>
   <!-- React & ReactDOM -->
   <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
@@ -89,7 +89,7 @@
     ];
 
     function App() {
-      // Состояние активности игры (false - Настройка, true - Игра идёт)
+      // Переключатель активного состояния игры
       const [gameStarted, setGameStarted] = useState(false);
 
       const [targetScore, setTargetScore] = useState(10);
@@ -130,7 +130,7 @@
 
       // Функция ЗАВЕРШЕНИЯ ИГРЫ
       const handleEndGame = () => {
-        if (confirm('Вы уверены, что хотите завершить текущую партию? Прогресс ходов будет сброшен.')) {
+        if (confirm('Вы уверены, что хотите завершить партию?')) {
           setGameStarted(false);
           setStrategyPicks({});
           setTurnOrder([]);
@@ -233,7 +233,7 @@
                   </nav>
 
                   <div className="text-xs font-extrabold bg-amber-950/80 text-amber-400 border border-amber-800 px-3 py-1.5 rounded-xl hidden sm:block">
-                    До {targetScore} ПО
+                    Цель: {targetScore} ПО
                   </div>
 
                   <button 
@@ -245,8 +245,8 @@
                 </div>
               ) : (
                 /* Хедер в режиме Настройки */
-                <div className="text-xs font-bold text-slate-400 uppercase tracking-widest bg-slate-950 px-3 py-1 rounded-lg border border-slate-800">
-                  Подготовка
+                <div className="text-xs font-bold text-cyan-400 uppercase tracking-widest bg-slate-950 px-3 py-1 rounded-lg border border-slate-800">
+                  Экран Настройки
                 </div>
               )}
             </div>
