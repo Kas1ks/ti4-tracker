@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>TI4 Companion - Offline Embedded Emblems</title>
+  <title>TI4 Companion - Authentic Board Game Art</title>
   <!-- React & ReactDOM -->
   <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
@@ -32,110 +32,41 @@
   <script type="text/babel">
     const { useState } = React;
 
-    // Встроенная векторная графика для всех гербов
-    const EMBLEMS = {
-      sol: (c) => (
-        <svg viewBox="0 0 100 100" className="w-full h-full p-1" style={{ filter: `drop-shadow(0 0 6px ${c}aa)` }}>
-          <circle cx="50" cy="50" r="26" fill="none" stroke={c} strokeWidth="6" />
-          <path d="M50 5 L50 18 M50 82 L50 95 M5 50 L18 50 M82 50 L95 50 M18 18 L27 27 M73 73 L82 82 M18 82 L27 73 M73 27 L82 18" stroke={c} strokeWidth="5" strokeLinecap="round" />
-        </svg>
-      ),
-      jolnar: (c) => (
-        <svg viewBox="0 0 100 100" className="w-full h-full p-1" style={{ filter: `drop-shadow(0 0 6px ${c}aa)` }}>
-          <polygon points="50,8 88,30 88,70 50,92 12,70 12,30" fill="none" stroke={c} strokeWidth="5" />
-          <circle cx="50" cy="50" r="14" fill={c} />
-          <path d="M50 22 L50 36 M50 64 L50 78 M22 50 L36 50 M64 50 L78 50" stroke={c} strokeWidth="4" />
-        </svg>
-      ),
-      hacan: (c) => (
-        <svg viewBox="0 0 100 100" className="w-full h-full p-1" style={{ filter: `drop-shadow(0 0 6px ${c}aa)` }}>
-          <polygon points="50,10 90,38 75,85 25,85 10,38" fill="none" stroke={c} strokeWidth="5" />
-          <path d="M35 42 L50 25 L65 42 L50 72 Z" fill={c} />
-        </svg>
-      ),
-      xxcha: (c) => (
-        <svg viewBox="0 0 100 100" className="w-full h-full p-1" style={{ filter: `drop-shadow(0 0 6px ${c}aa)` }}>
-          <path d="M50 10 C 20 10, 10 30, 10 50 C 10 80, 50 90, 50 90 C 50 90, 90 80, 90 50 C 90 30, 80 10, 50 10 Z" fill="none" stroke={c} strokeWidth="5" />
-          <circle cx="50" cy="45" r="15" fill="none" stroke={c} strokeWidth="4" />
-        </svg>
-      ),
-      nekro: (c) => (
-        <svg viewBox="0 0 100 100" className="w-full h-full p-1" style={{ filter: `drop-shadow(0 0 6px ${c}aa)` }}>
-          <path d="M50 10 L80 25 L80 60 L50 90 L20 60 L20 25 Z" fill="none" stroke={c} strokeWidth="5" />
-          <circle cx="38" cy="42" r="7" fill={c} />
-          <circle cx="62" cy="42" r="7" fill={c} />
-          <path d="M42 65 L50 58 L58 65 L54 75 L46 75 Z" fill={c} />
-        </svg>
-      ),
-      saar: (c) => (
-        <svg viewBox="0 0 100 100" className="w-full h-full p-1" style={{ filter: `drop-shadow(0 0 6px ${c}aa)` }}>
-          <circle cx="50" cy="50" r="34" fill="none" stroke={c} strokeWidth="5" />
-          <path d="M20 50 Q 50 15, 80 50 Q 50 85, 20 50 Z" fill={c} opacity="0.6" />
-        </svg>
-      ),
-      l1z1x: (c) => (
-        <svg viewBox="0 0 100 100" className="w-full h-full p-1" style={{ filter: `drop-shadow(0 0 6px ${c}aa)` }}>
-          <rect x="20" y="20" width="60" height="60" rx="10" fill="none" stroke={c} strokeWidth="5" />
-          <circle cx="50" cy="50" r="15" fill={c} />
-        </svg>
-      ),
-      letnev: (c) => (
-        <svg viewBox="0 0 100 100" className="w-full h-full p-1" style={{ filter: `drop-shadow(0 0 6px ${c}aa)` }}>
-          <polygon points="50,10 85,35 70,85 30,85 15,35" fill="none" stroke={c} strokeWidth="5" />
-          <line x1="50" y1="20" x2="50" y2="75" stroke={c} strokeWidth="5" />
-        </svg>
-      ),
-      arborec: (c) => (
-        <svg viewBox="0 0 100 100" className="w-full h-full p-1" style={{ filter: `drop-shadow(0 0 6px ${c}aa)` }}>
-          <path d="M50 15 L75 50 L60 50 L80 85 L20 85 L40 50 L25 50 Z" fill="none" stroke={c} strokeWidth="5" />
-        </svg>
-      ),
-      creuss: (c) => (
-        <svg viewBox="0 0 100 100" className="w-full h-full p-1" style={{ filter: `drop-shadow(0 0 6px ${c}aa)` }}>
-          <path d="M50 10 Q80 30 70 60 Q50 90 30 60 Q20 30 50 10 Z" fill="none" stroke={c} strokeWidth="5" />
-          <circle cx="50" cy="45" r="10" fill={c} />
-        </svg>
-      ),
-      argent: (c) => (
-        <svg viewBox="0 0 100 100" className="w-full h-full p-1" style={{ filter: `drop-shadow(0 0 6px ${c}aa)` }}>
-          <polygon points="50,10 90,85 50,65 10,85" fill="none" stroke={c} strokeWidth="5" />
-        </svg>
-      ),
-      keleres: (c) => (
-        <svg viewBox="0 0 100 100" className="w-full h-full p-1" style={{ filter: `drop-shadow(0 0 6px ${c}aa)` }}>
-          <rect x="25" y="15" width="50" height="70" rx="5" fill="none" stroke={c} strokeWidth="5" />
-          <line x1="25" y1="40" x2="75" y2="40" stroke={c} strokeWidth="4" />
-        </svg>
-      ),
-      default: (c) => (
-        <svg viewBox="0 0 100 100" className="w-full h-full p-1" style={{ filter: `drop-shadow(0 0 6px ${c}aa)` }}>
-          <polygon points="50,10 90,50 50,90 10,50" fill="none" stroke={c} strokeWidth="5" />
-          <circle cx="50" cy="50" r="10" fill={c} />
-        </svg>
-      )
-    };
-
+    // Список фракций с ссылками на оригинальные графические гербы из базы TTS TI4
     const ALL_FACTIONS = [
-      // База
-      { id: 'sol', name: 'Федерация Сол', color: '#3b82f6', exp: 'base' },
-      { id: 'jolnar', name: 'Университеты Джол-Нара', color: '#06b6d4', exp: 'base' },
-      { id: 'hacan', name: 'Эмират Хакан', color: '#eab308', exp: 'base' },
-      { id: 'xxcha', name: 'Королевство Ззча', color: '#22c55e', exp: 'base' },
-      { id: 'nekro', name: 'Вирус Некро', color: '#ef4444', exp: 'base' },
-      { id: 'saar', name: 'Кланы Сааров', color: '#a855f7', exp: 'base' },
-      { id: 'l1z1x', name: 'Иерархия L1Z1X', color: '#64748b', exp: 'base' },
-      { id: 'letnev', name: 'Баронат Летнев', color: '#475569', exp: 'base' },
-      { id: 'arborec', name: 'Древостой Арбореков', color: '#15803d', exp: 'base' },
-      { id: 'creuss', name: 'Призраки Крёсса', color: '#38bdf8', exp: 'base' },
+      // Базовая игра
+      { id: 'sol', name: 'Федерация Сол', color: '#3b82f6', exp: 'base', iconUrl: 'https://raw.githubusercontent.com/ti4-sdk/ti4-card-images/main/factions/sol.png' },
+      { id: 'jolnar', name: 'Университеты Джол-Нара', color: '#06b6d4', exp: 'base', iconUrl: 'https://raw.githubusercontent.com/ti4-sdk/ti4-card-images/main/factions/jolnar.png' },
+      { id: 'hacan', name: 'Эмират Хакан', color: '#eab308', exp: 'base', iconUrl: 'https://raw.githubusercontent.com/ti4-sdk/ti4-card-images/main/factions/hacan.png' },
+      { id: 'xxcha', name: 'Королевство Ззча', color: '#22c55e', exp: 'base', iconUrl: 'https://raw.githubusercontent.com/ti4-sdk/ti4-card-images/main/factions/xxcha.png' },
+      { id: 'nekro', name: 'Вирус Некро', color: '#ef4444', exp: 'base', iconUrl: 'https://raw.githubusercontent.com/ti4-sdk/ti4-card-images/main/factions/nekro.png' },
+      { id: 'saar', name: 'Кланы Сааров', color: '#a855f7', exp: 'base', iconUrl: 'https://raw.githubusercontent.com/ti4-sdk/ti4-card-images/main/factions/saar.png' },
+      { id: 'l1z1x', name: 'Иерархия L1Z1X', color: '#64748b', exp: 'base', iconUrl: 'https://raw.githubusercontent.com/ti4-sdk/ti4-card-images/main/factions/l1z1x.png' },
+      { id: 'letnev', name: 'Баронат Летнев', color: '#475569', exp: 'base', iconUrl: 'https://raw.githubusercontent.com/ti4-sdk/ti4-card-images/main/factions/letnev.png' },
+      { id: 'arborec', name: 'Древостой Арбореков', color: '#15803d', exp: 'base', iconUrl: 'https://raw.githubusercontent.com/ti4-sdk/ti4-card-images/main/factions/arborec.png' },
+      { id: 'creuss', name: 'Призраки Крёсса', color: '#38bdf8', exp: 'base', iconUrl: 'https://raw.githubusercontent.com/ti4-sdk/ti4-card-images/main/factions/creuss.png' },
+      { id: 'mentak', name: 'Коалиция Ментака', color: '#f97316', exp: 'base', iconUrl: 'https://raw.githubusercontent.com/ti4-sdk/ti4-card-images/main/factions/mentak.png' },
+      { id: 'muaat', name: 'Уполномоченные Муаата', color: '#dc2626', exp: 'base', iconUrl: 'https://raw.githubusercontent.com/ti4-sdk/ti4-card-images/main/factions/muaat.png' },
+      { id: 'naalu', name: 'Валлиада Наалу', color: '#84cc16', exp: 'base', iconUrl: 'https://raw.githubusercontent.com/ti4-sdk/ti4-card-images/main/factions/naalu.png' },
+      { id: 'saardakk', name: 'Сардакк Ноур', color: '#991b1b', exp: 'base', iconUrl: 'https://raw.githubusercontent.com/ti4-sdk/ti4-card-images/main/factions/saardakk.png' },
+      { id: 'yin', name: 'Братство Инь', color: '#e2e8f0', exp: 'base', iconUrl: 'https://raw.githubusercontent.com/ti4-sdk/ti4-card-images/main/factions/yin.png' },
+      { id: 'yssaril', name: 'Племена Иссарилов', color: '#166534', exp: 'base', iconUrl: 'https://raw.githubusercontent.com/ti4-sdk/ti4-card-images/main/factions/yssaril.png' },
 
-      // PoK
-      { id: 'argent', name: 'Летный Альянс Аргентов', color: '#facc15', exp: 'pok' },
-      { id: 'mahact', name: 'Генетическая Империя Махакт', color: '#fbbf24', exp: 'pok' },
-      { id: 'titans', name: 'Титаны Ула', color: '#a1a1aa', exp: 'pok' },
+      // Prophecy of Kings (PoK)
+      { id: 'argent', name: 'Летный Альянс Аргентов', color: '#facc15', exp: 'pok', iconUrl: 'https://raw.githubusercontent.com/ti4-sdk/ti4-card-images/main/factions/argent.png' },
+      { id: 'empyrean', name: 'Эмпиреи', color: '#818cf8', exp: 'pok', iconUrl: 'https://raw.githubusercontent.com/ti4-sdk/ti4-card-images/main/factions/empyrean.png' },
+      { id: 'mahact', name: 'Генетическая Империя Махакт', color: '#fbbf24', exp: 'pok', iconUrl: 'https://raw.githubusercontent.com/ti4-sdk/ti4-card-images/main/factions/mahact.png' },
+      { id: 'naazrokha', name: 'Альянс Нааз-Роха', color: '#10b981', exp: 'pok', iconUrl: 'https://raw.githubusercontent.com/ti4-sdk/ti4-card-images/main/factions/naazrokha.png' },
+      { id: 'nomad', name: 'Кочевник (Nomad)', color: '#f43f5e', exp: 'pok', iconUrl: 'https://raw.githubusercontent.com/ti4-sdk/ti4-card-images/main/factions/nomad.png' },
+      { id: 'titans', name: 'Титаны Ула', color: '#a1a1aa', exp: 'pok', iconUrl: 'https://raw.githubusercontent.com/ti4-sdk/ti4-card-images/main/factions/titans.png' },
+      { id: 'vuilraith', name: 'Кабала Вуил’Райт', color: '#b91c1c', exp: 'pok', iconUrl: 'https://raw.githubusercontent.com/ti4-sdk/ti4-card-images/main/factions/vuilraith.png' },
 
-      // TE (Thunder's Edge)
-      { id: 'keleres', name: 'Совет Келерес', color: '#38bdf8', exp: 'te' },
-      { id: 'vaefar', name: 'Завет Ваэфар', color: '#c084fc', exp: 'te' }
+      // Thunder's Edge (TE)
+      { id: 'keleres', name: 'Совет Келерес', color: '#38bdf8', exp: 'te', iconUrl: 'https://raw.githubusercontent.com/ti4-sdk/ti4-card-images/main/factions/keleres.png' },
+      { id: 'vaefar', name: 'Завет Ваэфар', color: '#c084fc', exp: 'te', iconUrl: 'https://raw.githubusercontent.com/ti4-sdk/ti4-card-images/main/factions/vaefar.png' },
+      { id: 'muckha', name: 'Конгломерат Мукха', color: '#854d0e', exp: 'te', iconUrl: 'https://raw.githubusercontent.com/ti4-sdk/ti4-card-images/main/factions/muckha.png' },
+      { id: 'deepseers', name: 'Оракулы Глубин', color: '#0284c7', exp: 'te', iconUrl: 'https://raw.githubusercontent.com/ti4-sdk/ti4-card-images/main/factions/deepseers.png' },
+      { id: 'ralnor', name: 'Доминион Ралнор', color: '#e11d48', exp: 'te', iconUrl: 'https://raw.githubusercontent.com/ti4-sdk/ti4-card-images/main/factions/ralnor.png' }
     ];
 
     const STRATEGY_CARDS = [
@@ -156,7 +87,7 @@
 
     function App() {
       const [targetScore, setTargetScore] = useState(10);
-      const [activeTab, setActiveTab] = useState('turns');
+      const [activeTab, setActiveTab] = useState('scoreboard');
       
       const [usePok, setUsePok] = useState(true);
       const [useTe, setUseTe] = useState(true);
@@ -184,11 +115,6 @@
         if (f.exp === 'te' && useTe) return true;
         return false;
       });
-
-      const renderEmblem = (factionId, color) => {
-        const drawFn = EMBLEMS[factionId] || EMBLEMS.default;
-        return drawFn(color);
-      };
 
       const getPlayerScore = (playerId) => {
         const p = players.find(x => x.id === playerId);
@@ -295,8 +221,13 @@
                   {(() => {
                     const fact = ALL_FACTIONS.find(f => f.id === activePlayer.factionId);
                     return (
-                      <div className="w-10 h-10 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-center p-1">
-                        {renderEmblem(activePlayer.factionId, fact?.color || '#3b82f6')}
+                      <div className="w-10 h-10 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-center p-1 overflow-hidden shadow" style={{ backgroundColor: `${fact?.color}22` }}>
+                        <img 
+                          src={fact?.iconUrl} 
+                          alt={fact?.name} 
+                          className="w-full h-full object-contain"
+                          onError={(e) => { e.target.style.display='none'; e.target.parentElement.innerText = fact?.name?.[0] || '?'; }}
+                        />
                       </div>
                     );
                   })()}
@@ -369,8 +300,8 @@
                         <div key={p.id} className={`p-3 rounded-xl border flex items-center justify-between ${isActive ? 'bg-cyan-950/60 border-cyan-400 shadow-md' : isPassed ? 'opacity-40 bg-slate-950 border-slate-900' : 'bg-slate-950 border-slate-800'}`}>
                           <div className="flex items-center gap-3">
                             <span className="font-orbitron font-bold text-xs text-slate-500">#{idx + 1}</span>
-                            <div className="w-7 h-7 rounded-lg bg-slate-900 border border-slate-800 flex items-center justify-center p-0.5">
-                              {renderEmblem(p.factionId, fact?.color || '#3b82f6')}
+                            <div className="w-8 h-8 rounded-lg bg-slate-900 border border-slate-800 flex items-center justify-center p-0.5 overflow-hidden">
+                              <img src={fact?.iconUrl} alt={fact?.name} className="w-full h-full object-contain" />
                             </div>
                             <div>
                               <div className="font-bold text-sm text-white">{p.name} {isActive && <span className="text-[9px] bg-cyan-500 text-black px-1 rounded font-extrabold ml-1">ХОД</span>}</div>
@@ -440,7 +371,7 @@
 
             {activeTab === 'scoreboard' && (
               <div className="space-y-4">
-                <h2 className="font-orbitron font-bold text-base text-white">Игроки и Встроенные Гербы</h2>
+                <h2 className="font-orbitron font-bold text-base text-white">Игроки и Арты Настольной Игры</h2>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                   {players.map(p => {
@@ -452,9 +383,17 @@
                       <div key={p.id} className={`p-4 rounded-2xl border flex flex-col justify-between space-y-3 ${isWinner ? 'bg-amber-950/40 border-amber-500 animate-pulse' : 'bg-slate-900 border-slate-800'}`}>
                         
                         <div className="flex items-start gap-3">
-                          {/* Встроенный векторный герб */}
-                          <div className="w-14 h-14 rounded-2xl bg-slate-950 border border-slate-800 flex items-center justify-center p-1 flex-shrink-0 shadow-inner">
-                            {renderEmblem(p.factionId, faction?.color || '#3b82f6')}
+                          {/* Оригинальный арт настолки */}
+                          <div className="w-16 h-16 rounded-2xl bg-slate-950 border border-slate-800 flex items-center justify-center p-1 flex-shrink-0 shadow-inner overflow-hidden" style={{ borderColor: `${faction?.color}aa` }}>
+                            <img 
+                              src={faction?.iconUrl} 
+                              alt={faction?.name} 
+                              className="w-full h-full object-contain"
+                              onError={(e) => { 
+                                e.target.style.display = 'none';
+                                e.target.parentElement.innerHTML = `<span style="color:${faction?.color}" class="font-black text-xl">${faction?.name?.[0]}</span>`;
+                              }}
+                            />
                           </div>
 
                           <div className="flex-grow">
