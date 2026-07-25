@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>TI4 Companion - Game Setup Edition</title>
+  <title>TI4 Companion - Game Cycle Edition</title>
   <!-- React & ReactDOM -->
   <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
@@ -89,7 +89,7 @@
     ];
 
     function App() {
-      // Состояние старта игры (false - настройки, true - партие идет)
+      // Состояние активности игры (false - Настройка, true - Игра идёт)
       const [gameStarted, setGameStarted] = useState(false);
 
       const [targetScore, setTargetScore] = useState(10);
@@ -121,6 +121,23 @@
         if (f.exp === 'te' && useTe) return true;
         return false;
       });
+
+      // Функция ЗАПУСКА ИГРЫ
+      const handleStartGame = () => {
+        setGameStarted(true);
+        setActiveTab('scoreboard');
+      };
+
+      // Функция ЗАВЕРШЕНИЯ ИГРЫ
+      const handleEndGame = () => {
+        if (confirm('Вы уверены, что хотите завершить текущую партию? Прогресс ходов будет сброшен.')) {
+          setGameStarted(false);
+          setStrategyPicks({});
+          setTurnOrder([]);
+          setActiveTurnIdx(0);
+          setPassed({});
+        }
+      };
 
       const addPlayer = () => {
         if (players.length >= 8) return;
@@ -201,8 +218,8 @@
               </div>
 
               {gameStarted ? (
-                /* Навигация во время активной игры */
-                <div className="flex items-center gap-2">
+                /* Навигация во время игры + Кнопка КОНЕЦ ИГРЫ */
+                <div className="flex items-center gap-3">
                   <nav className="hidden md:flex bg-slate-950 p-1 rounded-xl border border-slate-800">
                     <button onClick={() => setActiveTab('scoreboard')} className={`px-4 py-1.5 rounded-lg text-xs font-bold transition ${activeTab === 'scoreboard' ? 'bg-cyan-500 text-black' : 'text-slate-400'}`}>
                       <i className="fa-solid fa-trophy mr-1"></i> Таблица ПО
@@ -215,25 +232,26 @@
                     </button>
                   </nav>
 
-                  <div className="text-xs font-extrabold bg-amber-950/80 text-amber-400 border border-amber-800 px-3 py-1.5 rounded-xl">
-                    Цель: {targetScore} ПО
+                  <div className="text-xs font-extrabold bg-amber-950/80 text-amber-400 border border-amber-800 px-3 py-1.5 rounded-xl hidden sm:block">
+                    До {targetScore} ПО
                   </div>
 
                   <button 
-                    onClick={() => setGameStarted(false)} 
-                    className="bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold px-3 py-1.5 rounded-xl text-xs border border-slate-700 transition">
-                    <i className="fa-solid fa-gear mr-1"></i> Настройки
+                    onClick={handleEndGame} 
+                    className="bg-red-950/80 hover:bg-red-900 text-red-300 font-extrabold px-3 py-1.5 rounded-xl text-xs border border-red-800 transition flex items-center gap-1 shadow">
+                    <i className="fa-solid fa-flag-checkered"></i>
+                    <span>Конец игры</span>
                   </button>
                 </div>
               ) : (
-                /* Режим Настройки */
-                <div className="text-xs font-bold text-slate-400 uppercase tracking-widest">
-                  Настройка Партии
+                /* Хедер в режиме Настройки */
+                <div className="text-xs font-bold text-slate-400 uppercase tracking-widest bg-slate-950 px-3 py-1 rounded-lg border border-slate-800">
+                  Подготовка
                 </div>
               )}
             </div>
 
-            {/* Панель активного хода во время игры */}
+            {/* Очередность хода во время игры */}
             {gameStarted && turnOrder.length > 0 && activePlayer && (
               <div className="bg-slate-950 border border-cyan-500/50 p-3 rounded-2xl flex items-center justify-between mt-3 shadow-[0_0_15px_rgba(6,182,212,0.15)]">
                 <div className="flex items-center gap-3">
@@ -241,11 +259,7 @@
                     const fact = ALL_FACTIONS.find(f => f.id === activePlayer.factionId);
                     return (
                       <div className="w-10 h-10 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-center p-1 overflow-hidden shadow">
-                        <img 
-                          src={fact?.iconUrl} 
-                          alt={fact?.name} 
-                          className="w-full h-full object-contain"
-                        />
+                        <img src={fact?.iconUrl} alt={fact?.name} className="w-full h-full object-contain" />
                       </div>
                     );
                   })()}
@@ -266,21 +280,21 @@
             )}
           </header>
 
-          {/* ОСНОВНОЙ КОНТЕНТ */}
+          {/* КОНТЕНТ */}
           <main className="p-4 md:p-6 flex-grow space-y-6">
 
-            {/* ЭКРАН 1: НАСТРОЙКА ИГРЫ (Отображается только до старта) */}
+            {/* 1. ЭКРАН НАСТРОЙКИ (Показывается ДО нажатия "Старт игры") */}
             {!gameStarted && (
               <div className="max-w-4xl mx-auto space-y-6">
                 
-                {/* 1. Условия Игры */}
+                {/* Настройка условий */}
                 <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl space-y-4">
                   <h2 className="font-orbitron font-bold text-base text-amber-400 uppercase flex items-center gap-2">
                     <i className="fa-solid fa-sliders"></i> Параметры Партии
                   </h2>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
-                    {/* Победные очки */}
+                    {/* Лимит ПО */}
                     <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 space-y-2">
                       <label className="text-xs font-bold text-slate-400 uppercase">Цель Победных Очков (ПО):</label>
                       <div className="flex gap-2">
@@ -316,7 +330,7 @@
                   </div>
                 </div>
 
-                {/* 2. Состав Игроков и Фракции */}
+                {/* Выбор игроков и фракций */}
                 <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl space-y-4">
                   <div className="flex items-center justify-between">
                     <h2 className="font-orbitron font-bold text-base text-cyan-400 uppercase flex items-center gap-2">
@@ -355,7 +369,7 @@
                               <img src={faction?.iconUrl} alt={faction?.name} className="w-full h-full object-contain" />
                             </div>
                             <div className="flex-grow">
-                              <div className="text-[10px] uppercase font-bold text-slate-500">Выбранная фракция:</div>
+                              <div className="text-[10px] uppercase font-bold text-slate-500">Фракция:</div>
                               <select 
                                 value={p.factionId} 
                                 onChange={(e) => setPlayers(players.map(x => x.id === p.id ? {...x, factionId: e.target.value} : x))}
@@ -372,20 +386,20 @@
                   </div>
                 </div>
 
-                {/* Кнопка Старта */}
+                {/* КНОПКА СТАРТ ИГРЫ */}
                 <button 
-                  onClick={() => setGameStarted(true)} 
-                  className="w-full bg-gradient-to-r from-cyan-500 via-blue-600 to-indigo-600 text-black font-orbitron font-black text-lg py-4 rounded-2xl shadow-xl hover:opacity-95 transition transform active:scale-95 uppercase tracking-wider">
-                  🚀 Начать Партию
+                  onClick={handleStartGame} 
+                  className="w-full bg-gradient-to-r from-cyan-500 via-blue-600 to-indigo-600 text-black font-orbitron font-black text-lg py-4 rounded-2xl shadow-xl hover:opacity-95 transition transform active:scale-95 uppercase tracking-wider flex items-center justify-center gap-2">
+                  <i className="fa-solid fa-play"></i> Старт игры
                 </button>
 
               </div>
             )}
 
-            {/* ЭКРАН 2: АКТИВНАЯ ИГРА (Скрыты переключатели, строгий интерфейс) */}
+            {/* 2. ЭКРАН АКТИВНОЙ ИГРЫ (Отображается ПОСЛЕ нажатия "Старт игры") */}
             {gameStarted && (
               <>
-                {/* Вкладка 1: Таблица ПО */}
+                {/* Таблица ПО */}
                 {activeTab === 'scoreboard' && (
                   <div className="space-y-4">
                     <h2 className="font-orbitron font-bold text-base text-white uppercase">Текущий Счёт Игроков</h2>
@@ -418,7 +432,7 @@
                               </div>
                             </div>
 
-                            {/* Статус Прорыва (Если включен TE) */}
+                            {/* Прорыв TE */}
                             {useTe && (
                               <div className="flex items-center justify-between bg-amber-950/20 p-2 rounded-xl border border-amber-900/30 text-xs">
                                 <span className="text-amber-300 font-bold">⚡ Прорыв (TE):</span>
@@ -446,7 +460,7 @@
                   </div>
                 )}
 
-                {/* Вкладка 2: Ходы & Стратегии */}
+                {/* Ходы & Стратегии */}
                 {activeTab === 'turns' && (
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                     <div className="md:col-span-2 bg-slate-900 border border-slate-800 p-4 md:p-6 rounded-2xl space-y-4">
@@ -516,7 +530,7 @@
                   </div>
                 )}
 
-                {/* Вкладка 3: Задания */}
+                {/* Задания */}
                 {activeTab === 'objectives' && (
                   <div className="space-y-4">
                     <div className="flex items-center justify-between">
@@ -571,7 +585,7 @@
 
           </main>
 
-          {/* НИЖНЯЯ НАВИГАЦИЯ ДЛЯ МОБИЛЬНЫХ (Только во время активной игры) */}
+          {/* МОБИЛЬНОЕ МЕНЮ (Только во время игры) */}
           {gameStarted && (
             <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-slate-900/95 backdrop-blur-md border-t border-slate-800 p-2 flex justify-around z-40">
               <button 
