@@ -5,6 +5,27 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>TI4 Companion - XL Dashboard</title>
+    <!-- Google Fonts: Russo One, Rajdhani, Chakra Petch -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@700&family=Rajdhani:wght@700&family=Russo+One&display=swap"
+        rel="stylesheet">
+
+    <!-- Tailwind Custom Font Classes -->
+    <style>
+        .font-russo {
+            font-family: 'Russo One', sans-serif;
+        }
+
+        .font-rajdhani {
+            font-family: 'Rajdhani', sans-serif;
+        }
+
+        .font-chakra {
+            font-family: 'Chakra Petch', sans-serif;
+        }
+    </style>
     <!-- React & ReactDOM -->
     <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
@@ -586,53 +607,40 @@
 
                                         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
                                             {turnOrder.map((p, idx) => {
-                                                const isCurrent = idx === activeTurnIdx && !passed[p.id];
-                                                const isPassed = !!passed[p.id];
-                                                const card = STRATEGY_CARDS.find(c => c.id === strategyPicks[p.id]);
-                                                const fact = ALL_FACTIONS.find(f => f.id === p.factionId);
-                                                const isStratUsed = card ? !!usedStrategies[card.id] : false;
+                                                const isCurrent = activePlayerId === p.id;
+                                                const faction = ALL_FACTIONS.find(f => f.id === p.factionId);
+                                                const cardBorderColor = p.color === '#000000' || p.color === '#0f172a' ? '#334155' : (p.color || '#3b82f6');
 
                                                 return (
                                                     <div
                                                         key={p.id}
-                                                        style={{ borderLeftColor: p.color || '#3b82f6', borderLeftWidth: '4px' }}
-                                                        className={`p-4 rounded-2xl border transition relative flex flex-col justify-between space-y-3 ${isCurrent
-                                                            ? 'bg-cyan-950/90 border-cyan-400 shadow-[0_0_15px_rgba(6,182,212,0.3)] scale-102'
-                                                            : isPassed
-                                                                ? 'bg-slate-950/40 border-slate-900 opacity-40 grayscale'
-                                                                : 'bg-slate-950 border-slate-800'
+                                                        style={{ borderLeftColor: cardBorderColor, borderLeftWidth: '4px' }}
+                                                        className={`p-2.5 rounded-2xl border flex flex-col justify-between transition relative overflow-hidden ${isCurrent
+                                                            ? 'bg-slate-900 border-cyan-400 shadow-lg shadow-cyan-500/20'
+                                                            : 'bg-slate-950/80 border-slate-800'
                                                             }`}
                                                     >
-                                                        <div className="flex items-center justify-between gap-2">
-                                                            <span className="font-orbitron font-extrabold text-xs text-amber-400 bg-black/60 px-2 py-0.5 rounded-lg border border-amber-500/30">
-                                                                Ин. {card?.initiative || '-'}
+                                                        <div className="flex items-center justify-between gap-1 mb-2">
+                                                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 border border-amber-500/30">
+                                                                Ин. {p.initiative}
                                                             </span>
-                                                            {isPassed ? (
-                                                                <span className="bg-red-950 text-red-400 border border-red-800 text-[10px] font-extrabold px-2 py-0.5 rounded uppercase">
-                                                                    ПАС
-                                                                </span>
-                                                            ) : isStratUsed ? (
-                                                                <span className="bg-emerald-950 text-emerald-300 border border-emerald-800 text-[10px] font-bold px-2 py-0.5 rounded">
-                                                                    ✓ Карточка
-                                                                </span>
-                                                            ) : null}
                                                         </div>
 
-                                                        <div className="flex items-center gap-3">
-                                                            <img
-                                                                src={fact?.iconUrl}
-                                                                alt={fact?.name}
-                                                                className="w-10 h-10 object-contain flex-shrink-0 p-0.5 rounded-xl border"
-                                                                style={{ borderColor: p.color || '#3b82f6' }}
-                                                            />
+                                                        <div className="flex items-center gap-2.5 my-1">
+                                                            <div
+                                                                className="w-8 h-8 rounded-lg bg-slate-900 border border-slate-700/80 flex items-center justify-center p-0.5 flex-shrink-0"
+                                                                style={{ boxShadow: `0 0 10px ${cardBorderColor}40` }}
+                                                            >
+                                                                <img src={faction?.iconUrl} alt={faction?.name} className="w-full h-full object-contain" />
+                                                            </div>
                                                             <div className="truncate">
-                                                                <div className="font-bold text-sm md:text-base text-white truncate">{p.name}</div>
-                                                                <div className="text-xs text-amber-300/80 font-semibold truncate">{card?.name || 'Без карты'}</div>
+                                                                <div className="font-bold text-xs text-white truncate">{p.name}</div>
+                                                                <div className="text-[10px] text-amber-300/80 truncate">{p.strategyCardName || 'Без карты'}</div>
                                                             </div>
                                                         </div>
 
-                                                        <div className="text-[10px] text-slate-500 font-orbitron pt-1 border-t border-slate-800/60">
-                                                            Время: {formatTime(p.totalTime || 0)}
+                                                        <div className="text-[9px] text-slate-500 mt-1">
+                                                            Время: <span className="font-mono text-slate-400">{formatTime(p.turnTime || 0)}</span>
                                                         </div>
                                                     </div>
                                                 );
@@ -657,63 +665,99 @@
                                         <div className="space-y-2.5">
                                             {players.map(p => {
                                                 const score = getPlayerScore(p.id);
+                                                const maxScore = Math.max(...players.map(x => getPlayerScore(x.id)), 0);
+                                                const isLeader = score === maxScore && score > 0;
                                                 const faction = ALL_FACTIONS.find(f => f.id === p.factionId);
                                                 const isWinner = score >= targetScore;
+                                                const playerColor = p.color === '#000000' || p.color === '#0f172a' ? '#475569' : (p.color || '#3b82f6');
 
                                                 return (
                                                     <div
                                                         key={p.id}
-                                                        style={{ borderLeftColor: p.color || '#3b82f6', borderLeftWidth: '5px' }}
-                                                        className={`p-3 rounded-2xl border flex items-center justify-between gap-3 transition ${isWinner ? 'bg-amber-950/40 border-amber-500 animate-pulse' : 'bg-slate-950 border-slate-800/80'
+                                                        style={{ borderLeftColor: playerColor, borderLeftWidth: '5px' }}
+                                                        className={`p-3 rounded-2xl border flex items-center justify-between gap-3 transition shadow-md ${isWinner
+                                                            ? 'bg-amber-950/60 border-amber-500 animate-pulse shadow-amber-500/20'
+                                                            : 'bg-slate-900/90 border-slate-700/80 hover:border-slate-600'
                                                             }`}
                                                     >
-                                                        {/* Аватар и Имя */}
+                                                        {/* Аватар, Имя и Корона лидера */}
                                                         <div className="flex items-center gap-3 min-w-0">
                                                             <div
-                                                                className="w-10 h-10 rounded-xl bg-slate-900 border flex items-center justify-center p-1 flex-shrink-0"
-                                                                style={{ borderColor: p.color || '#3b82f6' }}
+                                                                className="w-11 h-11 rounded-xl bg-slate-950 border-2 flex items-center justify-center p-1 flex-shrink-0 shadow-inner"
+                                                                style={{ borderColor: playerColor }}
                                                             >
                                                                 <img src={faction?.iconUrl} alt={faction?.name} className="w-full h-full object-contain" />
                                                             </div>
                                                             <div className="truncate">
-                                                                <div className="font-bold text-sm md:text-base text-white truncate leading-tight">{p.name}</div>
-                                                                <div className="text-[11px] text-slate-400 truncate">{faction?.name}</div>
+                                                                <div className="font-bold text-sm md:text-base text-white truncate leading-tight flex items-center gap-1.5">
+                                                                    <span>{p.name}</span>
+                                                                    {isLeader && (
+                                                                        <span title="Лидер партии" className="text-amber-400 text-sm animate-bounce filter drop-shadow">
+                                                                            👑
+                                                                        </span>
+                                                                    )}
+                                                                </div>
+                                                                <div className="text-[11px] text-slate-300 font-medium truncate">{faction?.name}</div>
                                                             </div>
                                                         </div>
 
-                                                        {/* Очки и Управление */}
+                                                        {/* Очки (Rajdhani) и Управление */}
                                                         <div className="flex items-center gap-3 flex-shrink-0">
-                                                            {/* ПО */}
-                                                            <div className="font-orbitron font-black text-lg md:text-xl text-cyan-400 bg-slate-900 px-2.5 py-1 rounded-xl border border-slate-800 text-center min-w-[50px]">
+
+                                                            {/* Крупное ПО в стиле Rajdhani */}
+                                                            <div className="font-rajdhani font-bold text-3xl md:text-4xl text-cyan-300 bg-slate-950 px-3 py-1 rounded-xl border border-cyan-500/30 text-center min-w-[65px] shadow-lg tracking-wider">
                                                                 {score}
                                                             </div>
 
-                                                            {/* Секретки / Мекатол */}
-                                                            <div className="flex flex-col gap-1 text-[10px] text-slate-400">
-                                                                <div className="flex items-center gap-1 bg-slate-900 px-1.5 py-0.5 rounded border border-slate-800">
-                                                                    <span>Секр: <strong className="text-amber-400">{p.secrets}</strong></span>
-                                                                    <button onClick={() => setPlayers(players.map(x => x.id === p.id ? { ...x, secrets: x.secrets + 1 } : x))} className="text-cyan-400 font-bold px-1">+</button>
-                                                                    <button onClick={() => setPlayers(players.map(x => x.id === p.id ? { ...x, secrets: Math.max(0, x.secrets - 1) } : x))} className="text-slate-500 font-bold px-1">-</button>
+                                                            {/* Широкие блоки Секреток и Мекатола */}
+                                                            <div className="flex flex-col gap-1.5 text-xs">
+
+                                                                {/* Секретки */}
+                                                                <div className="flex items-center justify-between gap-2 bg-slate-950 px-2.5 py-1 rounded-xl border border-slate-700/80 min-w-[110px] shadow-sm">
+                                                                    <span className="text-[10px] font-bold text-slate-300 uppercase">Секр:</span>
+                                                                    <div className="flex items-center gap-1.5">
+                                                                        <button
+                                                                            onClick={() => setPlayers(players.map(x => x.id === p.id ? { ...x, secrets: Math.max(0, x.secrets - 1) } : x))}
+                                                                            className="w-5 h-5 bg-slate-800 hover:bg-slate-700 active:bg-slate-600 text-slate-200 font-bold rounded flex items-center justify-center transition border border-slate-700"
+                                                                        >–</button>
+                                                                        <span className="font-sans font-extrabold text-amber-400 w-4 text-center text-sm">{p.secrets}</span>
+                                                                        <button
+                                                                            onClick={() => setPlayers(players.map(x => x.id === p.id ? { ...x, secrets: x.secrets + 1 } : x))}
+                                                                            className="w-5 h-5 bg-slate-800 hover:bg-slate-700 active:bg-slate-600 text-cyan-400 font-bold rounded flex items-center justify-center transition border border-slate-700"
+                                                                        >+</button>
+                                                                    </div>
                                                                 </div>
 
-                                                                <div className="flex items-center gap-1 bg-slate-900 px-1.5 py-0.5 rounded border border-slate-800">
-                                                                    <span>Мек: <strong className="text-purple-400">{p.extra}</strong></span>
-                                                                    <button onClick={() => setPlayers(players.map(x => x.id === p.id ? { ...x, extra: x.extra + 1 } : x))} className="text-cyan-400 font-bold px-1">+</button>
-                                                                    <button onClick={() => setPlayers(players.map(x => x.id === p.id ? { ...x, extra: Math.max(0, x.extra - 1) } : x))} className="text-slate-500 font-bold px-1">-</button>
+                                                                {/* Мекатол */}
+                                                                <div className="flex items-center justify-between gap-2 bg-slate-950 px-2.5 py-1 rounded-xl border border-slate-700/80 min-w-[110px] shadow-sm">
+                                                                    <span className="text-[10px] font-bold text-slate-300 uppercase">Мек:</span>
+                                                                    <div className="flex items-center gap-1.5">
+                                                                        <button
+                                                                            onClick={() => setPlayers(players.map(x => x.id === p.id ? { ...x, extra: Math.max(0, x.extra - 1) } : x))}
+                                                                            className="w-5 h-5 bg-slate-800 hover:bg-slate-700 active:bg-slate-600 text-slate-200 font-bold rounded flex items-center justify-center transition border border-slate-700"
+                                                                        >–</button>
+                                                                        <span className="font-sans font-extrabold text-purple-300 w-4 text-center text-sm">{p.extra}</span>
+                                                                        <button
+                                                                            onClick={() => setPlayers(players.map(x => x.id === p.id ? { ...x, extra: x.extra + 1 } : x))}
+                                                                            className="w-5 h-5 bg-slate-800 hover:bg-slate-700 active:bg-slate-600 text-cyan-400 font-bold rounded flex items-center justify-center transition border border-slate-700"
+                                                                        >+</button>
+                                                                    </div>
                                                                 </div>
+
                                                             </div>
 
                                                             {/* Прорыв (TE) */}
                                                             {useTe && (
                                                                 <button
                                                                     onClick={() => setPlayers(players.map(x => x.id === p.id ? { ...x, breakthrough: !x.breakthrough } : x))}
-                                                                    className={`px-2 py-2 rounded-xl text-[10px] font-bold border transition ${p.breakthrough ? 'bg-amber-500 text-black border-amber-400' : 'bg-slate-900 text-slate-600 border-slate-800'
+                                                                    className={`px-2.5 py-3 rounded-xl text-xs font-bold border transition ${p.breakthrough ? 'bg-amber-500 text-black border-amber-400 shadow-md shadow-amber-500/30' : 'bg-slate-950 text-slate-500 border-slate-800'
                                                                         }`}
                                                                     title="Прорыв (TE)"
                                                                 >
                                                                     ⚡
                                                                 </button>
                                                             )}
+
                                                         </div>
                                                     </div>
                                                 );
@@ -753,19 +797,30 @@
                                                     {/* Кнопки отметки игроков */}
                                                     <div className="border-t border-slate-800/80 pt-2.5 grid grid-cols-3 gap-1.5">
                                                         {players.map(p => {
-                                                            const isDone = !!completions[`${p.id}_${obj.id}`];
+                                                            const isDone = obj.completedBy?.includes(p.id);
+                                                            const playerColor = p.color === '#000000' || p.color === '#0f172a' ? '#38bdf8' : (p.color || '#3b82f6');
+
                                                             return (
                                                                 <button
                                                                     key={p.id}
-                                                                    onClick={() => toggleCompletion(p.id, obj.id)}
-                                                                    style={{ borderColor: isDone ? (p.color || '#3b82f6') : undefined }}
-                                                                    className={`p-1.5 rounded-lg border text-[11px] font-bold flex items-center justify-between transition ${isDone
-                                                                            ? "bg-slate-900 text-white shadow-sm"
-                                                                            : "bg-slate-900/50 border-slate-800/80 text-slate-500 hover:border-slate-700"
+                                                                    onClick={() => toggleObjective(obj.id, p.id)}
+                                                                    style={{
+                                                                        borderColor: isDone ? playerColor : undefined
+                                                                    }}
+                                                                    className={`px-2 py-1.5 rounded-lg text-xs font-medium border transition flex items-center justify-between gap-1 ${isDone
+                                                                            ? 'bg-slate-800 text-white font-bold shadow-md'
+                                                                            : 'bg-slate-900/60 text-slate-400 border-slate-800/80 hover:bg-slate-800 hover:text-slate-200'
                                                                         }`}
                                                                 >
                                                                     <span className="truncate">{p.name}</span>
-                                                                    {isDone && <i className="fa-solid fa-check text-[10px]" style={{ color: p.color || '#3b82f6' }}></i>}
+                                                                    {isDone && (
+                                                                        <span
+                                                                            className="text-[10px] w-4 h-4 rounded-full flex items-center justify-center text-black font-extrabold flex-shrink-0"
+                                                                            style={{ backgroundColor: playerColor }}
+                                                                        >
+                                                                            ✓
+                                                                        </span>
+                                                                    )}
                                                                 </button>
                                                             );
                                                         })}
@@ -777,96 +832,96 @@
 
                                 </div>
                             </div>
-                                )
-        }
+                        )
+                        }
 
-                                {/* ВСПЛЫВАЮЩЕЕ ОКНО 1: ВЫБОР КАРТ СТРАТЕГИЙ */}
-                                {
-                                    showStrategyModal && (
-                                        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4">
-                                            <div className="bg-slate-900 border border-amber-500/40 p-6 md:p-8 rounded-3xl max-w-4xl w-full space-y-6 shadow-[0_0_40px_rgba(245,158,11,0.2)] max-h-[90vh] overflow-y-auto">
-                                                <div className="text-center space-y-2">
-                                                    <h3 className="font-orbitron font-black text-2xl md:text-3xl text-amber-400 uppercase">
-                                                        Выбор Карт Стратегий (Раунд {roundNumber})
-                                                    </h3>
-                                                    <p className="text-xs md:text-sm text-slate-400">Выберите карты стратегий для всех игроков на текущий раунд</p>
-                                                </div>
-
-                                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                                    {players.map(p => {
-                                                        const selectedCardId = strategyPicks[p.id];
-                                                        const faction = ALL_FACTIONS.find(f => f.id === p.factionId);
-
-                                                        return (
-                                                            <div key={p.id} className="bg-slate-950 p-4 rounded-2xl border border-slate-800 flex items-center gap-4">
-                                                                <img src={faction?.iconUrl} alt={faction?.name} className="w-10 h-10 object-contain" />
-                                                                <div className="flex-grow">
-                                                                    <div className="font-bold text-sm text-white">{p.name}</div>
-                                                                    <select
-                                                                        value={selectedCardId || ''}
-                                                                        onChange={(e) => {
-                                                                            const cardId = Number(e.target.value);
-                                                                            setStrategyPicks(prev => ({ ...prev, [p.id]: cardId }));
-                                                                        }}
-                                                                        className="bg-slate-900 border border-slate-800 text-xs md:text-sm font-bold text-amber-400 p-2 rounded-xl focus:outline-none w-full mt-1">
-                                                                        <option value="">-- Выберите карту --</option>
-                                                                        {STRATEGY_CARDS.map(card => {
-                                                                            const isPickedByOther = Object.keys(strategyPicks).some(pId => Number(pId) !== p.id && strategyPicks[pId] === card.id);
-                                                                            return (
-                                                                                <option key={card.id} value={card.id} disabled={isPickedByOther} className="bg-slate-900 text-white">
-                                                                                    {card.name} {isPickedByOther ? '🔒' : ''}
-                                                                                </option>
-                                                                            );
-                                                                        })}
-                                                                    </select>
-                                                                </div>
-                                                            </div>
-                                                        );
-                                                    })}
-                                                </div>
-
-                                                <button
-                                                    onClick={confirmStrategyPicksAndStart}
-                                                    className="w-full bg-amber-500 hover:bg-amber-400 text-black font-orbitron font-black text-base md:text-lg py-4 rounded-2xl shadow-xl transition transform active:scale-95 uppercase">
-                                                    Начать Фазу Ходов
-                                                </button>
-                                            </div>
+                        {/* ВСПЛЫВАЮЩЕЕ ОКНО 1: ВЫБОР КАРТ СТРАТЕГИЙ */}
+                        {
+                            showStrategyModal && (
+                                <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4">
+                                    <div className="bg-slate-900 border border-amber-500/40 p-6 md:p-8 rounded-3xl max-w-4xl w-full space-y-6 shadow-[0_0_40px_rgba(245,158,11,0.2)] max-h-[90vh] overflow-y-auto">
+                                        <div className="text-center space-y-2">
+                                            <h3 className="font-orbitron font-black text-2xl md:text-3xl text-amber-400 uppercase">
+                                                Выбор Карт Стратегий (Раунд {roundNumber})
+                                            </h3>
+                                            <p className="text-xs md:text-sm text-slate-400">Выберите карты стратегий для всех игроков на текущий раунд</p>
                                         </div>
-                                    )
-                                }
 
-                                {/* ВСПЛЫВАЮЩЕЕ ОКНО 2: КОНЕЦ РАУНДА */}
-                                {
-                                    showRoundModal && (
-                                        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4">
-                                            <div className="bg-slate-900 border border-cyan-500/40 p-8 rounded-3xl max-w-lg w-full space-y-6 text-center shadow-[0_0_40px_rgba(6,182,212,0.25)]">
-                                                <div className="w-20 h-20 bg-cyan-950 border-2 border-cyan-500 rounded-3xl flex items-center justify-center mx-auto text-cyan-400 text-3xl">
-                                                    <i className="fa-solid fa-flag-checkered"></i>
-                                                </div>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                            {players.map(p => {
+                                                const selectedCardId = strategyPicks[p.id];
+                                                const faction = ALL_FACTIONS.find(f => f.id === p.factionId);
 
-                                                <div>
-                                                    <h3 className="font-orbitron font-black text-2xl text-white">Раунд {roundNumber} Завершен!</h3>
-                                                    <p className="text-sm text-slate-400 mt-2">Все игроки спасовали. Переходим к фазе СТАТУСА</p>
-                                                </div>
-
-                                                <div className="flex items-center gap-4 pt-2">
-                                                    <button
-                                                        onClick={() => setShowRoundModal(false)}
-                                                        className="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold py-3.5 rounded-2xl text-xs md:text-sm transition">
-                                                        Отмена
-                                                    </button>
-                                                    <button
-                                                        onClick={confirmNextRound}
-                                                        className="flex-1 bg-gradient-to-r from-cyan-500 to-blue-600 text-black font-orbitron font-black py-3.5 rounded-2xl text-xs md:text-sm shadow-lg transition transform active:scale-95 uppercase">
-                                                        Раунд {roundNumber + 1} ➔
-                                                    </button>
-                                                </div>
-                                            </div>
+                                                return (
+                                                    <div key={p.id} className="bg-slate-950 p-4 rounded-2xl border border-slate-800 flex items-center gap-4">
+                                                        <img src={faction?.iconUrl} alt={faction?.name} className="w-10 h-10 object-contain" />
+                                                        <div className="flex-grow">
+                                                            <div className="font-bold text-sm text-white">{p.name}</div>
+                                                            <select
+                                                                value={selectedCardId || ''}
+                                                                onChange={(e) => {
+                                                                    const cardId = Number(e.target.value);
+                                                                    setStrategyPicks(prev => ({ ...prev, [p.id]: cardId }));
+                                                                }}
+                                                                className="bg-slate-900 border border-slate-800 text-xs md:text-sm font-bold text-amber-400 p-2 rounded-xl focus:outline-none w-full mt-1">
+                                                                <option value="">-- Выберите карту --</option>
+                                                                {STRATEGY_CARDS.map(card => {
+                                                                    const isPickedByOther = Object.keys(strategyPicks).some(pId => Number(pId) !== p.id && strategyPicks[pId] === card.id);
+                                                                    return (
+                                                                        <option key={card.id} value={card.id} disabled={isPickedByOther} className="bg-slate-900 text-white">
+                                                                            {card.name} {isPickedByOther ? '🔒' : ''}
+                                                                        </option>
+                                                                    );
+                                                                })}
+                                                            </select>
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
                                         </div>
-                                    )
-                                }
 
-                            </main >
+                                        <button
+                                            onClick={confirmStrategyPicksAndStart}
+                                            className="w-full bg-amber-500 hover:bg-amber-400 text-black font-orbitron font-black text-base md:text-lg py-4 rounded-2xl shadow-xl transition transform active:scale-95 uppercase">
+                                            Начать Фазу Ходов
+                                        </button>
+                                    </div>
+                                </div>
+                            )
+                        }
+
+                        {/* ВСПЛЫВАЮЩЕЕ ОКНО 2: КОНЕЦ РАУНДА */}
+                        {
+                            showRoundModal && (
+                                <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4">
+                                    <div className="bg-slate-900 border border-cyan-500/40 p-8 rounded-3xl max-w-lg w-full space-y-6 text-center shadow-[0_0_40px_rgba(6,182,212,0.25)]">
+                                        <div className="w-20 h-20 bg-cyan-950 border-2 border-cyan-500 rounded-3xl flex items-center justify-center mx-auto text-cyan-400 text-3xl">
+                                            <i className="fa-solid fa-flag-checkered"></i>
+                                        </div>
+
+                                        <div>
+                                            <h3 className="font-orbitron font-black text-2xl text-white">Раунд {roundNumber} Завершен!</h3>
+                                            <p className="text-sm text-slate-400 mt-2">Все игроки спасовали. Переходим к фазе СТАТУСА</p>
+                                        </div>
+
+                                        <div className="flex items-center gap-4 pt-2">
+                                            <button
+                                                onClick={() => setShowRoundModal(false)}
+                                                className="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold py-3.5 rounded-2xl text-xs md:text-sm transition">
+                                                Отмена
+                                            </button>
+                                            <button
+                                                onClick={confirmNextRound}
+                                                className="flex-1 bg-gradient-to-r from-cyan-500 to-blue-600 text-black font-orbitron font-black py-3.5 rounded-2xl text-xs md:text-sm shadow-lg transition transform active:scale-95 uppercase">
+                                                Раунд {roundNumber + 1} ➔
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            )
+                        }
+
+                    </main >
 
                 </div >
             );
