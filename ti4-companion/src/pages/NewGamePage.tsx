@@ -1,3 +1,3 @@
-export default function NewGamePage() {
-  return <h1>New Game</h1>;
+export function NewGamePage() {
+  return <h1>Новая партия</h1>;
 }
