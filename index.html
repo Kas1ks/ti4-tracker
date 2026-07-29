@@ -225,18 +225,33 @@
 
             // Функции управления стартом и завершением раунда
             const handleStartRound = () => {
+                const orderedPlayers = [...players].sort((a, b) => {
+                    const aInit = a.lastMinInitiative ?? 99;
+                    const bInit = b.lastMinInitiative ?? 99;
+                    if (aInit !== bInit) return aInit - bInit;
+                    return a.id - b.id;
+                });
+
+                setTurnOrder(orderedPlayers.map(p => p.id));
+                setActiveTurnIdx(0);
+
+                setPlayers(prev =>
+                    prev.map(player => ({
+                        ...player,
+                        passed: false,
+                        strategyPlayed: false
+                    }))
+                );
+
+                setPassed({});
+                setTurnTime(0);
+
                 setRoundActive(true);
-                localStorage.setItem('ti4_roundActive', JSON.stringify(true));
+                localStorage.setItem("ti4_roundActive", JSON.stringify(true));
             };
 
             const handleEndRound = () => {
-                setRoundActive(false);
-                setRoundNumber(prev => {
-                    const nextRound = prev + 1;
-                    localStorage.setItem('ti4_round', JSON.stringify(nextRound));
-                    return nextRound;
-                });
-                localStorage.setItem('ti4_roundActive', JSON.stringify(false));
+                setShowRoundModal(true);
             };
 
             // Дополнения по умолчанию не выбраны
@@ -249,8 +264,7 @@
             const [objectives, setObjectives] = useState(() => JSON.parse(localStorage.getItem('ti4_objectives')) || DEFAULT_OBJECTIVES);
             const [completions, setCompletions] = useState(() => JSON.parse(localStorage.getItem('ti4_completions')) || {});
 
-            const [strategyPicks, setStrategyPicks] = useState({});
-            const [usedStrategies, setUsedStrategies] = useState({});
+
             const [turnOrder, setTurnOrder] = useState([]);
             const [activeTurnIdx, setActiveTurnIdx] = useState(0);
             const [passed, setPassed] = useState({});
@@ -259,7 +273,6 @@
             const [selectedStage, setSelectedStage] = useState(1); // 1 или 2 этап
 
             // Модальные окна
-            const [showStrategyModal, setShowStrategyModal] = useState(false);
             const [showRoundModal, setShowRoundModal] = useState(false);
             const [showStatsModal, setShowStatsModal] = useState(false);
             const [showEndGameModal, setShowEndGameModal] = useState(false);
@@ -277,14 +290,23 @@
                 // Сбрасываем состояния к исходным "чистым" значениям
                 setIsGameActive(false);
                 setRoundNumber(1);
+
                 setTurnOrder([]);
-                setStrategyPicks({});
-                setUsedStrategies({});
+                setActiveTurnIdx(0);
                 setPassed({});
                 setTurnTime(0);
+
+                setRoundActive(false);
+
+                setDraftAssignments({});
+                setDraftQueue([]);
+                setCurrentQueueIndex(0);
+
                 setShowEndGameModal(false);
+
                 setUsePok(false);
                 setUseTe(false);
+
                 setPlayers([]);
             };
 
@@ -294,20 +316,35 @@
             const openStrategyDraft = () => {
                 const cardsPerPlayer = players.length <= 4 ? 2 : 1;
 
-                let sorted = [...players];
-                if (round > 1) {
-                    sorted.sort((a, b) => (a.lastMinInitiative || 99) - (b.lastMinInitiative || 99));
+                // Первый раунд — по порядку игроков.
+                // Со второго — по инициативе прошлого раунда.
+                const draftOrder = [...players];
+
+                if (roundNumber > 1) {
+                    draftOrder.sort((a, b) => {
+                        const aInit = a.lastMinInitiative ?? 99;
+                        const bInit = b.lastMinInitiative ?? 99;
+
+                        if (aInit !== bInit) {
+                            return aInit - bInit;
+                        }
+
+                        return a.id - b.id;
+                    });
                 }
 
-                let queue = [];
-                for (let r = 0; r < cardsPerPlayer; r++) {
-                    sorted.forEach(p => queue.push(p.id));
+                const queue = [];
+
+                for (let i = 0; i < cardsPerPlayer; i++) {
+                    for (const player of draftOrder) {
+                        queue.push(player.id);
+                    }
                 }
 
                 setDraftQueue(queue);
                 setCurrentQueueIndex(0);
                 setDraftAssignments({});
-                setDraftStep('DRAFT');
+                setDraftStep("DRAFT");
                 setShowDraftModal(true);
             };
 
@@ -335,24 +372,49 @@
 
             // 4. Финальное подтверждение драфта
             const confirmDraft = () => {
-                const updatedPlayers = players.map(player => {
-                    const assignedCardIds = Object.keys(draftAssignments)
-                        .filter(cId => draftAssignments[cId] === player.id)
-                        .map(Number);
+                const assignments = new Map();
 
-                    // Используем строго твой STRATEGY_CARDS!
-                    const assignedCards = STRATEGY_CARDS.filter(c => assignedCardIds.includes(c.id));
-                    const minInit = assignedCardIds.length > 0 ? Math.min(...assignedCardIds) : player.id;
+                Object.entries(draftAssignments).forEach(([cardId, playerId]) => {
+                    if (!assignments.has(playerId)) {
+                        assignments.set(playerId, []);
+                    }
+
+                    assignments.get(playerId).push(Number(cardId));
+                });
+
+                const updatedPlayers = players.map(player => {
+                    const cardIds = assignments.get(player.id) || [];
+
+                    cardIds.sort((a, b) => a - b);
+
+                    const cards = cardIds
+                        .map(id => STRATEGY_CARDS.find(card => card.id === id))
+                        .filter(Boolean);
 
                     return {
                         ...player,
-                        cards: assignedCards,
-                        lastMinInitiative: minInit
+                        cards,
+                        lastMinInitiative: cardIds.length
+                            ? cardIds[0]
+                            : player.lastMinInitiative ?? 99
                     };
                 });
 
+                updatedPlayers.sort((a, b) => {
+                    if (a.lastMinInitiative !== b.lastMinInitiative) {
+                        return a.lastMinInitiative - b.lastMinInitiative;
+                    }
+
+                    return a.id - b.id;
+                });
+
                 setPlayers(updatedPlayers);
+
                 setShowDraftModal(false);
+
+                setDraftAssignments({});
+                setDraftQueue([]);
+                setCurrentQueueIndex(0);
             };
 
             // История и загрузка статистики
@@ -482,10 +544,30 @@
                 }
             };
 
-            const activePlayer = turnOrder[activeTurnIdx];
-            const activeStrategyCard = activePlayer ? STRATEGY_CARDS.find(c => c.id === strategyPicks[activePlayer.id]) : null;
-            const isCurrentStrategyPlayed = activeStrategyCard ? !!usedStrategies[activeStrategyCard.id] : false;
+            const activePlayer =
+                players.find(p => p.id === turnOrder[activeTurnIdx]);
 
+            const activeStrategyCard =
+                activePlayer?.cards
+                    ?.slice()
+                    ?.sort((a, b) => a.id - b.id)[0] || null;
+
+            const isCurrentStrategyPlayed =
+                activePlayer
+                    ? !!activePlayer.strategyPlayed
+                    : false;
+
+            const playStrategyCard = () => {
+                if (!activePlayer) return;
+
+                setPlayers(prev =>
+                    prev.map(player =>
+                        player.id === activePlayer.id
+                            ? { ...player, strategyPlayed: true }
+                            : player
+                    )
+                );
+            };
             // Таймер хода
             useEffect(() => {
                 let interval = null;
@@ -583,8 +665,10 @@
                     players,
                     objectives,
                     completions,
-                    strategyPicks,
-                    usedStrategies,
+                    roundActive,
+                    draftAssignments,
+                    draftQueue,
+                    currentQueueIndex,
                     turnOrder,
                     activeTurnIdx,
                     passed,
@@ -649,8 +733,10 @@
                     setPlayers(snap.players || []);
                     setObjectives(snap.objectives || DEFAULT_OBJECTIVES);
                     setCompletions(snap.completions || {});
-                    setStrategyPicks(snap.strategyPicks || {});
-                    setUsedStrategies(snap.usedStrategies || {});
+                    setRoundActive(!!snap.roundActive);
+                    setDraftAssignments(snap.draftAssignments || {});
+                    setDraftQueue(snap.draftQueue || []);
+                    setCurrentQueueIndex(snap.currentQueueIndex || 0);
                     setTurnOrder(snap.turnOrder || []);
                     setActiveTurnIdx(snap.activeTurnIdx || 0);
                     setPassed(snap.passed || {});
@@ -671,33 +757,14 @@
                 setPlayers(snap.players);
                 setObjectives(snap.objectives || DEFAULT_OBJECTIVES);
                 setCompletions(snap.completions || {});
-                setStrategyPicks(snap.strategyPicks || {});
-                setUsedStrategies(snap.usedStrategies || {});
+                setRoundActive(!!snap.roundActive);
+                setDraftAssignments(snap.draftAssignments || {});
+                setDraftQueue(snap.draftQueue || []);
+                setCurrentQueueIndex(snap.currentQueueIndex || 0);
                 setTurnOrder(snap.turnOrder || []);
                 setActiveTurnIdx(snap.activeTurnIdx || 0);
                 setPassed(snap.passed || {});
                 setIsGameActive(true);
-            };
-
-            const confirmStrategyPicksAndStart = () => {
-                const unpickedCount = players.filter(p => !strategyPicks[p.id]).length;
-                if (unpickedCount > 0) {
-                    alert('Все игроки должны выбрать карту стратегии!');
-                    return;
-                }
-
-                const ordered = [...players]
-                    .sort((a, b) => {
-                        const cardA = STRATEGY_CARDS.find(c => c.id === strategyPicks[a.id]);
-                        const cardB = STRATEGY_CARDS.find(c => c.id === strategyPicks[b.id]);
-                        return (cardA?.initiative || 99) - (cardB?.initiative || 99);
-                    });
-
-                setTurnOrder(ordered);
-                setActiveTurnIdx(0);
-                setTurnTime(0);
-                setPassed({});
-                setShowStrategyModal(false);
             };
 
             const nextTurn = () => {
@@ -706,12 +773,12 @@
                 let nextIdx = (activeTurnIdx + 1) % turnOrder.length;
                 let checkedCount = 0;
 
-                while (passed[turnOrder[nextIdx].id] && checkedCount < turnOrder.length) {
+                while (passed[turnOrder[nextIdx]] && checkedCount < turnOrder.length) {
                     nextIdx = (nextIdx + 1) % turnOrder.length;
                     checkedCount++;
                 }
 
-                const activeCount = turnOrder.filter(p => !passed[p.id]).length;
+                const activeCount = turnOrder.filter(id => !passed[id]).length;
                 if (activeCount === 0) {
                     setShowRoundModal(true);
                     return;
@@ -730,7 +797,7 @@
                 const updatedPassed = { ...passed, [pId]: true };
                 setPassed(updatedPassed);
 
-                const remainingActive = turnOrder.filter(p => !updatedPassed[p.id]);
+                const remainingActive = turnOrder.filter(id => !updatedPassed[id]);
 
                 if (remainingActive.length === 0) {
                     setShowRoundModal(true);
@@ -741,14 +808,34 @@
 
             const confirmNextRound = () => {
                 setShowRoundModal(false);
-                setRoundNumber(prev => prev + 1);
-                setStrategyPicks({});
-                setUsedStrategies({});
+
+                // Завершаем текущий раунд
+                setRoundActive(false);
+
+                // Следующий раунд
+                setRoundNumber(prev => {
+                    const next = prev + 1;
+                    localStorage.setItem("ti4_round", JSON.stringify(next));
+                    return next;
+                });
+
+                // Сбрасываем игровое состояние игроков
+                setPlayers(prev =>
+                    prev.map(player => ({
+                        ...player,
+                        strategyPlayed: false,
+                        passed: false,
+                        cards: []
+                    }))
+                );
+
+                // Очередь начинается заново после нового драфта
                 setTurnOrder([]);
                 setActiveTurnIdx(0);
                 setPassed({});
                 setTurnTime(0);
-                setShowStrategyModal(true);
+
+                localStorage.setItem("ti4_roundActive", JSON.stringify(false));
             };
 
             const isFactionTaken = (factionId, currentPlayerId) => {
@@ -815,13 +902,6 @@
                                             ЦЕЛЬ: {targetScore} ПО
                                         </div>
 
-                                        {turnOrder.length === 0 && (
-                                            <button
-                                                onClick={() => setShowStrategyModal(true)}
-                                                className="bg-amber-500 hover:bg-amber-400 text-black font-extrabold px-4 py-2 rounded-xl text-xs md:text-sm font-orbitron uppercase shadow transition">
-                                                <i className="fa-solid fa-layer-group mr-1.5"></i> Выбор Стратегий
-                                            </button>
-                                        )}
                                         <button
                                             onClick={exportGameToken}
                                             className="bg-cyan-950/80 hover:bg-cyan-900 text-cyan-400 font-extrabold px-3 py-2 rounded-xl text-xs md:text-sm border border-cyan-800 transition flex items-center gap-1.5 shadow"
@@ -881,7 +961,7 @@
                                             <div className="font-orbitron font-extrabold text-sm md:text-base text-amber-300">{activeStrategyCard.name}</div>
                                         </div>
                                         <button
-                                            onClick={() => setUsedStrategies(prev => ({ ...prev, [activeStrategyCard.id]: !prev[activeStrategyCard.id] }))}
+                                            onClick={playStrategyCard}
                                             className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition ${isCurrentStrategyPlayed
                                                 ? 'bg-emerald-950 border-emerald-500 text-emerald-300'
                                                 : 'bg-amber-500 hover:bg-amber-400 text-black border-amber-400 shadow'
@@ -1153,11 +1233,17 @@
                                         </div>
 
                                         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
-                                            {turnOrder.map((p, idx) => {
+                                            {turnOrder.map((playerId, idx) => {
+                                                const p = players.find(x => x.id === playerId);
+                                                if (!p) return null;
                                                 const isCurrent = activePlayer && activePlayer.id === p.id;
                                                 const faction = ALL_FACTIONS.find(f => f.id === p.factionId);
                                                 const isBlack = p.color === '#000000' || p.color === '#090d16';
                                                 const cardBorderColor = isBlack ? '#f8fafc' : (p.color || '#3b82f6');
+
+                                                const playerCards = (p.cards || [])
+                                                    .slice()
+                                                    .sort((a, b) => a.initiative - b.initiative);
 
                                                 return (
                                                     <div
@@ -1170,7 +1256,7 @@
                                                     >
                                                         <div className="flex items-center justify-between gap-1 mb-2">
                                                             <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 border border-amber-500/30">
-                                                                Ин. {STRATEGY_CARDS.find(c => c.id === strategyPicks[p.id])?.initiative || '-'}
+                                                                Ин. {playerCards[0]?.initiative ?? '-'}
                                                             </span>
                                                         </div>
 
@@ -1184,7 +1270,9 @@
                                                             <div className="truncate">
                                                                 <div className="font-bold text-xs text-white truncate">{p.name}</div>
                                                                 <div className="text-[10px] text-amber-300/80 truncate">
-                                                                    {STRATEGY_CARDS.find(c => c.id === strategyPicks[p.id])?.name || 'Без карты'}
+                                                                    {playerCards.length
+                                                                        ? playerCards.map(card => card.name).join(', ')
+                                                                        : 'Без карты'}
                                                                 </div>
                                                             </div>
                                                         </div>
@@ -1215,6 +1303,7 @@
                                         <div className="space-y-2.5 flex flex-col">
                                             {sortedPlayersForBoard.map(p => {
                                                 const score = getPlayerScore(p.id);
+                                                const playerCards = (p.cards || []).slice().sort((a, b) => a.id - b.id);
                                                 const maxScore = Math.max(...players.map(x => getPlayerScore(x.id)), 0);
                                                 const isLeader = score === maxScore && score > 0;
                                                 const faction = ALL_FACTIONS.find(f => f.id === p.factionId);
