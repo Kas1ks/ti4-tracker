@@ -2,586 +2,488 @@
 <html lang="ru">
 
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>TI4 Companion - Cloudflare Edition</title>
-  <!-- React & ReactDOM -->
-  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
-  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
-  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@600;800;900&family=Rajdhani:wght@600;700&display=swap" rel="stylesheet">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>TI4 Companion - XL Dashboard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@700&family=Rajdhani:wght@700&family=Russo+One&display=swap"
+        rel="stylesheet">
 
-  <style>
-    body {
-      font-family: 'Rajdhani', sans-serif;
-      background-color: #030712;
-      color: #f3f4f6;
-      -webkit-tap-highlight-color: transparent;
-    }
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 
-    .font-orbitron {
-      font-family: 'Orbitron', sans-serif;
-    }
+    <style>
+        .font-russo {
+            font-family: 'Russo One', sans-serif;
+        }
 
-    ::-webkit-scrollbar {
-      width: 6px;
-      height: 6px;
-    }
+        .font-rajdhani {
+            font-family: 'Rajdhani', sans-serif;
+        }
 
-    ::-webkit-scrollbar-track {
-      background: #0b0f19;
-    }
-
-    ::-webkit-scrollbar-thumb {
-      background: #1e293b;
-      border-radius: 3px;
-    }
-  </style>
+        .font-chakra {
+            font-family: 'Chakra Petch', sans-serif;
+        }
+    </style>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
 </head>
 
-<body class="min-h-screen pb-20 md:pb-10">
+<body class="bg-slate-950 text-slate-100 min-h-screen selection:bg-amber-500 selection:text-slate-950">
+    <div id="root"></div>
 
-  <div id="root"></div>
+    <script type="text/babel">
+        const { useState, useEffect } = React;
 
-  <script type="text/babel">
-    const { useState } = React;
+        // Константа реальных карт стратегий TI4
+        const STRATEGY_CARDS_DATA = [
+            { id: 1, name: "Leadership", ruName: "Инициатива", color: "from-red-600 to-red-800" },
+            { id: 2, name: "Diplomacy", ruName: "Дипломатия", color: "from-amber-500 to-amber-700" },
+            { id: 3, name: "Politics", ruName: "Политика", color: "from-yellow-500 to-yellow-700" },
+            { id: 4, name: "Construction", ruName: "Строительство", color: "from-green-600 to-green-800" },
+            { id: 5, name: "Trade", ruName: "Торговля", color: "from-teal-500 to-teal-700" },
+            { id: 6, name: "Warfare", ruName: "Война", color: "from-cyan-600 to-cyan-800" },
+            { id: 7, name: "Technology", ruName: "Технологии", color: "from-blue-600 to-blue-800" },
+            { id: 8, name: "Imperial", ruName: "Империя", color: "from-purple-600 to-purple-800" }
+        ];
 
-    const ALL_FACTIONS = [
-      // Базовая игра
-      { id: 'sol', name: 'Федерация Сол', color: '#3b82f6', exp: 'base', iconUrl: './factions/federation-of-sol.webp' },
-      { id: 'jolnar', name: 'Университеты Джол-Нара', color: '#06b6d4', exp: 'base', iconUrl: './factions/universities-of-jol-nar.webp' },
-      { id: 'hacan', name: 'Эмират Хакан', color: '#eab308', exp: 'base', iconUrl: './factions/emirates-of-hacan.webp' },
-      { id: 'xxcha', name: 'Королевство Ззча', color: '#22c55e', exp: 'base', iconUrl: './factions/xxcha-kingdom.webp' },
-      { id: 'nekro', name: 'Вирус Некро', color: '#ef4444', exp: 'base', iconUrl: './factions/nekro-virus.webp' },
-      { id: 'saar', name: 'Кланы Сааров', color: '#a855f7', exp: 'base', iconUrl: './factions/clan-of-saar.webp' },
-      { id: 'l1z1x', name: 'Иерархия L1Z1X', color: '#64748b', exp: 'base', iconUrl: './factions/l1z1x-mindnet.webp' },
-      { id: 'letnev', name: 'Баронат Летнев', color: '#475569', exp: 'base', iconUrl: './factions/barony-of-letnev.webp' },
-      { id: 'arborec', name: 'Древостой Арбореков', color: '#15803d', exp: 'base', iconUrl: './factions/arborec.webp' },
-      { id: 'creuss', name: 'Призраки Крёсса', color: '#38bdf8', exp: 'base', iconUrl: './factions/ghosts-of-creuss.webp' },
-      { id: 'mentak', name: 'Коалиция Ментака', color: '#f97316', exp: 'base', iconUrl: './factions/mentak-coalition.webp' },
-      { id: 'muaat', name: 'Уполномоченные Муаата', color: '#dc2626', exp: 'base', iconUrl: './factions/embers-of-muaat.webp' },
-      { id: 'naalu', name: 'Валлиада Наалу', color: '#84cc16', exp: 'base', iconUrl: './factions/naalu-collective.webp' },
-      { id: 'saardakk', name: 'Сардакк Ноур', color: '#991b1b', exp: 'base', iconUrl: './factions/sardakk-norr.webp' },
-      { id: 'yin', name: 'Братство Инь', color: '#e2e8f0', exp: 'base', iconUrl: './factions/yin-brotherhood.webp' },
-      { id: 'yssaril', name: 'Племена Иссарилов', color: '#166534', exp: 'base', iconUrl: './factions/yssaril-tribes.webp' },
-      { id: 'winnu', name: 'Винну', color: '#a855f7', exp: 'base', iconUrl: './factions/winnu.webp' },
+        function App() {
+            // Основное состояние игры
+            const [players, setPlayers] = useState([
+                { id: 1, name: "Игрок 1", faction: "", cards: [], lastMinInitiative: 1 },
+                { id: 2, name: "Игрок 2", faction: "", cards: [], lastMinInitiative: 2 },
+                { id: 3, name: "Игрок 3", faction: "", cards: [], lastMinInitiative: 3 }
+            ]);
+            const [round, setRound] = useState(1);
+            const [gameStarted, setGameStarted] = useState(false);
+            const [roundActive, setRoundActive] = useState(false);
+            const [showEndGameModal, setShowEndGameModal] = useState(false);
 
-      // Prophecy of Kings (PoK)
-      { id: 'argent', name: 'Летный Альянс Аргентов', color: '#facc15', exp: 'pok', iconUrl: './factions/argent-flight.webp' },
-      { id: 'empyrean', name: 'Эмпиреи', color: '#818cf8', exp: 'pok', iconUrl: './factions/empyrean.webp' },
-      { id: 'mahact', name: 'Генетическая Империя Махакт', color: '#fbbf24', exp: 'pok', iconUrl: './factions/mahact-gene-sorcerers.webp' },
-      { id: 'naazrokha', name: 'Альянс Нааз-Роха', color: '#10b981', exp: 'pok', iconUrl: './factions/naaz-rokha-alliance.webp' },
-      { id: 'nomad', name: 'Кочевник (Nomad)', color: '#f43f5e', exp: 'pok', iconUrl: './factions/nomad.webp' },
-      { id: 'titans', name: 'Титаны Ула', color: '#a1a1aa', exp: 'pok', iconUrl: './factions/titans-of-ul.webp' },
-      { id: 'vuilraith', name: 'Кабала Вуил’Райт', color: '#b91c1c', exp: 'pok', iconUrl: './factions/vuil-raith-cabal.webp' },
+            // Состояние окна выбора стратегий (Draft Modal)
+            const [showDraftModal, setShowDraftModal] = useState(false);
+            const [draftStep, setDraftStep] = useState('DRAFT'); // 'DRAFT' | 'CONFIRM'
+            const [draftQueue, setDraftQueue] = useState([]);
+            const [currentQueueIndex, setCurrentQueueIndex] = useState(0);
+            const [draftAssignments, setDraftAssignments] = useState({}); // cardId -> playerId
 
-      // Thunder's Edge (TE) и модули
-      { id: 'keleres_argent', name: 'Совет Келерес (Аргенты)', color: '#38bdf8', exp: 'te', iconUrl: './factions/council-keleres-argent.webp' },
-      { id: 'keleres_mentak', name: 'Совет Келерес (Ментак)', color: '#38bdf8', exp: 'te', iconUrl: './factions/council-keleres-mentak.webp' },
-      { id: 'keleres_xxcha', name: 'Совет Келерес (Ззча)', color: '#38bdf8', exp: 'te', iconUrl: './factions/council-keleres-xxcha.webp' },
-      { id: 'crimson', name: 'Багряное Восстание', color: '#dc2626', exp: 'te', iconUrl: './factions/crimson-rebellion.webp' },
-      { id: 'deepwrought', name: 'Школа Глубин', color: '#0284c7', exp: 'te', iconUrl: './factions/deepwrought-scholarate.webp' },
-      { id: 'firmament', name: 'Твердь Небесная', color: '#475569', exp: 'te', iconUrl: './factions/firmament-obsidian.webp' },
-      { id: 'bastion', name: 'Последний Оплот', color: '#ca8a04', exp: 'te', iconUrl: './factions/last-bastion.webp' },
-      { id: 'ralnel', name: 'Консорциум Рал-Нель', color: '#2563eb', exp: 'te', iconUrl: './factions/ral-nel-consortium.webp' }
-    ];
+            // Добавление / Удаление игроков на старте
+            const addPlayer = () => {
+                if (players.length >= 8) return;
+                const newId = players.length + 1;
+                setPlayers([...players, {
+                    id: newId,
+                    name: `Игрок ${newId}`,
+                    faction: "",
+                    cards: [],
+                    lastMinInitiative: newId
+                }]);
+            };
 
-    const STRATEGY_CARDS = [
-      { id: 1, name: '1. Величие', initiative: 1, color: 'border-red-500 bg-red-950/40 text-red-300' },
-      { id: 2, name: '2. Дипломатия', initiative: 2, color: 'border-amber-500 bg-amber-950/40 text-amber-300' },
-      { id: 3, name: '3. Политика', initiative: 3, color: 'border-yellow-500 bg-yellow-950/40 text-yellow-300' },
-      { id: 4, name: '4. Строительство', initiative: 4, color: 'border-emerald-500 bg-emerald-950/40 text-emerald-300' },
-      { id: 5, name: '5. Торговля', initiative: 5, color: 'border-teal-500 bg-teal-950/40 text-teal-300' },
-      { id: 6, name: '6. Война', initiative: 6, color: 'border-cyan-500 bg-cyan-950/40 text-cyan-300' },
-      { id: 7, name: '7. Технологии', initiative: 7, color: 'border-blue-500 bg-blue-950/40 text-blue-300' },
-      { id: 8, name: '8. Экспансия', initiative: 8, color: 'border-purple-500 bg-purple-950/40 text-purple-300' }
-    ];
+            const removePlayer = (id) => {
+                if (players.length <= 3) return;
+                setPlayers(players.filter(p => p.id !== id));
+            };
 
-    const DEFAULT_OBJECTIVES = [
-      { id: 'obj_1', title: 'Укрепить границы', stage: 1, points: 1, desc: 'Иметь сооружения на 2 планетах вне родной системы' },
-      { id: 'obj_2', title: 'Расширить владения', stage: 1, points: 1, desc: 'Контролировать 6 планет вне родной системы' }
-    ];
+            const updatePlayerName = (id, name) => {
+                setPlayers(players.map(p => p.id === id ? { ...p, name } : p));
+            };
 
-    function App() {
-      const [isGameActive, setIsGameActive] = useState(false);
+            const startGame = () => {
+                setGameStarted(true);
+            };
 
-      const [targetScore, setTargetScore] = useState(10);
-      const [activeTab, setActiveTab] = useState('scoreboard');
+            // Логика запуска модального окна выбора карт
+            const openStrategyDraft = () => {
+                const cardsPerPlayer = players.length <= 4 ? 2 : 1;
+                
+                // Определение порядка выбора:
+                // Раунд 1: По порядку добавления игроков
+                // Раунд > 1: По минимальной инициативе карт прошлого раунда
+                let sorted = [...players];
+                if (round > 1) {
+                    sorted.sort((a, b) => (a.lastMinInitiative || 99) - (b.lastMinInitiative || 99));
+                }
 
-      const [usePok, setUsePok] = useState(true);
-      const [useTe, setUseTe] = useState(true);
+                let queue = [];
+                for (let r = 0; r < cardsPerPlayer; r++) {
+                    sorted.forEach(p => queue.push(p.id));
+                }
 
-      const [players, setPlayers] = useState([
-        { id: 1, name: 'Игрок 1', factionId: 'sol', secrets: 0, extra: 0, breakthrough: false },
-        { id: 2, name: 'Игрок 2', factionId: 'jolnar', secrets: 0, extra: 0, breakthrough: false },
-        { id: 3, name: 'Игрок 3', factionId: 'hacan', secrets: 0, extra: 0, breakthrough: false },
-        { id: 4, name: 'Игрок 4', factionId: 'xxcha', secrets: 0, extra: 0, breakthrough: false },
-        { id: 5, name: 'Игрок 5', factionId: 'nekro', secrets: 0, extra: 0, breakthrough: false },
-        { id: 6, name: 'Игрок 6', factionId: 'saar', secrets: 0, extra: 0, breakthrough: false },
-      ]);
+                setDraftQueue(queue);
+                setCurrentQueueIndex(0);
+                setDraftAssignments({});
+                setDraftStep('DRAFT');
+                setShowDraftModal(true);
+            };
 
-      const [objectives, setObjectives] = useState(DEFAULT_OBJECTIVES);
-      const [completions, setCompletions] = useState({});
+            const handleSelectCard = (cardId) => {
+                const currentPlayerId = draftQueue[currentQueueIndex];
+                const updatedAssignments = { ...draftAssignments, [cardId]: currentPlayerId };
+                setDraftAssignments(updatedAssignments);
 
-      const [strategyPicks, setStrategyPicks] = useState({});
-      const [turnOrder, setTurnOrder] = useState([]);
-      const [activeTurnIdx, setActiveTurnIdx] = useState(0);
-      const [passed, setPassed] = useState({});
+                const nextIndex = currentQueueIndex + 1;
+                if (nextIndex >= draftQueue.length) {
+                    setDraftStep('CONFIRM');
+                } else {
+                    setCurrentQueueIndex(nextIndex);
+                }
+            };
 
-      const availableFactions = ALL_FACTIONS.filter(f => {
-        if (f.exp === 'base') return true;
-        if (f.exp === 'pok' && usePok) return true;
-        if (f.exp === 'te' && useTe) return true;
-        return false;
-      });
+            const handleReassignCard = (cardId, newPlayerId) => {
+                setDraftAssignments({
+                    ...draftAssignments,
+                    [cardId]: parseInt(newPlayerId)
+                });
+            };
 
-      const addPlayer = () => {
-        if (players.length >= 8) return;
-        const newId = Date.now();
-        const unassignedFaction = availableFactions.find(f => !players.some(p => p.factionId === f.id)) || availableFactions[0];
-        setPlayers([...players, { id: newId, name: `Игрок ${players.length + 1}`, factionId: unassignedFaction.id, secrets: 0, extra: 0, breakthrough: false }]);
-      };
+            const confirmDraft = () => {
+                // Обновляем выбранные карты у игроков
+                const updatedPlayers = players.map(player => {
+                    const assignedCardIds = Object.keys(draftAssignments)
+                        .filter(cId => draftAssignments[cId] === player.id)
+                        .map(Number);
 
-      const removePlayer = (id) => {
-        if (players.length <= 2) return;
-        setPlayers(players.filter(p => p.id !== id));
-      };
+                    const assignedCards = STRATEGY_CARDS_DATA.filter(c => assignedCardIds.includes(c.id));
+                    const minInit = assignedCards.length > 0 ? Math.min(...assignedCards.map(c => c.id)) : player.id;
 
-      const getPlayerScore = (playerId) => {
-        const p = players.find(x => x.id === playerId);
-        if (!p) return 0;
-        let score = p.secrets + p.extra;
-        objectives.forEach(obj => {
-          if (completions[`${playerId}_${obj.id}`]) score += obj.points;
-        });
-        return score;
-      };
+                    return {
+                        ...player,
+                        cards: assignedCards,
+                        lastMinInitiative: minInit
+                    };
+                });
 
-      const toggleCompletion = (pId, oId) => {
-        const key = `${pId}_${oId}`;
-        setCompletions(prev => ({ ...prev, [key]: !prev[key] }));
-      };
+                setPlayers(updatedPlayers);
+                setShowDraftModal(false);
+            };
 
-      const addCustomObj = () => {
-        const title = prompt('Введите название цели:');
-        if (!title) return;
-        const stage = prompt('Этап цели (1 или 2):', '1');
-        const points = Number(stage) === 2 ? 2 : 1;
-        setObjectives(prev => [...prev, { id: 'custom_' + Date.now(), title, stage: Number(stage), points, desc: 'Пользовательская цель' }]);
-      };
+            // Управление раундами
+            const handleStartRound = () => {
+                setRoundActive(true);
+            };
 
-      const startActionPhase = () => {
-        const ordered = [...players]
-          .filter(p => strategyPicks[p.id])
-          .sort((a, b) => (strategyPicks[a.id] || 99) - (strategyPicks[b.id] || 99));
+            const handleEndRound = () => {
+                setRoundActive(false);
+                setRound(prev => prev + 1);
+            };
 
-        if (ordered.length === 0) {
-          alert('Выберите карты стратегий для игроков!');
-          return;
-        }
-        setTurnOrder(ordered);
-        setActiveTurnIdx(0);
-        setPassed({});
-      };
+            const resetGameState = () => {
+                setGameStarted(false);
+                setRoundActive(false);
+                setRound(1);
+                setShowEndGameModal(false);
+            };
 
-      const nextTurn = () => {
-        if (turnOrder.length === 0) return;
-        let next = (activeTurnIdx + 1) % turnOrder.length;
-        let count = 0;
-        while (passed[turnOrder[next].id] && count < turnOrder.length) {
-          next = (next + 1) % turnOrder.length;
-          count++;
-        }
-        setActiveTurnIdx(next);
-      };
-
-      const passTurn = (pId) => {
-        setPassed(prev => ({ ...prev, [pId]: true }));
-        nextTurn();
-      };
-
-      const activePlayer = turnOrder[activeTurnIdx];
-
-      const isFactionTaken = (factionId, currentPlayerId) => {
-        return players.some(
-          p => p.id !== currentPlayerId && p.factionId === factionId
-        );
-      };
-
-      return (
-        <div className="max-w-7xl mx-auto min-h-screen flex flex-col bg-slate-950 text-slate-100">
-
-          {/* ХЕДЕР */}
-          <header className="bg-slate-900 border-b border-slate-800 p-4 sticky top-0 z-30 shadow-xl">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <i className="fa-solid fa-khanda text-cyan-400 text-xl"></i>
-                <span className="font-orbitron font-extrabold text-lg md:text-xl text-white tracking-wider">TI4 TRACKER</span>
-              </div>
-
-              <div className="flex items-center gap-3">
-                {isGameActive ? (
-                  <>
-                    <nav className="flex bg-slate-950 p-1 rounded-xl border border-slate-800">
-                      <button onClick={() => setActiveTab('scoreboard')} className={`px-3 sm:px-4 py-1.5 rounded-lg text-xs font-bold transition ${activeTab === 'scoreboard' ? 'bg-cyan-500 text-black' : 'text-slate-400'}`}>
-                        <i className="fa-solid fa-trophy mr-1"></i> Счёт & Задания
-                      </button>
-                      <button onClick={() => setActiveTab('turns')} className={`px-3 sm:px-4 py-1.5 rounded-lg text-xs font-bold transition ${activeTab === 'turns' ? 'bg-cyan-500 text-black' : 'text-slate-400'}`}>
-                        <i className="fa-solid fa-stopwatch mr-1"></i> Ходы
-                      </button>
-                    </nav>
-
-                    <button
-                      onClick={() => setIsGameActive(false)}
-                      className="bg-red-900/80 hover:bg-red-800 text-red-200 font-extrabold px-3 py-1.5 rounded-xl text-xs border border-red-700 transition flex items-center gap-1 shadow">
-                      <i className="fa-solid fa-square-xmark"></i>
-                      <span className="hidden sm:inline">Завершить игру</span>
-                    </button>
-                  </>
-                ) : (
-                  <div className="bg-cyan-950/80 text-cyan-400 border border-cyan-800 px-3 py-1 rounded-xl font-bold text-xs uppercase tracking-wider">
-                    Режим Настройки
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Очередность хода в верхушке во время фазы действий */}
-            {isGameActive && turnOrder.length > 0 && activePlayer && (
-              <div className="bg-slate-950 border border-cyan-500/50 p-3 rounded-2xl flex items-center justify-between mt-3 shadow-[0_0_15px_rgba(6,182,212,0.15)]">
-                <div className="flex items-center gap-3">
-                  {(() => {
-                    const fact = ALL_FACTIONS.find(f => f.id === activePlayer.factionId);
-                    return (
-                      <div className="w-10 h-10 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-center p-1 overflow-hidden shadow">
-                        <img src={fact?.iconUrl} alt={fact?.name} className="w-full h-full object-contain" />
-                      </div>
-                    );
-                  })()}
-                  <div>
-                    <div className="text-[10px] text-cyan-400 font-bold uppercase tracking-wider">Сейчас ходит:</div>
-                    <div className="font-bold text-white text-base md:text-lg leading-none">{activePlayer.name}</div>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <button onClick={nextTurn} className="bg-cyan-500 text-black font-extrabold px-4 py-1.5 rounded-xl text-xs md:text-sm flex items-center gap-1 shadow">
-                    Завершить ход <i className="fa-solid fa-forward"></i>
-                  </button>
-                  <button onClick={() => passTurn(activePlayer.id)} className="bg-red-950 text-red-300 font-bold px-3 py-1.5 rounded-xl text-xs border border-red-800">
-                    Пас
-                  </button>
-                </div>
-              </div>
-            )}
-          </header>
-
-          {/* КОНТЕНТ */}
-          <main className="p-4 md:p-6 flex-grow space-y-6">
-
-            {/* 1. ЭКРАН НАСТРОЙКИ (Показывается ДО старта) */}
-            {!isGameActive && (
-              <div className="max-w-4xl mx-auto space-y-6">
-
-                {/* Параметры партии */}
-                <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl space-y-4">
-                  <h2 className="font-orbitron font-bold text-base text-amber-400 uppercase flex items-center gap-2">
-                    <i className="fa-solid fa-sliders"></i> Параметры Партии
-                  </h2>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
-                    <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 space-y-2">
-                      <label className="text-xs font-bold text-slate-400 uppercase">Цель Победных Очков (ПО):</label>
-                      <div className="flex gap-2">
-                        {[10, 12, 14].map(score => (
-                          <button
-                            key={score}
-                            onClick={() => setTargetScore(score)}
-                            className={`flex-1 py-2 rounded-xl font-orbitron font-black text-sm border transition ${targetScore === score ? 'bg-amber-500 text-black border-amber-400 shadow-lg' : 'bg-slate-900 border-slate-800 text-slate-400'}`}>
-                            {score} ПО
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-
-                    <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 space-y-2">
-                      <label className="text-xs font-bold text-slate-400 uppercase">Используемые Дополнения:</label>
-                      <div className="flex gap-3">
-                        <button
-                          onClick={() => setUsePok(!usePok)}
-                          className={`flex-1 py-2 px-3 rounded-xl font-bold text-xs border flex items-center justify-between transition ${usePok ? 'bg-purple-950 border-purple-500 text-purple-300' : 'bg-slate-900 border-slate-800 text-slate-600'}`}>
-                          <span>Prophecy of Kings</span>
-                          <i className={`fa-solid ${usePok ? 'fa-check-circle text-purple-400' : 'fa-circle text-slate-700'}`}></i>
-                        </button>
-                        <button
-                          onClick={() => setUseTe(!useTe)}
-                          className={`flex-1 py-2 px-3 rounded-xl font-bold text-xs border flex items-center justify-between transition ${useTe ? 'bg-amber-950 border-amber-500 text-amber-300' : 'bg-slate-900 border-slate-800 text-slate-600'}`}>
-                          <span>Thunder's Edge</span>
-                          <i className={`fa-solid ${useTe ? 'fa-check-circle text-amber-400' : 'fa-circle text-slate-700'}`}></i>
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Выбор игроков и фракций с блокировкой повторов */}
-                <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl space-y-4">
-                  <div className="flex items-center justify-between">
-                    <h2 className="font-orbitron font-bold text-base text-cyan-400 uppercase flex items-center gap-2">
-                      <i className="fa-solid fa-users"></i> Игроки и Фракции ({players.length})
-                    </h2>
-                    {players.length < 8 && (
-                      <button onClick={addPlayer} className="bg-slate-800 hover:bg-slate-700 text-cyan-400 border border-slate-700 font-bold px-3 py-1.5 rounded-xl text-xs transition flex items-center gap-1">
-                        <i className="fa-solid fa-user-plus"></i> Добавить игрока
-                      </button>
-                    )}
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {players.map((p, idx) => {
-                      const faction = ALL_FACTIONS.find(f => f.id === p.factionId);
-
-                      return (
-                        <div key={p.id} className="bg-slate-950 p-4 rounded-xl border border-slate-800 space-y-3 relative">
-                          <div className="flex items-center justify-between gap-3">
-                            <span className="font-orbitron font-bold text-xs text-slate-500">#{idx + 1}</span>
-                            <input
-                              type="text"
-                              value={p.name}
-                              onChange={(e) => setPlayers(players.map(x => x.id === p.id ? { ...x, name: e.target.value } : x))}
-                              className="bg-slate-900 border border-slate-800 px-3 py-1 rounded-lg font-bold text-sm text-white focus:outline-none focus:border-cyan-400 flex-grow"
-                            />
-                            {players.length > 2 && (
-                              <button onClick={() => removePlayer(p.id)} className="text-slate-600 hover:text-red-400 p-1 transition">
-                                <i className="fa-solid fa-trash-can"></i>
-                              </button>
-                            )}
-                          </div>
-
-                          <div className="flex items-center gap-3 bg-slate-900 p-2 rounded-lg border border-slate-800">
-                            <div className="w-10 h-10 rounded-lg bg-slate-950 border border-slate-800 flex items-center justify-center p-1 overflow-hidden flex-shrink-0">
-                              <img src={faction?.iconUrl} alt={faction?.name} className="w-full h-full object-contain" />
+            return (
+                <div className="min-h-screen pb-12">
+                    {/* Header */}
+                    <header className="bg-slate-900/80 backdrop-blur border-b border-slate-800 sticky top-0 z-40 px-4 py-3">
+                        <div className="max-w-7xl mx-auto flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                                <i className="fa-solid fa-[#1e293b] fa-shuttle-space text-amber-500 text-2xl"></i>
+                                <h1 className="font-russo text-lg md:text-xl text-amber-400 tracking-wider">
+                                    TI4 COMPANION
+                                </h1>
                             </div>
-                            <div className="flex-grow">
-                              <div className="text-[10px] uppercase font-bold text-slate-500">Фракция:</div>
-                              <select
-                                value={p.factionId}
-                                onChange={(e) => setPlayers(players.map(x => x.id === p.id ? { ...x, factionId: e.target.value } : x))}
-                                className="bg-transparent text-xs font-bold text-amber-400 focus:outline-none w-full">
-                                {availableFactions.map(f => (
-                                  <option
-                                    key={f.id}
-                                    value={f.id}
-                                    disabled={isFactionTaken(f.id, p.id)}
-                                    className="bg-slate-900 text-white"
-                                  >
-                                    {f.name}{isFactionTaken(f.id, p.id) ? " 🔒" : ""}
-                                  </option>
-                                ))}
-                              </select>
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                {/* КНОПКА СТАРТА */}
-                <button
-                  onClick={() => setIsGameActive(true)}
-                  className="w-full bg-gradient-to-r from-cyan-500 via-blue-600 to-indigo-600 text-black font-orbitron font-black text-lg py-4 rounded-2xl shadow-xl hover:opacity-95 transition transform active:scale-95 uppercase tracking-wider flex items-center justify-center gap-2">
-                  <i className="fa-solid fa-play"></i> Начать партию
-                </button>
-
-              </div>
-            )}
-
-            {/* 2. ЭКРАН АКТИВНОЙ ИГРЫ */}
-            {isGameActive && (
-              <>
-                {/* ГЛАВНАЯ ВКТАДКА: СЧЁТ + ПУБЛИЧНЫЕ ЗАДАНИЯ НА ОДНОЙ СТРАНИЦЕ */}
-                {activeTab === 'scoreboard' && (
-                  <div className="space-y-8">
-                    
-                    {/* Табло ПО */}
-                    <div className="space-y-4">
-                      <h2 className="font-orbitron font-bold text-base text-white uppercase flex items-center justify-between">
-                        <span>Игровое табло</span>
-                        <span className="text-xs text-amber-400 bg-slate-900 border border-slate-800 px-3 py-1 rounded-xl">Цель: {targetScore} ПО</span>
-                      </h2>
-
-                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                        {players.map(p => {
-                          const score = getPlayerScore(p.id);
-                          const faction = ALL_FACTIONS.find(f => f.id === p.factionId);
-                          const isWinner = score >= targetScore;
-
-                          return (
-                            <div key={p.id} className={`p-4 rounded-2xl border flex flex-col justify-between space-y-3 ${isWinner ? 'bg-amber-950/40 border-amber-500 animate-pulse' : 'bg-slate-900 border-slate-800'}`}>
-                              <div className="flex items-start gap-3">
-                                <div className="w-16 h-16 rounded-2xl bg-slate-950 border border-slate-800 flex items-center justify-center p-1 flex-shrink-0 overflow-hidden" style={{ borderColor: `${faction?.color}aa` }}>
-                                  <img src={faction?.iconUrl} alt={faction?.name} className="w-full h-full object-contain" />
-                                </div>
-
-                                <div className="flex-grow">
-                                  <div className="flex items-center justify-between">
-                                    <div className="font-bold text-lg text-white">{p.name}</div>
-                                    <div className="font-orbitron font-black text-xl text-cyan-400 bg-slate-950 px-2.5 py-0.5 rounded-xl border border-slate-800">
-                                      {score} ПО
+                            {gameStarted && (
+                                <div className="flex items-center gap-4">
+                                    <div className="bg-slate-800 border border-slate-700 px-3 py-1 rounded-lg text-xs font-chakra">
+                                        РАУНД <span className="text-amber-400 font-bold text-sm ml-1">{round}</span>
                                     </div>
-                                  </div>
-                                  <div className="text-xs font-bold text-slate-400 mt-1">{faction?.name}</div>
+                                    <button
+                                        onClick={() => setShowEndGameModal(true)}
+                                        className="text-slate-400 hover:text-red-400 text-sm transition"
+                                    >
+                                        <i className="fa-solid fa-power-off"></i>
+                                    </button>
                                 </div>
-                              </div>
+                            )}
+                        </div>
+                    </header>
 
-                              {useTe && (
-                                <div className="flex items-center justify-between bg-amber-950/20 p-2 rounded-xl border border-amber-900/30 text-xs">
-                                  <span className="text-amber-300 font-bold">⚡ Прорыв (TE):</span>
-                                  <button
-                                    onClick={() => setPlayers(players.map(x => x.id === p.id ? { ...x, breakthrough: !x.breakthrough } : x))}
-                                    className={`px-2 py-0.5 rounded font-bold transition ${p.breakthrough ? 'bg-amber-500 text-black' : 'bg-slate-800 text-slate-400'}`}>
-                                    {p.breakthrough ? 'АКТИВЕН' : 'НЕТ'}
-                                  </button>
+                    <main className="max-w-7xl mx-auto px-4 mt-6">
+                        {!gameStarted ? (
+                            /* Экран подготовки */
+                            <div className="max-w-xl mx-auto bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-2xl">
+                                <h2 className="font-russo text-xl text-amber-400 mb-4 text-center">ПОДГОТОВКА К ИГРЕ</h2>
+                                <div className="space-y-3 mb-6">
+                                    {players.map((p, idx) => (
+                                        <div key={p.id} className="flex items-center gap-2">
+                                            <span className="font-mono text-xs text-slate-500 w-6">#{idx + 1}</span>
+                                            <input
+                                                type="text"
+                                                value={p.name}
+                                                onChange={(e) => updatePlayerName(p.id, e.target.value)}
+                                                className="bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm flex-1 focus:border-amber-500 outline-none"
+                                            />
+                                            {players.length > 3 && (
+                                                <button
+                                                    onClick={() => removePlayer(p.id)}
+                                                    className="text-slate-600 hover:text-red-400 p-2 text-sm transition"
+                                                >
+                                                    <i className="fa-solid fa-xmark"></i>
+                                                </button>
+                                            )}
+                                        </div>
+                                    ))}
                                 </div>
-                              )}
 
-                              <div className="flex items-center justify-between text-xs text-slate-400 border-t border-slate-800/80 pt-2">
-                                <div>Секретки: <span className="text-amber-400 font-bold">{p.secrets}</span>
-                                  <button onClick={() => setPlayers(players.map(x => x.id === p.id ? { ...x, secrets: x.secrets + 1 } : x))} className="ml-1 px-1.5 py-0.5 bg-slate-800 rounded text-cyan-400 font-bold">+</button>
+                                <div className="flex gap-3">
+                                    {players.length < 8 && (
+                                        <button
+                                            onClick={addPlayer}
+                                            className="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold py-2.5 rounded-xl text-xs transition border border-slate-700"
+                                        >
+                                            + Игрок
+                                        </button>
+                                    )}
+                                    <button
+                                        onClick={startGame}
+                                        className="flex-1 bg-amber-500 hover:bg-amber-400 text-slate-950 font-russo py-2.5 rounded-xl text-sm transition shadow-lg shadow-amber-500/10"
+                                    >
+                                        НАЧАТЬ ИГРУ
+                                    </button>
                                 </div>
-                                <div>Мекатол: <span className="text-purple-400 font-bold">{p.extra}</span>
-                                  <button onClick={() => setPlayers(players.map(x => x.id === p.id ? { ...x, extra: x.extra + 1 } : x))} className="ml-1 px-1.5 py-0.5 bg-slate-800 rounded text-cyan-400 font-bold">+</button>
-                                </div>
-                              </div>
                             </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-
-                    {/* ПУБЛИЧНЫЕ ЗАДАНИЯ (Размещены на этой же первой странице) */}
-                    <div className="space-y-4 pt-4 border-t border-slate-800/80">
-                      <div className="flex items-center justify-between">
-                        <h2 className="font-orbitron font-bold text-base text-white flex items-center gap-2">
-                          <i className="fa-solid fa-list-check text-cyan-400"></i>
-                          <span>Публичные задания</span>
-                        </h2>
-                        <button
-                          onClick={addCustomObj}
-                          className="bg-blue-600 hover:bg-blue-500 text-white font-bold px-3 py-1.5 rounded-xl text-xs flex items-center gap-1 transition"
-                        >
-                          <i className="fa-solid fa-plus"></i> Добавить цель
-                        </button>
-                      </div>
-
-                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                        {objectives.map(obj => (
-                          <div key={obj.id} className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3 shadow-lg">
+                        ) : (
+                            /* Основной Дашборд */
                             <div>
-                              <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded ${obj.stage === 2 ? 'bg-red-950 text-red-400 border border-red-800' : 'bg-blue-950 text-blue-400 border border-blue-800'}`}>
-                                Этап {obj.stage} ({obj.points} ПО)
-                              </span>
-                              <h3 className="font-bold text-base text-white mt-1">{obj.title}</h3>
-                              <p className="text-xs text-slate-400">{obj.desc}</p>
+                                <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 mb-6 flex flex-wrap gap-3 items-center justify-between">
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-xs text-slate-400 font-chakra">СТАТУС:</span>
+                                        <span className={`text-xs font-bold px-2.5 py-1 rounded-md border ${
+                                            roundActive 
+                                                ? 'bg-emerald-950/50 border-emerald-800/80 text-emerald-400' 
+                                                : 'bg-amber-950/50 border-amber-800/80 text-amber-400'
+                                        }`}>
+                                            {roundActive ? "РАУНД ИДЕТ" : "ФАЗА СТРАТЕГИЙ"}
+                                        </span>
+                                    </div>
+
+                                    <div className="flex gap-2">
+                                        <button
+                                            onClick={openStrategyDraft}
+                                            disabled={roundActive}
+                                            className="bg-amber-500 hover:bg-amber-400 disabled:bg-slate-800 disabled:text-slate-600 text-slate-950 font-bold px-4 py-2 rounded-xl text-xs transition border border-amber-400/30 shadow-md"
+                                        >
+                                            <i className="fa-solid fa-layer-group mr-1.5"></i> Выбор карт стратегий
+                                        </button>
+
+                                        {!roundActive ? (
+                                            <button
+                                                onClick={handleStartRound}
+                                                className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-4 py-2 rounded-xl text-xs transition shadow-md"
+                                            >
+                                                <i className="fa-solid fa-play mr-1.5"></i> Начать раунд
+                                            </button>
+                                        ) : (
+                                            <button
+                                                onClick={handleEndRound}
+                                                className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-4 py-2 rounded-xl text-xs transition shadow-md"
+                                            >
+                                                <i className="fa-solid fa-flag-checkered mr-1.5"></i> Завершить раунд
+                                            </button>
+                                        )}
+                                    </div>
+                                </div>
+
+                                {/* Сетка игроков */}
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                    {players.map(p => (
+                                        <div key={p.id} className="bg-slate-900 border border-slate-800 rounded-2xl p-5 relative overflow-hidden">
+                                            <div className="flex justify-between items-start mb-3">
+                                                <h3 className="font-russo text-lg text-slate-100">{p.name}</h3>
+                                                <span className="text-xs text-slate-500 font-mono">ID: {p.id}</span>
+                                            </div>
+
+                                            <div className="space-y-2 mt-4">
+                                                <div className="text-xs text-slate-400 font-chakra uppercase tracking-wider">Карты стратегий:</div>
+                                                {p.cards && p.cards.length > 0 ? (
+                                                    <div className="flex flex-wrap gap-2">
+                                                        {p.cards.map(c => (
+                                                            <div key={c.id} className={`bg-gradient-to-r ${c.color} text-white px-3 py-1.5 rounded-lg text-xs font-bold shadow`}>
+                                                                #{c.id} {c.ruName} ({c.name})
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                ) : (
+                                                    <div className="text-xs text-slate-600 italic">Не выбраны</div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
                             </div>
+                        )}
 
-                            <div className="border-t border-slate-800 pt-2 grid grid-cols-2 gap-2">
-                              {players.map(p => {
-                                const isDone = !!completions[`${p.id}_${obj.id}`];
-                                return (
-                                  <button
-                                    key={p.id}
-                                    onClick={() => toggleCompletion(p.id, obj.id)}
-                                    className={`p-1.5 rounded-lg border text-xs font-bold flex items-center justify-between transition ${isDone
-                                        ? "bg-cyan-500/20 border-cyan-400 text-cyan-300"
-                                        : "bg-slate-950 border-slate-800 text-slate-400"
-                                      }`}
-                                  >
-                                    <span className="truncate">{p.name}</span>
-                                    <i className={`fa-solid ${isDone ? "fa-check text-cyan-400" : "fa-minus text-slate-700"}`}></i>
-                                  </button>
-                                );
-                              })}
+                        {/* Модальное окно выбора карт стратегий */}
+                        {showDraftModal && (
+                            <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                                <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-4xl w-full p-6 max-h-[90vh] overflow-y-auto shadow-2xl">
+                                    <div className="flex justify-between items-center mb-4">
+                                        <h2 className="font-russo text-xl text-amber-400">
+                                            {draftStep === 'DRAFT' ? "ВЫБОР КАРТ СТРАТЕГИЙ" : "ПОДТВЕРЖДЕНИЕ И ОБМЕН"}
+                                        </h2>
+                                        <button
+                                            onClick={() => setShowDraftModal(false)}
+                                            className="text-slate-500 hover:text-slate-300 transition"
+                                        >
+                                            <i className="fa-solid fa-xmark text-lg"></i>
+                                        </button>
+                                    </div>
+
+                                    {draftStep === 'DRAFT' && (
+                                        <div>
+                                            {/* Порядок драфта */}
+                                            <div className="bg-slate-950 border border-slate-800 p-3 rounded-xl mb-4 flex flex-wrap gap-2 items-center">
+                                                <span className="text-xs text-slate-400 font-chakra mr-1">ОЧЕРЕДЬ:</span>
+                                                {draftQueue.map((pId, idx) => {
+                                                    const player = players.find(p => p.id === pId);
+                                                    const isCurrent = idx === currentQueueIndex;
+                                                    return (
+                                                        <span
+                                                            key={idx}
+                                                            className={`text-xs px-2.5 py-1 rounded-lg border ${
+                                                                isCurrent
+                                                                    ? 'bg-amber-500 text-slate-950 border-amber-400 font-bold scale-105'
+                                                                    : idx < currentQueueIndex
+                                                                    ? 'bg-slate-900 border-slate-800 text-slate-600 line-through'
+                                                                    : 'bg-slate-900 border-slate-800 text-slate-400'
+                                                            }`}
+                                                        >
+                                                            {player?.name}
+                                                        </span>
+                                                    );
+                                                })}
+                                            </div>
+
+                                            {/* Карты */}
+                                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                                                {STRATEGY_CARDS_DATA.map(card => {
+                                                    const takenByPlayerId = draftAssignments[card.id];
+                                                    const isTaken = !!takenByPlayerId;
+                                                    const owner = players.find(p => p.id === takenByPlayerId);
+
+                                                    return (
+                                                        <button
+                                                            key={card.id}
+                                                            disabled={isTaken}
+                                                            onClick={() => handleSelectCard(card.id)}
+                                                            className={`p-3 rounded-xl border text-left transition relative flex flex-col justify-between h-32 ${
+                                                                isTaken
+                                                                    ? 'bg-slate-950/40 border-slate-800/50 opacity-40 cursor-not-allowed'
+                                                                    : 'bg-slate-800/80 hover:bg-slate-800 border-slate-700 hover:border-amber-500/50'
+                                                            }`}
+                                                        >
+                                                            <div>
+                                                                <div className="font-russo text-2xl text-amber-400">#{card.id}</div>
+                                                                <div className="font-bold text-xs text-slate-200 mt-1">{card.ruName}</div>
+                                                                <div className="text-[10px] text-slate-400">{card.name}</div>
+                                                            </div>
+
+                                                            <div className="text-[10px] mt-2 font-mono">
+                                                                {isTaken ? (
+                                                                    <span className="text-amber-400 font-bold">Взял: {owner?.name}</span>
+                                                                ) : (
+                                                                    <span className="text-emerald-400">Свободна</span>
+                                                                )}
+                                                            </div>
+                                                        </button>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {draftStep === 'CONFIRM' && (
+                                        <div className="space-y-4">
+                                            <p className="text-xs text-slate-400">
+                                                Проверьте список выбранных карт. Вы можете быстро обменять или переназначить карты игрокам при необходимости.
+                                            </p>
+
+                                            <div className="border border-slate-800 rounded-xl overflow-hidden">
+                                                <table className="w-full text-left text-xs">
+                                                    <thead className="bg-slate-950 text-slate-400 font-chakra">
+                                                        <tr>
+                                                            <th className="p-3">Карта</th>
+                                                            <th className="p-3">Владелец</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody className="divide-y divide-slate-800">
+                                                        {STRATEGY_CARDS_DATA.map(card => {
+                                                            const ownerId = draftAssignments[card.id];
+                                                            if (!ownerId) return null;
+
+                                                            return (
+                                                                <tr key={card.id} className="bg-slate-900/50">
+                                                                    <td className="p-3 font-bold text-amber-400">
+                                                                        #{card.id} {card.ruName} ({card.name})
+                                                                    </td>
+                                                                    <td className="p-3">
+                                                                        <select
+                                                                            value={ownerId}
+                                                                            onChange={(e) => handleReassignCard(card.id, e.target.value)}
+                                                                            className="bg-slate-950 border border-slate-800 rounded-lg px-2 py-1 text-xs text-slate-200 focus:border-amber-500 outline-none"
+                                                                        >
+                                                                            {players.map(p => (
+                                                                                <option key={p.id} value={p.id}>{p.name}</option>
+                                                                            ))}
+                                                                        </select>
+                                                                    </td>
+                                                                </tr>
+                                                            );
+                                                        })}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+
+                                            <div className="flex justify-end pt-2">
+                                                <button
+                                                    onClick={confirmDraft}
+                                                    className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-russo px-5 py-2.5 rounded-xl text-xs transition shadow-lg shadow-amber-500/10"
+                                                >
+                                                    ПОДТВЕРДИТЬ И ЗАКРЫТЬ
+                                                </button>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
                             </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
+                        )}
 
-                  </div>
-                )}
-
-                {/* ВТОРАЯ ВКТАДКА: ХОДЫ И СТРАТЕГИИ */}
-                {activeTab === 'turns' && (
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    <div className="md:col-span-2 bg-slate-900 border border-slate-800 p-4 rounded-2xl space-y-4">
-                      <div className="flex items-center justify-between">
-                        <h2 className="font-orbitron font-bold text-amber-400 uppercase text-sm">Выбор Карт Стратегий</h2>
-                        <button onClick={startActionPhase} className="bg-amber-500 text-black font-extrabold px-3 py-1.5 rounded-xl text-xs">
-                          Старт Фазы Ходов
-                        </button>
-                      </div>
-
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                        {STRATEGY_CARDS.map(card => {
-                          const pickedPlayerId = Object.keys(strategyPicks).find(pId => strategyPicks[pId] === card.id);
-                          return (
-                            <div key={card.id} className={`p-3 rounded-xl border flex flex-col justify-between h-28 ${card.color}`}>
-                              <div className="font-orbitron font-extrabold text-xs">{card.name}</div>
-                              <select
-                                value={pickedPlayerId || ''}
-                                onChange={(e) => {
-                                  const pId = Number(e.target.value);
-                                  setStrategyPicks(prev => ({ ...prev, [pId]: card.id }));
-                                }}
-                                className="bg-black/60 text-[11px] font-bold p-1 rounded text-white focus:outline-none">
-                                <option value="">-- Игрок --</option>
-                                {players.map(p => (
-                                  <option key={p.id} value={p.id}>{p.name}</option>
-                                ))}
-                              </select>
+                        {/* Модалка выхода / сброса */}
+                        {showEndGameModal && (
+                            <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                                <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-sm w-full p-6 text-center">
+                                    <h3 className="font-russo text-lg text-slate-100 mb-2">Завершить партию?</h3>
+                                    <p className="text-xs text-slate-400 mb-6">Текущий прогресс будет сброшен.</p>
+                                    <div className="space-y-2">
+                                        <button
+                                            onClick={resetGameState}
+                                            className="w-full bg-red-600 hover:bg-red-500 text-white font-bold py-2.5 rounded-xl text-xs transition"
+                                        >
+                                            Завершить
+                                        </button>
+                                        <button
+                                            onClick={() => setShowEndGameModal(false)}
+                                            className="w-full bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold py-2.5 rounded-xl text-xs transition border border-slate-700"
+                                        >
+                                            Продолжить
+                                        </button>
+                                    </div>
+                                </div>
                             </div>
-                          );
-                        })}
-                      </div>
-                    </div>
+                        )}
+                    </main>
+                </div>
+            );
+        }
 
-                    <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl space-y-3">
-                      <h2 className="font-orbitron font-bold text-cyan-400 uppercase text-sm">Очередность</h2>
-                      {turnOrder.length === 0 ? (
-                        <div className="text-xs text-slate-500 italic">Нажмите «Старт Фазы Ходов» после выбора карт</div>
-                      ) : (
-                        turnOrder.map((p, idx) => {
-                          const isActive = idx === activeTurnIdx;
-                          const card = STRATEGY_CARDS.find(c => c.id === strategyPicks[p.id]);
-                          const fact = ALL_FACTIONS.find(f => f.id === p.factionId);
-                          return (
-                            <div key={p.id} className={`p-3 rounded-xl border flex items-center justify-between ${isActive ? 'bg-cyan-950/60 border-cyan-400' : 'bg-slate-950 border-slate-800'}`}>
-                              <div className="flex items-center gap-2">
-                                <img src={fact?.iconUrl} alt={fact?.name} className="w-6 h-6 object-contain" />
-                                <span className="font-bold text-sm">{p.name}</span>
-                              </div>
-                              <span className="text-xs text-amber-400 font-bold">Ин. {card?.initiative}</span>
-                            </div>
-                          );
-                        })
-                      )}
-                    </div>
-                  </div>
-                )}
-              </>
-            )}
-
-          </main>
-
-        </div>
-      );
-    }
-
-    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
-  </script>
+        ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+    </script>
 </body>
 
 </html>
