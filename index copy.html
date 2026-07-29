@@ -251,13 +251,7 @@
             };
 
             const handleEndRound = () => {
-                setRoundActive(false);
-                setRoundNumber(prev => {
-                    const nextRound = prev + 1;
-                    localStorage.setItem('ti4_round', JSON.stringify(nextRound));
-                    return nextRound;
-                });
-                localStorage.setItem('ti4_roundActive', JSON.stringify(false));
+                setShowRoundModal(true);
             };
 
             // Дополнения по умолчанию не выбраны
