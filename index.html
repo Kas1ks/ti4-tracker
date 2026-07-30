@@ -276,6 +276,13 @@
             const [showStatsModal, setShowStatsModal] = useState(false);
             const [showEndGameModal, setShowEndGameModal] = useState(false);
 
+            // Состояние для модального окна Политики
+            const [showPoliticsModal, setShowPoliticsModal] = useState(false);
+            const [politicsMode, setPoliticsMode] = useState(null); // 'FOR_AGAINST' | 'PLAYER_CHOICE' | 'OTHER'
+            const [politicsVotes, setPoliticsVotes] = useState({});
+            const [otherChoices, setOtherChoices] = useState(['']);
+
+
             const resetGameState = () => {
                 // Очищаем локальное хранилище браузера
                 localStorage.removeItem('ti4_active');
@@ -886,6 +893,13 @@
                                         <div className="text-sm md:text-base font-bold text-amber-400 bg-slate-950 border border-slate-800 px-4 py-2 rounded-xl font-orbitron">
                                             РАУНД {roundNumber}
                                         </div>
+
+                                        <button
+                                            onClick={() => setShowPoliticsModal(true)}
+                                            className="bg-purple-600 hover:bg-purple-500 text-white font-bold px-4 py-2 rounded-xl text-xs transition shadow-md flex items-center gap-1.5"
+                                        >
+                                            <i className="fa-solid fa-gavel"></i> Политика
+                                        </button>
 
                                         {/* === БЛОК 3: Кнопки управления фазой драфта и раунда === */}
                                         <div className="flex gap-2">
@@ -2122,6 +2136,124 @@
                                                     className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-russo px-5 py-2.5 rounded-xl text-xs transition shadow-lg shadow-amber-500/10"
                                                 >
                                                     ПОДТВЕРДИТЬ И ЗАКРЫТЬ
+                                                </button>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+                        {/* ВСПЛЫВАЮЩЕЕ ОКНО 4: ФАЗА ПОЛИТИКИ */}
+                        {showPoliticsModal && (
+                            <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                                <div className="bg-slate-900 border border-purple-800 rounded-2xl max-w-2xl w-full p-6 max-h-[90vh] overflow-y-auto shadow-2xl shadow-purple-500/10">
+                                    <div className="flex justify-between items-center mb-4 pb-3 border-b border-slate-800">
+                                        <h2 className="font-orbitron text-lg font-bold text-purple-400 uppercase flex items-center gap-2">
+                                            <i className="fa-solid fa-gavel"></i> Фаза Политики
+                                        </h2>
+                                        <button onClick={() => { setShowPoliticsModal(false); setPoliticsMode(null); }} className="text-slate-500 hover:text-slate-300 transition">
+                                            <i className="fa-solid fa-xmark text-lg"></i>
+                                        </button>
+                                    </div>
+
+                                    {!politicsMode ? (
+                                        <div className="space-y-4">
+                                            <p className="text-sm text-slate-400 text-center">Выберите тип голосования:</p>
+                                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
+                                                <button onClick={() => { setPoliticsMode('FOR_AGAINST'); setPoliticsVotes({ for: 0, against: 0 }); }} className="p-6 bg-slate-950 hover:bg-slate-800 border border-slate-800 rounded-xl text-center space-y-2 transition hover:border-cyan-500">
+                                                    <div className="text-3xl">👍 / 👎</div>
+                                                    <div className="font-bold text-cyan-400">За / Против</div>
+                                                </button>
+                                                <button onClick={() => { setPoliticsMode('PLAYER_CHOICE'); setPoliticsVotes(players.reduce((acc, p) => ({ ...acc, [p.id]: 0 }), {})); }} className="p-6 bg-slate-950 hover:bg-slate-800 border border-slate-800 rounded-xl text-center space-y-2 transition hover:border-amber-500">
+                                                    <div className="text-3xl">👥</div>
+                                                    <div className="font-bold text-amber-400">Выбор игрока</div>
+                                                </button>
+                                                <button onClick={() => { setPoliticsMode('OTHER'); setPoliticsVotes({ 0: 0 }); setOtherChoices(['']); }} className="p-6 bg-slate-950 hover:bg-slate-800 border border-slate-800 rounded-xl text-center space-y-2 transition hover:border-rose-500">
+                                                    <div className="text-3xl">📝</div>
+                                                    <div className="font-bold text-rose-400">Другой выбор</div>
+                                                </button>
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <div className="space-y-4">
+                                            <div className="flex justify-between items-center">
+                                                <button onClick={() => setPoliticsMode(null)} className="text-xs text-slate-400 hover:text-white font-bold flex items-center gap-1"><i className="fa-solid fa-arrow-left"></i> Назад к выбору</button>
+                                                <button onClick={() => setPoliticsVotes(Object.keys(politicsVotes).reduce((acc, key) => ({ ...acc, [key]: 0 }), {}))} className="text-xs text-red-400 hover:text-red-300 font-bold flex items-center gap-1"><i className="fa-solid fa-undo"></i> Сбросить голоса</button>
+                                            </div>
+
+                                            {/* Режим "За / Против" */}
+                                            {politicsMode === 'FOR_AGAINST' && (
+                                                <div className="grid grid-cols-2 gap-4">
+                                                    {['for', 'against'].map(key => (
+                                                        <div key={key} className={`p-4 rounded-xl border ${key === 'for' ? 'border-cyan-700 bg-cyan-950/30' : 'border-red-700 bg-red-950/30'}`}>
+                                                            <div className={`font-orbitron font-black text-lg uppercase ${key === 'for' ? 'text-cyan-400' : 'text-red-400'}`}>{key === 'for' ? 'ЗА' : 'ПРОТИВ'}</div>
+                                                            <div className="text-5xl font-orbitron font-black text-white my-4 text-center">{politicsVotes[key]}</div>
+                                                            <div className="flex gap-2">
+                                                                <button onClick={() => setPoliticsVotes(v => ({ ...v, [key]: Math.max(0, v[key] - 1) }))} className="flex-1 py-2 bg-slate-800 hover:bg-slate-700 rounded-lg text-lg font-bold">-</button>
+                                                                <button onClick={() => setPoliticsVotes(v => ({ ...v, [key]: v[key] + 1 }))} className="flex-1 py-2 bg-slate-800 hover:bg-slate-700 rounded-lg text-lg font-bold">+</button>
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            )}
+
+                                            {/* Режим "Выбор игрока" */}
+                                            {politicsMode === 'PLAYER_CHOICE' && (
+                                                <div className="space-y-2">
+                                                    {players.map(p => (
+                                                        <div key={p.id} className="p-2 bg-slate-950 border border-slate-800 rounded-lg flex items-center justify-between">
+                                                            <div className="font-bold text-white">{p.name}</div>
+                                                            <div className="flex items-center gap-2">
+                                                                <button onClick={() => setPoliticsVotes(v => ({ ...v, [p.id]: Math.max(0, v[p.id] - 1) }))} className="w-8 h-8 bg-slate-800 hover:bg-slate-700 rounded font-bold">-</button>
+                                                                <span className="w-10 text-center font-orbitron font-bold text-xl text-amber-400">{politicsVotes[p.id]}</span>
+                                                                <button onClick={() => setPoliticsVotes(v => ({ ...v, [p.id]: v[p.id] + 1 }))} className="w-8 h-8 bg-slate-800 hover:bg-slate-700 rounded font-bold">+</button>
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            )}
+
+                                            {/* Режим "Другой выбор" */}
+                                            {politicsMode === 'OTHER' && (
+                                                <div className="space-y-2">
+                                                    {otherChoices.map((choice, index) => (
+                                                        <div key={index} className="p-2 bg-slate-950 border border-slate-800 rounded-lg flex items-center justify-between gap-2">
+                                                            <input
+                                                                type="text"
+                                                                value={choice}
+                                                                onChange={e => {
+                                                                    const newChoices = [...otherChoices];
+                                                                    newChoices[index] = e.target.value;
+                                                                    setOtherChoices(newChoices);
+                                                                }}
+                                                                placeholder={`Вариант ${index + 1}`}
+                                                                className="bg-slate-900 border border-slate-700 px-3 py-1.5 rounded-md font-bold text-sm text-white focus:outline-none focus:border-purple-400 flex-grow"
+                                                            />
+                                                            <div className="flex items-center gap-2">
+                                                                <button onClick={() => setPoliticsVotes(v => ({ ...v, [index]: Math.max(0, v[index] || 0) - 1 }))} className="w-8 h-8 bg-slate-800 hover:bg-slate-700 rounded font-bold">-</button>
+                                                                <span className="w-10 text-center font-orbitron font-bold text-xl text-amber-400">{politicsVotes[index] || 0}</span>
+                                                                <button onClick={() => setPoliticsVotes(v => ({ ...v, [index]: (v[index] || 0) + 1 }))} className="w-8 h-8 bg-slate-800 hover:bg-slate-700 rounded font-bold">+</button>
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                                    <button
+                                                        onClick={() => {
+                                                            setOtherChoices([...otherChoices, '']);
+                                                            setPoliticsVotes(v => ({ ...v, [otherChoices.length]: 0 }));
+                                                        }}
+                                                        className="w-full mt-2 py-2 bg-slate-800/50 hover:bg-slate-800 border border-dashed border-slate-700 rounded-lg text-slate-400 text-xs font-bold transition"
+                                                    >
+                                                        + Добавить вариант
+                                                    </button>
+                                                </div>
+                                            )}
+
+                                            <div className="pt-4 border-t border-slate-800">
+                                                <button
+                                                    onClick={() => { setShowPoliticsModal(false); setPoliticsMode(null); }}
+                                                    className="w-full bg-purple-600 hover:bg-purple-500 text-white font-orbitron font-extrabold py-3 rounded-xl text-sm transition uppercase"
+                                                >
+                                                    Завершить фазу политики
                                                 </button>
                                             </div>
                                         </div>
