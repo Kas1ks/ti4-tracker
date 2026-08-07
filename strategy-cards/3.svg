@@ -1,0 +1,13 @@
+<svg viewBox="0 0 200 280" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="politics-grad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#9370db"/>
+      <stop offset="100%" stop-color="#6a4db5"/>
+    </linearGradient>
+  </defs>
+  <rect width="200" height="280" fill="url(#politics-grad)" rx="12"/>
+  <rect width="190" height="270" x="5" y="5" fill="none" stroke="#ffffff" stroke-width="2" rx="10"/>
+  <text x="20" y="40" fill="white" font-size="32" font-weight="bold">3</text>
+  <text x="100" y="150" text-anchor="middle" fill="white" font-size="26" font-weight="bold">POLITICS</text>
+  <polygon points="100,180 120,220 80,220" fill="white" opacity="0.8"/>
+</svg>

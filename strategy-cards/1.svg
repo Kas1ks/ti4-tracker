@@ -1,0 +1,14 @@
+<svg viewBox="0 0 200 280" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="leadership-grad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#c41e3a"/>
+      <stop offset="100%" stop-color="#8b1a2f"/>
+    </linearGradient>
+  </defs>
+  <rect width="200" height="280" fill="url(#leadership-grad)" rx="12"/>
+  <rect width="190" height="270" x="5" y="5" fill="none" stroke="#ffffff" stroke-width="2" rx="10"/>
+  <text x="20" y="40" fill="white" font-size="32" font-weight="bold">1</text>
+  <text x="100" y="150" text-anchor="middle" fill="white" font-size="26" font-weight="bold">LEADERSHIP</text>
+  <circle cx="100" cy="200" r="30" fill="none" stroke="white" stroke-width="3"/>
+  <path d="M100 175 L100 225 M100 200 L130 200" stroke="white" stroke-width="4"/>
+</svg>
