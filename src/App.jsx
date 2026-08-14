@@ -5,6 +5,8 @@ import { ALL_FACTIONS, BASE_OBJECTIVES, DEFAULT_OBJECTIVES, STRATEGY_CARDS } fro
 import { formatTime, shuffleArray } from './utils/game';
 import { useGamePersistence } from './hooks/useGamePersistence';
 import { useTurnTimer } from './hooks/useTurnTimer';
+import { GameSummaryModal } from './components/GameSummaryModal';
+import { MinimizedModalControls } from './components/MinimizedModalControls';
 
 
 
@@ -2575,84 +2577,18 @@ import { useTurnTimer } from './hooks/useTurnTimer';
                                 </div>
                             </div>
                         )}
-                        {/* ВСПЛЫВАЮЩЕЕ ОКНО 6: СТАТИСТИКА ЗАВЕРШЕННОЙ ИГРЫ */}
-                        {showGameSummaryModal && (() => {
-                            const summary = JSON.parse(localStorage.getItem('ti4_gameSummary'));
-                            if (!summary) return null;
-
-                            return (
-                                <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-                                    <div className="bg-slate-900 border border-amber-800 rounded-2xl max-w-4xl w-full p-6 shadow-2xl shadow-amber-500/10">
-                                        <div className="flex justify-between items-center mb-4 pb-3 border-b border-slate-800">
-                                            <h2 className="font-orbitron text-lg font-bold text-amber-400 uppercase flex items-center gap-2">
-                                                <i className="fa-solid fa-trophy"></i> Итоги Партии
-                                            </h2>
-                                            <button onClick={() => { setShowGameSummaryModal(false); resetGameState(); }} className="text-slate-500 hover:text-slate-300 transition">
-                                                <i className="fa-solid fa-xmark text-lg"></i>
-                                            </button>
-                                        </div>
-                                        <div className="space-y-4">
-                                            <div className="text-center">
-                                                <div className="text-sm text-slate-400">Победитель</div>
-                                                <div className="font-orbitron font-black text-3xl text-amber-400">{summary.winner}</div>
-                                                <div className="font-bold text-lg text-slate-300">{summary.winningFaction}</div>
-                                            </div>
-                                            <div className="bg-slate-950 p-4 rounded-xl border border-slate-800">
-                                                <table className="w-full text-left text-sm">
-                                                    <thead>
-                                                        <tr className="border-b border-slate-800 text-slate-500 uppercase font-orbitron text-xs">
-                                                            <th className="py-2">Игрок</th>
-                                                            <th className="py-2 text-center">Фракция</th>
-                                                            <th className="py-2 text-center">Счет</th>
-                                                            <th className="py-2 text-center">Нанесено урона</th>
-                                                            <th className="py-2 text-right">Общее время</th>
-                                                        </tr>
-                                                    </thead>
-                                                    <tbody>
-                                                        {summary.players.sort((a, b) => b.score - a.score).map(p => (
-                                                            <tr key={p.name} className="border-b border-slate-800/50 last:border-b-0">
-                                                                <td className={`py-3 font-bold ${p.isWinner ? 'text-amber-400' : 'text-white'}`}>{p.name}</td>
-                                                                <td className="py-3 text-center text-slate-400 text-xs">{p.faction}</td>
-                                                                <td className="py-3 text-center font-orbitron font-bold text-xl text-cyan-400">{p.score}</td>
-                                                                <td className="py-3 text-center font-orbitron font-bold text-xl text-red-400">{p.damageDealt || 0}</td>
-                                                                <td className="py-3 text-right font-mono text-slate-300">{formatTime(p.totalTime)}</td>
-                                                            </tr>
-                                                        ))}
-                                                    </tbody>
-                                                </table>
-                                            </div>
-                                            <div className="flex justify-center pt-2">
-                                                <button onClick={() => { setShowGameSummaryModal(false); resetGameState(); }} className="bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold px-6 py-2 rounded-xl text-xs transition">
-                                                    В главное меню
-                                                </button>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            );
-                        })()}
+                        <GameSummaryModal
+                            show={showGameSummaryModal}
+                            onClose={() => { setShowGameSummaryModal(false); resetGameState(); }}
+                        />
                     </main>
-                    {/* ПАНЕЛЬ СВЕРНУТЫХ ОКОН */}
-                    <div className="fixed bottom-4 right-4 z-40 flex flex-col items-end gap-2">
-                        {minimizedModals.draft && showDraftModal && (
-                            <button onClick={() => toggleMinimize('draft')} className="bg-slate-800 border border-amber-700 text-amber-400 font-bold px-4 py-2 rounded-xl text-xs transition shadow-lg hover:bg-slate-700 flex items-center gap-2">
-                                <i className="fa-solid fa-layer-group"></i>
-                                <span>Драфт карт</span>
-                            </button>
-                        )}
-                        {minimizedModals.politics && showPoliticsModal && (
-                            <button onClick={() => toggleMinimize('politics')} className="bg-slate-800 border border-purple-700 text-purple-400 font-bold px-4 py-2 rounded-xl text-xs transition shadow-lg hover:bg-slate-700 flex items-center gap-2">
-                                <i className="fa-solid fa-gavel"></i>
-                                <span>Политика</span>
-                            </button>
-                        )}
-                        {minimizedModals.combat && showCombatModal && (
-                            <button onClick={() => toggleMinimize('combat')} className="bg-slate-800 border border-red-700 text-red-400 font-bold px-4 py-2 rounded-xl text-xs transition shadow-lg hover:bg-slate-700 flex items-center gap-2">
-                                <i className="fa-solid fa-crosshairs"></i>
-                                <span>Бой</span>
-                            </button>
-                        )}
-                    </div>
+                    <MinimizedModalControls
+                        minimizedModals={minimizedModals}
+                        showDraftModal={showDraftModal}
+                        showPoliticsModal={showPoliticsModal}
+                        showCombatModal={showCombatModal}
+                        onRestore={toggleMinimize}
+                    />
                 </div>
             );
         }
