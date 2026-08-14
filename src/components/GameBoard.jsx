@@ -31,7 +31,7 @@ export function GameBoard({
   setShowCombatModal,
   roundNumber,
   targetScore,
-  canStartRound,
+  canStartRound, speakerId, handleAddSecret, setObjectives,
 }) {
   return (
                             <div className="space-y-8">
