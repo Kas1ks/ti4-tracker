@@ -1,0 +1,119 @@
+export const ALL_FACTIONS = [
+            // Базовая игра
+            { id: 'sol', name: 'Федерация Сол', color: '#3b82f6', exp: 'base', iconUrl: './factions/federation-of-sol.webp' },
+            { id: 'jolnar', name: 'Университеты Джол-Нара', color: '#06b6d4', exp: 'base', iconUrl: './factions/universities-of-jol-nar.webp' },
+            { id: 'hacan', name: 'Хаканские эмираты', color: '#eab308', exp: 'base', iconUrl: './factions/emirates-of-hacan.webp' },
+            { id: 'xxcha', name: 'Королевство Ззча', color: '#22c55e', exp: 'base', iconUrl: './factions/xxcha-kingdom.webp' },
+            { id: 'nekro', name: 'Некровирус', color: '#ef4444', exp: 'base', iconUrl: './factions/nekro-virus.webp' },
+            { id: 'saar', name: 'Кланы Сааров', color: '#a855f7', exp: 'base', iconUrl: './factions/clan-of-saar.webp' },
+            { id: 'l1z1x', name: 'ПсихосетьL1Z1X', color: '#64748b', exp: 'base', iconUrl: './factions/l1z1x-mindnet.webp' },
+            { id: 'letnev', name: 'Баронат Летнев', color: '#475569', exp: 'base', iconUrl: './factions/barony-of-letnev.webp' },
+            { id: 'arborec', name: 'Арбореки', color: '#15803d', exp: 'base', iconUrl: './factions/arborec.webp' },
+            { id: 'creuss', name: 'Призраки Креуса', color: '#38bdf8', exp: 'base', iconUrl: './factions/ghosts-of-creuss.webp' },
+            { id: 'mentak', name: 'Коалиция Ментака', color: '#f97316', exp: 'base', iconUrl: './factions/mentak-coalition.webp' },
+            { id: 'muaat', name: 'Тлеющие с Муаата', color: '#dc2626', exp: 'base', iconUrl: './factions/embers-of-muaat.webp' },
+            { id: 'naalu', name: 'Клубок Наалу', color: '#84cc16', exp: 'base', iconUrl: './factions/naalu-collective.webp' },
+            { id: 'saardakk', name: 'Сардакк Нор', color: '#991b1b', exp: 'base', iconUrl: './factions/sardakk-norr.webp' },
+            { id: 'yin', name: 'Братство Инь', color: '#e2e8f0', exp: 'base', iconUrl: './factions/yin-brotherhood.webp' },
+            { id: 'yssaril', name: 'Племена Иссарилов', color: '#166534', exp: 'base', iconUrl: './factions/yssaril-tribes.webp' },
+            { id: 'winnu', name: 'Винну', color: '#a855f7', exp: 'base', iconUrl: './factions/winnu.webp' },
+
+            // Prophecy of Kings (PoK)
+            { id: 'argent', name: 'Серебряная Стая', color: '#facc15', exp: 'pok', iconUrl: './factions/argent-flight.webp' },
+            { id: 'empyrean', name: 'Возвышеные', color: '#818cf8', exp: 'pok', iconUrl: './factions/empyrean.webp' },
+            { id: 'mahact', name: 'Генные чародеи Махакт', color: '#fbbf24', exp: 'pok', iconUrl: './factions/mahact-gene-sorcerers.webp' },
+            { id: 'naazrokha', name: 'Альянс Нааз-Роха', color: '#10b981', exp: 'pok', iconUrl: './factions/naaz-rokha-alliance.webp' },
+            { id: 'nomad', name: 'Кочевник (Nomad)', color: '#f43f5e', exp: 'pok', iconUrl: './factions/nomad.webp' },
+            { id: 'titans', name: 'Титаны Ула', color: '#a1a1aa', exp: 'pok', iconUrl: './factions/titans-of-ul.webp' },
+            { id: 'vuilraith', name: 'Кабала Вуил’Райт', color: '#b91c1c', exp: 'pok', iconUrl: './factions/vuil-raith-cabal.webp' },
+
+            // Thunder's Edge (TE) и модули
+            { id: 'keleres_argent', name: 'Совет Келерес (Аргенты)', color: '#38bdf8', exp: 'te', iconUrl: './factions/council-keleres-argent.webp' },
+            { id: 'keleres_mentak', name: 'Совет Келерес (Ментак)', color: '#38bdf8', exp: 'te', iconUrl: './factions/council-keleres-mentak.webp' },
+            { id: 'keleres_xxcha', name: 'Совет Келерес (Ззча)', color: '#38bdf8', exp: 'te', iconUrl: './factions/council-keleres-xxcha.webp' },
+            { id: 'crimson', name: 'Багряное Восстание', color: '#dc2626', exp: 'te', iconUrl: './factions/crimson-rebellion.webp' },
+            { id: 'deepwrought', name: 'Школа Глубин', color: '#0284c7', exp: 'te', iconUrl: './factions/deepwrought-scholarate.webp' },
+            { id: 'firmament', name: 'Твердь Небесная', color: '#475569', exp: 'te', iconUrl: './factions/firmament-obsidian.webp' },
+            { id: 'bastion', name: 'Последний Оплот', color: '#ca8a04', exp: 'te', iconUrl: './factions/last-bastion.webp' },
+            { id: 'ralnel', name: 'Консорциум Рал-Нель', color: '#2563eb', exp: 'te', iconUrl: './factions/ral-nel-consortium.webp' }
+        ];
+
+        export const STRATEGY_CARDS = [
+            { id: 1, name: '1. Лидерство', initiative: 1, color: 'border-red-500 bg-red-950/50 text-red-300', imageUrl: './strategy-cards/1.webp' },
+            { id: 2, name: '2. Дипломатия', initiative: 2, color: 'border-amber-500 bg-amber-950/50 text-amber-300', imageUrl: './strategy-cards/2.webp' },
+            { id: 3, name: '3. Политика', initiative: 3, color: 'border-yellow-500 bg-yellow-950/50 text-yellow-300', imageUrl: './strategy-cards/3.webp' },
+            { id: 4, name: '4. Строительство', initiative: 4, color: 'border-emerald-500 bg-emerald-950/50 text-emerald-300', imageUrl: './strategy-cards/4.webp' },
+            { id: 5, name: '5. Торговля', initiative: 5, color: 'border-teal-500 bg-teal-950/50 text-teal-300', imageUrl: './strategy-cards/5.webp' },
+            { id: 6, name: '6. Война', initiative: 6, color: 'border-cyan-500 bg-cyan-950/50 text-cyan-300', imageUrl: './strategy-cards/6.webp' },
+            { id: 7, name: '7. Технологии', initiative: 7, color: 'border-blue-500 bg-blue-950/50 text-blue-300', imageUrl: './strategy-cards/7.webp' },
+            { id: 8, name: '8. Экспансия', initiative: 8, color: 'border-purple-500 bg-purple-950/50 text-purple-300', imageUrl: './strategy-cards/8.webp' }
+        ];
+
+        export const PLAYER_COLORS = [
+            { id: 'blue', name: 'Синий', hex: '#3b82f6' },
+            { id: 'green', name: 'Зеленый', hex: '#22c55e' },
+            { id: 'red', name: 'Красный', hex: '#ef4444' },
+            { id: 'yellow', name: 'Желтый', hex: '#eab308' },
+            { id: 'purple', name: 'Фиолетовый', hex: '#a855f7' },
+            { id: 'black', name: 'Черный', hex: '#475569' },
+            { id: 'cyan', name: 'Голубой', hex: '#06b6d4' },
+            { id: 'orange', name: 'Оранжевый', hex: '#f97316' }
+        ];
+
+        export const BASE_OBJECTIVES = [
+            // ==========================================
+            // ЭТАП I (1 ПО) — 23 цели (10 База + 10 PoK)
+            // ==========================================
+            // Базовая игра
+            { id: 'p1_b01', stage: 1, points: 1, title: 'Монополизируй рынок', desc: 'Контролировать 4 планеты одного типа' },
+            { id: 'p1_b02', stage: 1, points: 1, title: 'Запугать совет', desc: 'Иметь по 1 кораблю в 2 системах смежных с Мекатолом' },
+            { id: 'p1_b03', stage: 1, points: 1, title: 'Диверсифицировать исследования', desc: 'Владеть 2 технологиями в 2 разных цветах.' },
+            { id: 'p1_b04', stage: 1, points: 1, title: 'Убедите совет', desc: 'Потратить 8 очков влияния.' },
+            { id: 'p1_b05', stage: 1, points: 1, title: 'Догор о торгових маршрутах', desc: 'Потратить 5 товаров' },
+            { id: 'p1_b06', stage: 1, points: 1, title: 'Разширение границ', desc: 'Контролируйте 6 планте вне родной системы.' },
+            { id: 'p1_b07', stage: 1, points: 1, title: 'Постройте памятник', desc: 'Потратить 8 очков товаров' },
+            { id: 'p1_b08', stage: 1, points: 1, title: 'Разработка вооружения', desc: 'Владеть 2 улучшениями юнитов.' },
+            { id: 'p1_b09', stage: 1, points: 1, title: 'Ведите за собой', desc: 'Потратить 3 жетона приказов из командного или стратегического резерва.' },
+            { id: 'p1_b10', stage: 1, points: 1, title: 'Иследовательские аванпосты', desc: 'Контролировать 3 планеты с технологической специализацией' },
+
+            // Prophecy of Kings (PoK)
+            { id: 'p1_p01', stage: 1, points: 1, title: 'Иследуйте глубокий космос', desc: 'Иметь отряды в 3 системах без планет' },
+            { id: 'p1_p02', stage: 1, points: 1, title: 'Расширяйте границы ', desc: 'Контролируйте больше планет чем ваши 2 соседа' },
+            { id: 'p1_p03', stage: 1, points: 1, title: 'Вершите историю', desc: 'Иметь отряды в 2 системах с Легендаркой, Мекатолом или аномалией' },
+            { id: 'p1_p04', stage: 1, points: 1, title: 'Возведите укрепления', desc: 'Иметь 4 сооружения' },
+            { id: 'p1_p05', stage: 1, points: 1, title: 'Потеряный аванпост', desc: 'Контролировать 2 планеты с прикрепами' },
+            { id: 'p1_p06', stage: 1, points: 1, title: 'МПостройте флот', desc: 'Иметь мин. 5 кораблей в 1 системе (кроме истребов)' },
+            { id: 'p1_p07', stage: 1, points: 1, title: 'ПНакопите богатства', desc: 'Потратить 3 влияния, 3 ресурса, 3 товара' },
+            { id: 'p1_p08', stage: 1, points: 1, title: 'Заселите дальний рубеж', desc: 'Иметь отряды в 3 системах на краю поля (кроме домашки)' },
+            { id: 'p1_p09', stage: 1, points: 1, title: 'Улучшите инфраструктуру', desc: 'Иметь сооружения на 3 планетах вне домашки' },
+            { id: 'p1_p10', stage: 1, points: 1, title: 'Постройте чудо', desc: 'Иметь на поле флагман или солнце войны' },
+           
+            // ==========================================
+            // ЭТАП II (2 ПО) — 23 цели (10 База + 10 PoK)
+            // ==========================================
+            // Базовая игра
+            { id: 'p2_b01', stage: 2, points: 2, title: 'Начать золотую эпоху', desc: 'Потратить 16 очков ресурсов' },
+            { id: 'p2_b02', stage: 2, points: 2, title: 'Революция вооружения', desc: 'Иметь 3 технологии улучшения отрядов.' },
+            { id: 'p2_b03', stage: 2, points: 2, title: 'Покорить галактику', desc: 'Контролировать 11 планет вне родной системы' },
+            { id: 'p2_b04', stage: 2, points: 2, title: 'НАука процветает', desc: 'Иметь 2 технологии в каждоим из 4 цветов' },
+            { id: 'p2_b05', stage: 2, points: 2, title: 'Завоевание слабых', desc: 'Контролировать планету в домашке другого игрока' },
+            { id: 'p2_b06', stage: 2, points: 2, title: 'Галактический мозговой центр', desc: 'Контролировать 5 планетх с технологической специализацией' },
+            { id: 'p2_b07', stage: 2, points: 2, title: 'Лазейка в законе', desc: 'Потратить 16 очков влияния' },
+            { id: 'p2_b08', stage: 2, points: 2, title: 'Обьеденить колонии', desc: 'Контролируйте 6 планет одного типа' },
+            { id: 'p2_b09', stage: 2, points: 2, title: 'Галактическая торговля', desc: 'Потратить 10 товаров' },
+            { id: 'p2_b10', stage: 2, points: 2, title: 'Вдохновите людей', desc: 'Потратить 6 жетонов приказов из командного или стратегического резерва.' },
+
+            // Prophecy of Kings (PoK)
+            { id: 'p2_p01', stage: 2, points: 2, title: 'Патрулирование територий', desc: 'Иметь 5 отрядов в системах без планет' },
+            { id: 'p2_p02', stage: 2, points: 2, title: 'Защищайте границы', desc: 'Иметь 5 сооружений вне домашки' },
+            { id: 'p2_p03', stage: 2, points: 2, title: 'Древние памятники', desc: 'Контролировать 3 планеты с прикрепами ' },
+            { id: 'p2_p04', stage: 2, points: 2, title: 'Далекие земли', desc: 'Контролировать 2 планеты смежные з разными домашками других игроков или находящиеся в домашках других игроков' },
+            { id: 'p2_p05', stage: 2, points: 2, title: 'Добейтесь превосходства', desc: 'Иметь флагман или солнце войны в домашке другого игрока или на Мекатоле' },
+            { id: 'p2_p06', stage: 2, points: 2, title: 'Котроль пограничья', desc: 'Иметь отряды в 5 системах на краю поля (кроме домашки)' },
+            { id: 'p2_p07', stage: 2, points: 2, title: 'большие города', desc: 'Иметь 7 сооружений' },
+            { id: 'p2_p08', stage: 2, points: 2, title: 'Армада', desc: 'Иметь мин. 8 кораблей в 1 системе (кроме истребов)' },
+            { id: 'p2_p09', stage: 2, points: 2, title: 'Большие запасы', desc: 'Потратить 6 влияния, 6 ресурсов, 6 товаров' },
+            { id: 'p2_p10', stage: 2, points: 2, title: 'Легенда', desc: 'Иметь отряды в 4 системах с Легендаркой, Мекатолом или аномалией' },
+        ];
+
+        export const DEFAULT_OBJECTIVES = [];
