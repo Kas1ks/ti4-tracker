@@ -1,0 +1,40 @@
+import { formatTime } from '../utils/game';
+
+function readGameSummary() {
+  try {
+    const raw = localStorage.getItem('ti4_gameSummary');
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+export function GameSummaryModal({ show, onClose }) {
+  if (!show) return null;
+  const summary = readGameSummary();
+  if (!summary) return null;
+
+  return (
+    <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+      <div className="bg-slate-900 border border-amber-800 rounded-2xl max-w-4xl w-full p-6 shadow-2xl shadow-amber-500/10">
+        <div className="flex justify-between items-center mb-4 pb-3 border-b border-slate-800">
+          <h2 className="font-orbitron text-lg font-bold text-amber-400 uppercase flex items-center gap-2"><i className="fa-solid fa-trophy" /> Итоги Партии</h2>
+          <button onClick={onClose} className="text-slate-500 hover:text-slate-300 transition" aria-label="Закрыть итоги партии"><i className="fa-solid fa-xmark text-lg" /></button>
+        </div>
+        <div className="space-y-4">
+          <div className="text-center"><div className="text-sm text-slate-400">Победитель</div><div className="font-orbitron font-black text-3xl text-amber-400">{summary.winner}</div><div className="font-bold text-lg text-slate-300">{summary.winningFaction}</div></div>
+          <div className="bg-slate-950 p-4 rounded-xl border border-slate-800">
+            <table className="w-full text-left text-sm"><thead><tr className="border-b border-slate-800 text-slate-500 uppercase font-orbitron text-xs"><th className="py-2">Игрок</th><th className="py-2 text-center">Фракция</th><th className="py-2 text-center">Счет</th><th className="py-2 text-center">Нанесено урона</th><th className="py-2 text-right">Общее время</th></tr></thead><tbody>
+              {[...(summary.players || [])].sort((a, b) => b.score - a.score).map((player) => (
+                <tr key={player.name} className="border-b border-slate-800/50 last:border-b-0">
+                  <td className={'py-3 font-bold ' + (player.isWinner ? 'text-amber-400' : 'text-white')}>{player.name}</td><td className="py-3 text-center text-slate-400 text-xs">{player.faction}</td><td className="py-3 text-center font-orbitron font-bold text-xl text-cyan-400">{player.score}</td><td className="py-3 text-center font-orbitron font-bold text-xl text-red-400">{player.damageDealt || 0}</td><td className="py-3 text-right font-mono text-slate-300">{formatTime(player.totalTime || 0)}</td>
+                </tr>
+              ))}
+            </tbody></table>
+          </div>
+          <div className="flex justify-center pt-2"><button onClick={onClose} className="bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold px-6 py-2 rounded-xl text-xs transition">В главное меню</button></div>
+        </div>
+      </div>
+    </div>
+  );
+}
