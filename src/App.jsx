@@ -1039,6 +1039,9 @@ import { GameBoard } from './components/GameBoard';
                                 roundNumber={roundNumber}
                                 targetScore={targetScore}
                                 canStartRound={canStartRound}
+                                speakerId={speakerId}
+                                handleAddSecret={handleAddSecret}
+                                setObjectives={setObjectives}
                             />
                         )}
 
