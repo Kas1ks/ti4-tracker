@@ -3,6 +3,8 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { ADMIN_PIN, JSONBIN_BIN_ID, JSONBIN_MASTER_KEY } from './config';
 import { ALL_FACTIONS, BASE_OBJECTIVES, DEFAULT_OBJECTIVES, STRATEGY_CARDS } from './data/gameData';
 import { formatTime, shuffleArray } from './utils/game';
+import { useGamePersistence } from './hooks/useGamePersistence';
+import { useTurnTimer } from './hooks/useTurnTimer';
 
 
 
@@ -314,45 +316,14 @@ import { formatTime, shuffleArray } from './utils/game';
             // Таймер
             const [turnTime, setTurnTime] = useState(() => JSON.parse(localStorage.getItem('ti4_turnTime')) || 0);
 
+            useGamePersistence({
+                isGameActive, targetScore, roundNumber, usePok, useTe, isPoliticsActive,
+                players, objectives, completions, stage1Deck, stage2Deck, roundActive,
+                turnOrder, activeTurnIdx, passed, turnTime, speakerId, draftAssignments,
+                draftQueue, strategyCardBonuses
+            });
+
             // Разделяем useEffect для лучшей производительности и логики
-            useEffect(() => { // Сохранение основных настроек игры
-                localStorage.setItem('ti4_active', JSON.stringify(isGameActive));
-                localStorage.setItem('ti4_targetScore', JSON.stringify(targetScore));
-                localStorage.setItem('ti4_round', JSON.stringify(roundNumber));
-                localStorage.setItem('ti4_usePok', JSON.stringify(usePok));
-                localStorage.setItem('ti4_useTe', JSON.stringify(useTe));
-                localStorage.setItem('ti4_isPoliticsActive', JSON.stringify(isPoliticsActive));
-            }, [isGameActive, targetScore, roundNumber, usePok, useTe, isPoliticsActive]);
-
-            useEffect(() => { // Сохранение данных игроков
-                localStorage.setItem('ti4_players', JSON.stringify(players));
-            }, [players]);
-
-            useEffect(() => { // Сохранение данных о целях
-                localStorage.setItem('ti4_objectives', JSON.stringify(objectives));
-                localStorage.setItem('ti4_completions', JSON.stringify(completions));
-                localStorage.setItem('ti4_stage1Deck', JSON.stringify(stage1Deck));
-                localStorage.setItem('ti4_stage2Deck', JSON.stringify(stage2Deck));
-            }, [objectives, completions, stage1Deck, stage2Deck]);
-
-            useEffect(() => { // Сохранение состояния раунда и хода
-                localStorage.setItem('ti4_roundActive', JSON.stringify(roundActive));
-                localStorage.setItem('ti4_turnOrder', JSON.stringify(turnOrder)); // turnOrder зависит от игроков и драфта, но сохраняем его отдельно
-                localStorage.setItem('ti4_activeTurnIdx', JSON.stringify(activeTurnIdx));
-                localStorage.setItem('ti4_passed', JSON.stringify(passed));
-                localStorage.setItem('ti4_turnTime', JSON.stringify(turnTime));
-                localStorage.setItem('ti4_speakerId', JSON.stringify(speakerId));
-                localStorage.setItem('ti4_roundActive', JSON.stringify(roundActive));
-                localStorage.setItem('ti4_isPoliticsActive', JSON.stringify(isPoliticsActive));
-                localStorage.setItem('ti4_draftAssignments', JSON.stringify(draftAssignments));
-                localStorage.setItem('ti4_draftQueue', JSON.stringify(draftQueue));
-                localStorage.setItem('ti4_strategyBonuses', JSON.stringify(strategyCardBonuses));
-                localStorage.setItem('ti4_speakerId', JSON.stringify(speakerId)); // Сохраняем спикера
-                localStorage.setItem('ti4_stage1Deck', JSON.stringify(stage1Deck)); // Сохраняем колоды
-                localStorage.setItem('ti4_stage2Deck', JSON.stringify(stage2Deck)); 
-
-            }, [roundActive, turnOrder, activeTurnIdx, passed, turnTime, speakerId, draftAssignments, draftQueue, strategyCardBonuses]);
-
             // Загрузить историю из облака
             const fetchGlobalStats = async () => {
                 try {
@@ -494,19 +465,9 @@ import { formatTime, shuffleArray } from './utils/game';
                 }
                 markStrategyAsPlayed();
             };
-            // Таймер хода
-            useEffect(() => {
-                let interval = null;
-                if (isGameActive && turnOrder.length > 0 && activePlayer && !passed[activePlayer.id]) {
-                    interval = setInterval(() => {
-                        setTurnTime(prev => prev + 1);
-                        setPlayers(prevPlayers =>
-                            prevPlayers.map(p => p.id === activePlayer.id ? { ...p, totalTime: (p.totalTime || 0) + 1 } : p)
-                        );
-                    }, 1000);
-                }
-                return () => clearInterval(interval);
-            }, [isGameActive, turnOrder, activeTurnIdx, activePlayer, passed]);
+            useTurnTimer({
+                isGameActive, turnOrder, activePlayer, passed, setTurnTime, setPlayers
+            });
 
             const availableFactions = ALL_FACTIONS.filter(f => {
                 if (f.exp === 'base') return true;
