@@ -1,0 +1,13 @@
+<svg viewBox="0 0 200 280" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="warfare-grad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#dc143c"/>
+      <stop offset="100%" stop-color="#a0102a"/>
+    </linearGradient>
+  </defs>
+  <rect width="200" height="280" fill="url(#warfare-grad)" rx="12"/>
+  <rect width="190" height="270" x="5" y="5" fill="none" stroke="#ffffff" stroke-width="2" rx="10"/>
+  <text x="20" y="40" fill="white" font-size="32" font-weight="bold">6</text>
+  <text x="100" y="150" text-anchor="middle" fill="white" font-size="26" font-weight="bold">WARFARE</text>
+  <polygon points="100,175 110,195 130,195 115,210 120,230 100,218 80,230 85,210 70,195 90,195" fill="white" opacity="0.9"/>
+</svg>
