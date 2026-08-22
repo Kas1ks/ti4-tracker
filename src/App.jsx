@@ -26,11 +26,18 @@ import { DraftModal } from './components/DraftModal';
             const [roundNumber, setRoundNumber] = useState(() => loadJson('ti4_round', 1));
 
             // Состояние окна выбора стратегий (Draft Modal)
-            const [showDraftModal, setShowDraftModal] = useState(false);
-            const [draftStep, setDraftStep] = useState('DRAFT'); // 'DRAFT' | 'CONFIRM'
-            const [draftQueue, setDraftQueue] = useState([]); // Очередь ID игроков
-            const [currentQueueIndex, setCurrentQueueIndex] = useState(0); // Текущий ходящий
-            const [draftAssignments, setDraftAssignments] = useState({}); // { cardId: playerId }
+            const [draftQueue, setDraftQueue] = useState(() => loadJson('ti4_draftQueue', []));
+            const [draftAssignments, setDraftAssignments] = useState(() => loadJson('ti4_draftAssignments', {}));
+            const [currentQueueIndex, setCurrentQueueIndex] = useState(() => loadJson('ti4_currentQueueIndex', 0));
+            const [draftStep, setDraftStep] = useState(() => {
+                const step = loadJson('ti4_draftStep', 'DRAFT');
+                return step === 'CONFIRM' ? 'CONFIRM' : 'DRAFT';
+            });
+            const [showDraftModal, setShowDraftModal] = useState(() => {
+                const queue = loadJson('ti4_draftQueue', []);
+                if (!Array.isArray(queue) || queue.length === 0) return false;
+                return true;
+            });
             const [strategyCardBonuses, setStrategyCardBonuses] = useState(() => loadJson('ti4_strategyBonuses', {}));
             const [roundActive, setRoundActive] = useState(() => loadJson('ti4_roundActive', false));
 
@@ -200,14 +207,14 @@ import { DraftModal } from './components/DraftModal';
                 localStorage.removeItem('ti4_isPoliticsActive');
                 localStorage.removeItem('ti4_draftAssignments');
                 localStorage.removeItem('ti4_draftQueue');
-                localStorage.removeItem('ti4_activeTurnIdx');
+                localStorage.removeItem('ti4_currentQueueIndex');
+                localStorage.removeItem('ti4_draftStep');
+                localStorage.removeItem('ti4_showDraftModal');
                 localStorage.removeItem('ti4_stage1Deck'); // Очищаем колоды
                 localStorage.removeItem('ti4_stage2Deck');
-                localStorage.removeItem('ti4_draftAssignments');
                 localStorage.removeItem('ti4_gameSummary');
                 localStorage.removeItem('ti4_strategyBonuses');
                 localStorage.removeItem('ti4_speakerId');
-                localStorage.removeItem('ti4_draftQueue');
                 localStorage.removeItem('ti4_isAgendaPhasePending');
 
                 // Сбрасываем состояния к исходным "чистым" значениям
@@ -224,6 +231,8 @@ import { DraftModal } from './components/DraftModal';
                 setDraftAssignments({});
                 setDraftQueue([]);
                 setCurrentQueueIndex(0);
+                setDraftStep('DRAFT');
+                setShowDraftModal(false);
 
                 setShowEndGameModal(false);
 
@@ -352,6 +361,7 @@ import { DraftModal } from './components/DraftModal';
                 setDraftAssignments({});
                 setDraftQueue([]);
                 setCurrentQueueIndex(0);
+                setDraftStep('DRAFT');
             };
 
             // История и загрузка статистики
@@ -371,7 +381,8 @@ import { DraftModal } from './components/DraftModal';
                 isGameActive, targetScore, roundNumber, usePok, useTe, isPoliticsActive,
                 players, objectives, completions, stage1Deck, stage2Deck, roundActive,
                 turnOrder, activeTurnIdx, passed, turnTime, speakerId, draftAssignments,
-                draftQueue, strategyCardBonuses, isAgendaPhasePending
+                draftQueue, currentQueueIndex, draftStep, showDraftModal,
+                strategyCardBonuses, isAgendaPhasePending,
             });
 
             // Разделяем useEffect для лучшей производительности и логики
