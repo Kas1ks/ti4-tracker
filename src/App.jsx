@@ -4,6 +4,7 @@ import { ADMIN_PIN, isCloudConfigured } from './config';
 import { ALL_FACTIONS, BASE_OBJECTIVES, DEFAULT_OBJECTIVES, STRATEGY_CARDS } from './data/gameData';
 import { formatTime, isAgendaFullyVoted, shuffleArray } from './utils/game';
 import { loadJson } from './utils/storage';
+import { applyGameSnapshot } from './utils/snapshot';
 import { fetchCloudBin, putCloudBin } from './utils/cloud';
 import { useGamePersistence } from './hooks/useGamePersistence';
 import { useTurnTimer } from './hooks/useTurnTimer';
@@ -38,6 +39,7 @@ import { DraftModal } from './components/DraftModal';
                 if (!Array.isArray(queue) || queue.length === 0) return false;
                 return true;
             });
+            const [draftPickOrder, setDraftPickOrder] = useState(() => loadJson('ti4_draftPickOrder', []));
             const [strategyCardBonuses, setStrategyCardBonuses] = useState(() => loadJson('ti4_strategyBonuses', {}));
             const [roundActive, setRoundActive] = useState(() => loadJson('ti4_roundActive', false));
 
@@ -209,6 +211,7 @@ import { DraftModal } from './components/DraftModal';
                 localStorage.removeItem('ti4_draftQueue');
                 localStorage.removeItem('ti4_currentQueueIndex');
                 localStorage.removeItem('ti4_draftStep');
+                localStorage.removeItem('ti4_draftPickOrder');
                 localStorage.removeItem('ti4_showDraftModal');
                 localStorage.removeItem('ti4_stage1Deck'); // Очищаем колоды
                 localStorage.removeItem('ti4_stage2Deck');
@@ -231,6 +234,7 @@ import { DraftModal } from './components/DraftModal';
                 setDraftAssignments({});
                 setDraftQueue([]);
                 setCurrentQueueIndex(0);
+                setDraftPickOrder([]);
                 setDraftStep('DRAFT');
                 setShowDraftModal(false);
 
@@ -259,8 +263,19 @@ import { DraftModal } from './components/DraftModal';
 
             // 1. Открытие модального окна и сборка очереди драфта
             const openStrategyDraft = () => {
-                const cardsPerPlayer = players.length <= 4 ? 2 : 1;
+                if (draftQueue.length > 0) {
+                    setShowDraftModal(true);
+                    return;
+                }
+
                 const activePlayersForDraft = players.filter(p => !p.eliminated);
+                const draftAlreadyDone = activePlayersForDraft.length > 0
+                    && activePlayersForDraft.every(p => p.cards && p.cards.length > 0);
+                if (draftAlreadyDone || roundActive) {
+                    return;
+                }
+
+                const cardsPerPlayer = players.length <= 4 ? 2 : 1;
 
                 let speakerIndex = activePlayersForDraft.findIndex(p => p.id === speakerId);
                 if (speakerIndex === -1) {
@@ -285,6 +300,7 @@ import { DraftModal } from './components/DraftModal';
                 setDraftQueue(queue);
                 setCurrentQueueIndex(0);
                 setDraftAssignments({});
+                setDraftPickOrder([]);
                 setDraftStep("DRAFT");
                 setShowDraftModal(true);
             };
@@ -292,8 +308,8 @@ import { DraftModal } from './components/DraftModal';
             // 2. Клик по карте во время драфта
             const handleSelectCard = (cardId) => {
                 const currentPlayerId = draftQueue[currentQueueIndex];
-                const updatedAssignments = { ...draftAssignments, [cardId]: currentPlayerId };
-                setDraftAssignments(updatedAssignments);
+                setDraftAssignments(prev => ({ ...prev, [cardId]: currentPlayerId }));
+                setDraftPickOrder(prev => [...prev, cardId]);
 
                 const nextIndex = currentQueueIndex + 1;
                 if (nextIndex >= draftQueue.length) {
@@ -301,6 +317,22 @@ import { DraftModal } from './components/DraftModal';
                 } else {
                     setCurrentQueueIndex(nextIndex);
                 }
+            };
+
+            const handleUndoLastPick = () => {
+                if (draftPickOrder.length === 0) return;
+
+                const lastCardId = draftPickOrder[draftPickOrder.length - 1];
+                const nextPickOrder = draftPickOrder.slice(0, -1);
+
+                setDraftPickOrder(nextPickOrder);
+                setDraftAssignments(prev => {
+                    const next = { ...prev };
+                    delete next[lastCardId];
+                    return next;
+                });
+                setDraftStep('DRAFT');
+                setCurrentQueueIndex(nextPickOrder.length);
             };
 
             // 3. Обмен/переназначение карты в окне подтверждения
@@ -361,6 +393,7 @@ import { DraftModal } from './components/DraftModal';
                 setDraftAssignments({});
                 setDraftQueue([]);
                 setCurrentQueueIndex(0);
+                setDraftPickOrder([]);
                 setDraftStep('DRAFT');
             };
 
@@ -381,7 +414,7 @@ import { DraftModal } from './components/DraftModal';
                 isGameActive, targetScore, roundNumber, usePok, useTe, isPoliticsActive,
                 players, objectives, completions, stage1Deck, stage2Deck, roundActive,
                 turnOrder, activeTurnIdx, passed, turnTime, speakerId, draftAssignments,
-                draftQueue, currentQueueIndex, draftStep, showDraftModal,
+                draftQueue, currentQueueIndex, draftStep, showDraftModal, draftPickOrder,
                 strategyCardBonuses, isAgendaPhasePending,
             });
 
@@ -654,6 +687,9 @@ import { DraftModal } from './components/DraftModal';
                     draftAssignments,
                     draftQueue,
                     currentQueueIndex,
+                    draftPickOrder,
+                    draftStep,
+                    showDraftModal,
                     turnOrder,
                     stage1Deck, // Добавляем колоды в сохранение
                     stage2Deck,
@@ -680,6 +716,34 @@ import { DraftModal } from './components/DraftModal';
             };
 
 
+            const snapshotActions = {
+                setTargetScore,
+                setRoundNumber,
+                setUsePok,
+                setUseTe,
+                setPlayers,
+                setIsPoliticsActive,
+                setIsAgendaPhasePending,
+                setObjectives,
+                setCompletions,
+                setRoundActive,
+                setDraftAssignments,
+                setDraftQueue,
+                setCurrentQueueIndex,
+                setDraftPickOrder,
+                setStage1Deck,
+                setStage2Deck,
+                setStrategyCardBonuses,
+                setTurnOrder,
+                setSpeakerId,
+                setActiveTurnIdx,
+                setPassed,
+                setTurnTime,
+                setDraftStep,
+                setShowDraftModal,
+                setIsGameActive,
+            };
+
             const importGameToken = async (saveId) => {
                 if (!isCloudConfigured) {
                     alert("Облачная загрузка не настроена.");
@@ -700,29 +764,7 @@ import { DraftModal } from './components/DraftModal';
                         return;
                     }
 
-                    setTargetScore(snap.targetScore);
-                    setRoundNumber(snap.roundNumber || 1);
-                    setUsePok(!!snap.usePok);
-                    setUseTe(!!snap.useTe);
-                    setPlayers(snap.players || []);
-                    setIsPoliticsActive(snap.isPoliticsActive || false);
-                    setIsAgendaPhasePending(!!snap.isAgendaPhasePending);
-                    setObjectives(snap.objectives || DEFAULT_OBJECTIVES);
-                    setCompletions(snap.completions || {});
-                    setRoundActive(!!snap.roundActive);
-                    setDraftAssignments(snap.draftAssignments || {});
-                    setDraftQueue(snap.draftQueue || []);
-                    setCurrentQueueIndex(snap.currentQueueIndex || 0);
-                    setStage1Deck(snap.stage1Deck || shuffleArray(BASE_OBJECTIVES.filter(obj => obj.stage === 1))); // Восстанавливаем колоды
-                    setStage2Deck(snap.stage2Deck || shuffleArray(BASE_OBJECTIVES.filter(obj => obj.stage === 2)));
-                    setStrategyCardBonuses(snap.strategyCardBonuses || {});
-                    setTurnOrder(snap.turnOrder || []);
-                    setSpeakerId(snap.speakerId || null);
-                    setActiveTurnIdx(snap.activeTurnIdx || 0);
-                    setPassed(snap.passed || {});
-                    setTurnTime(snap.turnTime || 0);
-
-                    setIsGameActive(true);
+                    applyGameSnapshot(snap, snapshotActions);
                     alert('Партия успешно загружена из облака!');
                 } catch (e) {
                     alert('Ошибка при загрузке из облака.');
@@ -731,26 +773,7 @@ import { DraftModal } from './components/DraftModal';
 
             const restoreSnapshot = (snap) => {
                 if (!confirm(`Восстановить сохранение от ${snap.timestamp}? Текущий прогресс изменится.`)) return;
-
-                setTargetScore(snap.targetScore);
-                setRoundNumber(snap.roundNumber || 1);
-                setPlayers(snap.players);
-                setObjectives(snap.objectives || DEFAULT_OBJECTIVES);
-                setIsPoliticsActive(snap.isPoliticsActive || false);
-                setIsAgendaPhasePending(!!snap.isAgendaPhasePending);
-                setCompletions(snap.completions || {});
-                setRoundActive(!!snap.roundActive);
-                setDraftAssignments(snap.draftAssignments || {});
-                setDraftQueue(snap.draftQueue || []);
-                setCurrentQueueIndex(snap.currentQueueIndex || 0);
-                setStage1Deck(snap.stage1Deck || shuffleArray(BASE_OBJECTIVES.filter(obj => obj.stage === 1)));
-                setStage2Deck(snap.stage2Deck || shuffleArray(BASE_OBJECTIVES.filter(obj => obj.stage === 2)));
-                setStrategyCardBonuses(snap.strategyCardBonuses || {});
-                setTurnOrder(snap.turnOrder || []);
-                    setSpeakerId(snap.speakerId || (snap.players.length > 0 ? snap.players[0].id : null)); // Восстанавливаем спикера
-                setActiveTurnIdx(snap.activeTurnIdx || 0);
-                setPassed(snap.passed || {});
-                setIsGameActive(true);
+                applyGameSnapshot(snap, snapshotActions);
             };
 
             const nextTurn = () => {
@@ -861,6 +884,13 @@ import { DraftModal } from './components/DraftModal';
                 setTurnTime(0);
                 setRoundActive(false);
 
+                setDraftAssignments({});
+                setDraftQueue([]);
+                setCurrentQueueIndex(0);
+                setDraftPickOrder([]);
+                setDraftStep('DRAFT');
+                setShowDraftModal(false);
+
                 localStorage.setItem("ti4_roundActive", JSON.stringify(false));
             };
 
@@ -879,6 +909,8 @@ import { DraftModal } from './components/DraftModal';
 
             const activePlayers = players.filter(p => !p.eliminated);
             const canStartRound = activePlayers.length > 0 && activePlayers.every(p => p.cards && p.cards.length > 0);
+            const draftInProgress = draftQueue.length > 0;
+            const isDraftLocked = canStartRound && !draftInProgress;
 
             return (
                 <div className="max-w-[1800px] mx-auto min-h-screen flex flex-col text-slate-100 px-3 md:px-8">
@@ -916,7 +948,8 @@ import { DraftModal } from './components/DraftModal';
                                             {/* 1. Кнопка «Выбор карт стратегии» (активна только между раундами) */}
                                             <button
                                                 onClick={openStrategyDraft}
-                                                disabled={roundActive}
+                                                disabled={roundActive || isDraftLocked}
+                                                title={isDraftLocked ? 'Карты уже выбраны — дождитесь конца раунда' : undefined}
                                                 className="bg-amber-500 hover:bg-amber-400 disabled:bg-slate-800 disabled:text-slate-600 disabled:border-slate-800 text-slate-950 font-bold px-4 py-2 rounded-xl text-xs transition border border-amber-400/30 shadow-md flex items-center gap-1.5"
                                             >
                                                 <i className="fa-solid fa-layer-group"></i> Выбор карт стратегий
@@ -1162,8 +1195,10 @@ import { DraftModal } from './components/DraftModal';
                             players={activePlayers}
                             currentQueueIndex={currentQueueIndex}
                             draftAssignments={draftAssignments}
+                            draftPickOrder={draftPickOrder}
                             strategyCardBonuses={strategyCardBonuses}
                             handleSelectCard={handleSelectCard}
+                            handleUndoLastPick={handleUndoLastPick}
                             handleReassignCard={handleReassignCard}
                             confirmDraft={confirmDraft}
                         />

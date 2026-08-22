@@ -5,7 +5,7 @@ export function useGamePersistence(state) {
                 isGameActive, targetScore, roundNumber, usePok, useTe, isPoliticsActive,
                 players, objectives, completions, stage1Deck, stage2Deck, roundActive,
                 turnOrder, activeTurnIdx, passed, turnTime, speakerId, draftAssignments,
-                draftQueue, currentQueueIndex, draftStep, showDraftModal,
+                draftQueue, currentQueueIndex, draftStep, showDraftModal, draftPickOrder,
                 strategyCardBonuses, isAgendaPhasePending,
   } = state;
 
@@ -40,12 +40,13 @@ export function useGamePersistence(state) {
     localStorage.setItem('ti4_draftQueue', JSON.stringify(draftQueue));
     localStorage.setItem('ti4_currentQueueIndex', JSON.stringify(currentQueueIndex));
     localStorage.setItem('ti4_draftStep', JSON.stringify(draftStep));
+    localStorage.setItem('ti4_draftPickOrder', JSON.stringify(draftPickOrder));
     localStorage.setItem('ti4_showDraftModal', JSON.stringify(showDraftModal));
     localStorage.setItem('ti4_strategyBonuses', JSON.stringify(strategyCardBonuses));
     localStorage.setItem('ti4_isAgendaPhasePending', JSON.stringify(isAgendaPhasePending));
   }, [
     roundActive, turnOrder, activeTurnIdx, passed, turnTime, speakerId,
-    draftAssignments, draftQueue, currentQueueIndex, draftStep, showDraftModal,
+    draftAssignments, draftQueue, currentQueueIndex, draftStep, showDraftModal, draftPickOrder,
     strategyCardBonuses, isAgendaPhasePending,
   ]);
 }

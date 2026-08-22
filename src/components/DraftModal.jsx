@@ -1,6 +1,6 @@
 import { STRATEGY_CARDS } from '../data/gameData';
 
-export function DraftModal({ showDraftModal, minimizedModals, toggleMinimize, setShowDraftModal, draftStep, draftQueue, players, currentQueueIndex, draftAssignments, strategyCardBonuses, handleSelectCard, handleReassignCard, confirmDraft }) {
+export function DraftModal({ showDraftModal, minimizedModals, toggleMinimize, setShowDraftModal, draftStep, draftQueue, players, currentQueueIndex, draftAssignments, strategyCardBonuses, handleSelectCard, handleUndoLastPick, handleReassignCard, confirmDraft, draftPickOrder }) {
   return (
     <>
 {showDraftModal && (
@@ -46,6 +46,18 @@ export function DraftModal({ showDraftModal, minimizedModals, toggleMinimize, se
                                                         </span>
                                                     );
                                                 })}
+                                            </div>
+
+                                            <div className="flex justify-end mb-4">
+                                                <button
+                                                    type="button"
+                                                    onClick={handleUndoLastPick}
+                                                    disabled={!draftPickOrder?.length}
+                                                    className="bg-slate-800 hover:bg-slate-700 disabled:bg-slate-900 disabled:text-slate-600 text-slate-300 font-bold px-4 py-2 rounded-xl text-xs transition border border-slate-700 flex items-center gap-1.5"
+                                                >
+                                                    <i className="fa-solid fa-rotate-left"></i>
+                                                    Отменить последний выбор
+                                                </button>
                                             </div>
 
                                             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -127,7 +139,16 @@ export function DraftModal({ showDraftModal, minimizedModals, toggleMinimize, se
                                                 </table>
                                             </div>
 
-                                            <div className="flex justify-end pt-2">
+                                            <div className="flex justify-end pt-2 gap-2">
+                                                <button
+                                                    type="button"
+                                                    onClick={handleUndoLastPick}
+                                                    disabled={!draftPickOrder?.length}
+                                                    className="bg-slate-800 hover:bg-slate-700 disabled:bg-slate-900 disabled:text-slate-600 text-slate-300 font-bold px-4 py-2.5 rounded-xl text-xs transition border border-slate-700"
+                                                >
+                                                    <i className="fa-solid fa-rotate-left mr-1"></i>
+                                                    Отменить последний выбор
+                                                </button>
                                                 <button
                                                     onClick={confirmDraft}
                                                     className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-russo px-5 py-2.5 rounded-xl text-xs transition shadow-lg shadow-amber-500/10"
