@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { ADMIN_PIN, JSONBIN_BIN_ID, JSONBIN_MASTER_KEY, isCloudConfigured } from './config';
+import { ADMIN_PIN, isCloudConfigured } from './config';
 import { ALL_FACTIONS, BASE_OBJECTIVES, DEFAULT_OBJECTIVES, STRATEGY_CARDS } from './data/gameData';
-import { formatTime, shuffleArray } from './utils/game';
+import { formatTime, isAgendaFullyVoted, shuffleArray } from './utils/game';
 import { loadJson } from './utils/storage';
+import { fetchCloudBin, putCloudBin } from './utils/cloud';
 import { useGamePersistence } from './hooks/useGamePersistence';
 import { useTurnTimer } from './hooks/useTurnTimer';
 import { GameSummaryModal } from './components/GameSummaryModal';
@@ -378,13 +379,12 @@ import { DraftModal } from './components/DraftModal';
             const fetchGlobalStats = async () => {
                 if (!isCloudConfigured) return [];
                 try {
-                    const response = await fetch(`https://api.jsonbin.io/v3/b/${JSONBIN_BIN_ID}/latest`, {
-                        method: 'GET',
-                        headers: { 'X-Master-Key': JSONBIN_MASTER_KEY, 'X-Bin-Meta': 'false' }
-                    });
-                    const history = await response.json();
-                    return Array.isArray(history) ? history : [];
-                } catch (e) { return []; }
+                    const { history } = await fetchCloudBin();
+                    return history;
+                } catch (e) {
+                    console.error(e);
+                    return [];
+                }
             };
 
             const openStatsModal = async () => {
@@ -405,13 +405,10 @@ import { DraftModal } from './components/DraftModal';
                     alert("Неверный PIN!");
                     return;
                 }
-                const updated = globalHistory.filter(g => g.id !== gameId);
                 try {
-                    await fetch(`https://api.jsonbin.io/v3/b/${JSONBIN_BIN_ID}`, {
-                        method: 'PUT',
-                        headers: { 'Content-Type': 'application/json', 'X-Master-Key': JSONBIN_MASTER_KEY },
-                        body: JSON.stringify(updated)
-                    });
+                    const { history, saves } = await fetchCloudBin();
+                    const updated = history.filter(g => g.id !== gameId);
+                    await putCloudBin({ history: updated, saves });
                     setGlobalHistory(updated);
                     alert("Партия удалена.");
                 } catch (e) {
@@ -431,11 +428,8 @@ import { DraftModal } from './components/DraftModal';
                 }
                 if (!confirm("Вы уверены? Вся история будет удалена безвозвратно!")) return;
                 try {
-                    await fetch(`https://api.jsonbin.io/v3/b/${JSONBIN_BIN_ID}`, {
-                        method: 'PUT',
-                        headers: { 'Content-Type': 'application/json', 'X-Master-Key': JSONBIN_MASTER_KEY },
-                        body: JSON.stringify([])
-                    });
+                    const { saves } = await fetchCloudBin();
+                    await putCloudBin({ history: [], saves });
                     setGlobalHistory([]);
                     alert("Вся статистика очищена.");
                 } catch (e) {
@@ -463,29 +457,17 @@ import { DraftModal } from './components/DraftModal';
                     }))
                 };
 
-                // Сохраняем статистику для отображения в модальном окне
                 localStorage.setItem('ti4_gameSummary', JSON.stringify(gameRecord));
 
-                if (!isCloudConfigured) return;
+                if (!isCloudConfigured) {
+                    alert("Партия сохранена только на этом устройстве. Облачная статистика не настроена.");
+                    return;
+                }
 
                 try {
-                    const response = await fetch(`https://api.jsonbin.io/v3/b/${JSONBIN_BIN_ID}/latest`, {
-                        method: 'GET',
-                        headers: { 'X-Master-Key': JSONBIN_MASTER_KEY, 'X-Bin-Meta': 'false' }
-                    });
-                    const currentData = await response.json();
-
-                    const history = Array.isArray(currentData) ? currentData : (currentData.history || []);
-                    const saves = Array.isArray(currentData) ? {} : (currentData.saves || {});
-
+                    const { history, saves } = await fetchCloudBin();
                     history.unshift(gameRecord);
-
-                    await fetch(`https://api.jsonbin.io/v3/b/${JSONBIN_BIN_ID}`, {
-                        method: 'PUT',
-                        headers: { 'Content-Type': 'application/json', 'X-Master-Key': JSONBIN_MASTER_KEY },
-                        body: JSON.stringify({ history, saves })
-                    });
-
+                    await putCloudBin({ history, saves });
                     alert("Партия успешно сохранена в общую статистику! 🏆");
                 } catch (e) {
                     alert("Ошибка при сохранении в облако.");
@@ -626,6 +608,9 @@ import { DraftModal } from './components/DraftModal';
                 const key = `${pId}_${oId}`;
                 setCompletions(prev => ({ ...prev, [key]: !prev[key] }));
             };
+            const removeObjective = (objectiveId) => {
+                setObjectives(prev => prev.filter(obj => obj.id !== objectiveId));
+            };
             const handleAddSecret = (playerId) => {
                 setPlayers(prev => prev.map(p => {
                     if (p.id !== playerId) return p;
@@ -672,25 +657,9 @@ import { DraftModal } from './components/DraftModal';
                 };
 
                 try {
-                    // Читаем текущие данные бина
-                    const response = await fetch(`https://api.jsonbin.io/v3/b/${JSONBIN_BIN_ID}/latest`, {
-                        method: 'GET',
-                        headers: { 'X-Master-Key': JSONBIN_MASTER_KEY, 'X-Bin-Meta': 'false' }
-                    });
-                    const currentData = await response.json();
-
-                    // Поддерживаем разделение на history и saves
-                    const history = Array.isArray(currentData) ? currentData : (currentData.history || []);
-                    const saves = Array.isArray(currentData) ? {} : (currentData.saves || {});
-
+                    const { history, saves } = await fetchCloudBin();
                     saves[saveId] = gameState;
-
-                    // Перезаписываем JSONBin, не трогая history
-                    await fetch(`https://api.jsonbin.io/v3/b/${JSONBIN_BIN_ID}`, {
-                        method: 'PUT',
-                        headers: { 'Content-Type': 'application/json', 'X-Master-Key': JSONBIN_MASTER_KEY },
-                        body: JSON.stringify({ history, saves })
-                    });
+                    await putCloudBin({ history, saves });
 
                     navigator.clipboard.writeText(saveId);
                     alert(`Партия сохранена! Код сохранения: ${saveId} (скопирован в буфер обмена)`);
@@ -712,12 +681,7 @@ import { DraftModal } from './components/DraftModal';
                 }
 
                 try {
-                    const response = await fetch(`https://api.jsonbin.io/v3/b/${JSONBIN_BIN_ID}/latest`, {
-                        method: 'GET',
-                        headers: { 'X-Master-Key': JSONBIN_MASTER_KEY, 'X-Bin-Meta': 'false' }
-                    });
-                    const currentData = await response.json();
-                    const saves = currentData.saves || {};
+                    const { saves } = await fetchCloudBin();
                     const snap = saves[cleanId];
 
                     if (!snap) {
@@ -1321,10 +1285,10 @@ import { DraftModal } from './components/DraftModal';
                                             return sortedVotes[0][0];
                                         })();
 
-                                        const allVotedOnCurrentAgenda = activePlayers.length > 0 && activePlayers.every(p => !!currentAgenda.locked[p.id]);
+                                        const allVotedOnCurrentAgenda = isAgendaFullyVoted(currentAgenda, activePlayers);
 
-                                        const completedAgendasCount = agendas.filter(a =>
-                                            a.type !== null && players.length > 0 && Object.keys(a.locked).length === players.length
+                                        const completedAgendasCount = agendas.filter((agenda) =>
+                                            isAgendaFullyVoted(agenda, activePlayers)
                                         ).length;
 
                                         return (

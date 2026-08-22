@@ -13,4 +13,10 @@ Then open the URL Vite prints (usually http://localhost:5173).
 
 The old one-file app is saved as `legacy.html` (open it directly in a browser). Do not put JSONBin master keys in the frontend for production.
 
-Copy `.env.example` to `.env.local` only for local stats experiments.
+Copy `.env.example` to `.env.local` for local stats, or put the same `VITE_*` values in Cloudflare Pages environment variables (they are applied at build time).
+
+## Cloudflare Pages
+
+- Build command: `npm run build`
+- Output directory: `dist`
+- Environment variables: `VITE_JSONBIN_BIN_ID`, `VITE_JSONBIN_MASTER_KEY`, `VITE_ADMIN_PIN`

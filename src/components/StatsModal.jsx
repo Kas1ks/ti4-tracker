@@ -1,5 +1,5 @@
-import { ALL_FACTIONS } from '../data/gameData';
 import { formatTime } from '../utils/game';
+import { isCloudConfigured } from '../config';
 
 export function StatsModal({ showStatsModal, setShowStatsModal, isStatsLoading, globalHistory, deleteSingleGame, clearAllStats }) {
   return (
@@ -29,7 +29,9 @@ export function StatsModal({ showStatsModal, setShowStatsModal, isStatsLoading, 
                                         </div>
                                     ) : globalHistory.length === 0 ? (
                                         <div className="text-center py-12 text-slate-500">
-                                            История игр пока пуста. Завершите хотя бы одну партию!
+                                            {isCloudConfigured
+                                                ? 'История игр пока пуста. Завершите хотя бы одну партию!'
+                                                : 'Облачная статистика не подключена. Перезапустите npm run dev после настройки .env.local.'}
                                         </div>
                                     ) : (
                                         <div className="space-y-6">

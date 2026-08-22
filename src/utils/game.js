@@ -13,3 +13,8 @@ export function shuffleArray(array) {
   }
   return copy;
 }
+
+export function isAgendaFullyVoted(agenda, votingPlayers) {
+  if (!agenda?.type || !votingPlayers?.length) return false;
+  return votingPlayers.every((player) => !!agenda.locked?.[player.id]);
+}
