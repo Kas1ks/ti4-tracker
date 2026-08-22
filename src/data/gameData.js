@@ -45,14 +45,14 @@ export const STRATEGY_CARDS = [
 ];
 
 export const PLAYER_COLORS = [
+  { id: 'red', name: 'Красный', hex: '#ef4444' },
   { id: 'blue', name: 'Синий', hex: '#3b82f6' },
   { id: 'green', name: 'Зеленый', hex: '#22c55e' },
-  { id: 'red', name: 'Красный', hex: '#ef4444' },
   { id: 'yellow', name: 'Желтый', hex: '#eab308' },
   { id: 'purple', name: 'Фиолетовый', hex: '#a855f7' },
-  { id: 'black', name: 'Черный', hex: '#475569' },
-  { id: 'cyan', name: 'Голубой', hex: '#06b6d4' },
   { id: 'orange', name: 'Оранжевый', hex: '#f97316' },
+  { id: 'pink', name: 'Розовый', hex: '#ec4899' },
+  { id: 'black', name: 'Черный', hex: '#000000', border: '#64748b' },
 ];
 
 export const BASE_OBJECTIVES = [

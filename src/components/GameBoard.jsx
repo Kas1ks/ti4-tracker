@@ -1,19 +1,11 @@
-import { AnimatePresence, motion } from 'framer-motion';
+import { motion } from 'framer-motion';
 import { ALL_FACTIONS } from '../data/gameData';
 import { formatTime } from '../utils/game';
 
 export function GameBoard({
   turnOrder,
   passed,
-  openStrategyDraft,
-  roundActive,
-  handleStartRound,
-  handleEndRound,
   activePlayer,
-  activeStrategyCard,
-  isCurrentStrategyPlayed,
-  playStrategyCard,
-  nextTurn,
   sortedPlayersForBoard,
   getPlayerScore,
   players,
@@ -26,12 +18,11 @@ export function GameBoard({
   removeObjective,
   addRandomObjective,
   addCustomObjective,
-  setShowObjectiveModal,
-  setSelectedStage,
-  setShowCombatModal,
-  roundNumber,
   targetScore,
-  canStartRound, speakerId, handleAddSecret, eliminatePlayer, isGameActive, setObjectives,
+  speakerId,
+  handleAddSecret,
+  eliminatePlayer,
+  isGameActive,
 }) {
   return (
                             <div className="space-y-8">
@@ -49,8 +40,7 @@ export function GameBoard({
                                         </div>
 
                                         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
-                                            {turnOrder.map((p, idx) => {
-                                                const playerId = p.id;
+                                            {turnOrder.map((p) => {
                                                 if (!p) return null;
                                                 const hasPassed = !!passed[p.id];
                                                 const isStrategyUsed = !!p.strategyPlayed;
@@ -127,7 +117,6 @@ export function GameBoard({
                                         <div className="space-y-2.5 flex flex-col">
                                             {sortedPlayersForBoard.map(p => {
                                                 const score = getPlayerScore(p.id);
-                                                const playerCards = (p.cards || []).slice().sort((a, b) => a.id - b.id);
                                                 const maxScore = Math.max(...players.map(x => getPlayerScore(x.id)), 0);
                                                 const isLeader = score === maxScore && score > 0;
                                                 const faction = ALL_FACTIONS.find(f => f.id === p.factionId);
@@ -312,7 +301,7 @@ export function GameBoard({
                                                                             )}
                                                                             <button
                                                                                 type="button"
-                                                                                onClick={() => setObjectives(objectives.filter(o => o.id !== obj.id))}
+                                                                                onClick={() => removeObjective(obj.id)}
                                                                                 className="text-slate-600 hover:text-red-400 text-sm p-1 transition"
                                                                                 title="Удалить цель"
                                                                             >
@@ -439,7 +428,7 @@ export function GameBoard({
                                                                             )}
                                                                             <button
                                                                                 type="button"
-                                                                                onClick={() => setObjectives(objectives.filter(o => o.id !== obj.id))}
+                                                                                onClick={() => removeObjective(obj.id)}
                                                                                 className="text-slate-600 hover:text-red-400 text-sm p-1 transition"
                                                                                 title="Удалить цель"
                                                                             >

@@ -1,4 +1,4 @@
-import { ALL_FACTIONS } from '../data/gameData';
+import { ALL_FACTIONS, PLAYER_COLORS } from '../data/gameData';
 
 function readSnapshots() {
   try {
@@ -52,7 +52,7 @@ export function SetupScreen({
                                                 <button
                                                     onClick={() => setUseTe(!useTe)}
                                                     className={`flex-1 py-3 px-4 rounded-xl font-bold text-xs md:text-sm border flex items-center justify-between transition ${useTe ? 'bg-amber-950 border-amber-500 text-amber-300' : 'bg-slate-900 border-slate-800 text-slate-600'}`}>
-                                                    <span>Thunder's Edge</span>
+                                                    <span>Thunder&apos;s Edge</span>
                                                     <i className={`fa-solid ${useTe ? 'fa-check-circle text-amber-400' : 'fa-circle text-slate-700'}`}></i>
                                                 </button>
                                             </div>
@@ -127,16 +127,7 @@ export function SetupScreen({
                                                                 Цвет: {!p.color && <span className="text-red-400 ml-1">(обязательно)</span>}
                                                             </span>
                                                             <div className="flex items-center gap-1.5 flex-wrap">
-                                                                {[
-                                                                    { name: 'Красный', hex: '#ef4444' },
-                                                                    { name: 'Синий', hex: '#3b82f6' },
-                                                                    { name: 'Зеленый', hex: '#22c55e' },
-                                                                    { name: 'Желтый', hex: '#eab308' },
-                                                                    { name: 'Фиолетовый', hex: '#a855f7' },
-                                                                    { name: 'Оранжевый', hex: '#f97316' },
-                                                                    { name: 'Розовый', hex: '#ec4899' },
-                                                                    { name: 'Черный', hex: '#000000', border: '#64748b' }
-                                                                ].map(c => {
+                                                                {PLAYER_COLORS.map(c => {
                                                                     const taken = isColorTaken(c.hex, p.id);
                                                                     if (taken) return null;
                                                                     const isSelected = p.color === c.hex;

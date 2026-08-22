@@ -1,5 +1,4 @@
-import React, { useEffect, useState } from 'react';
-import { AnimatePresence, motion } from 'framer-motion';
+import React, { useState } from 'react';
 import { ADMIN_PIN, isCloudConfigured } from './config';
 import { ALL_FACTIONS, BASE_OBJECTIVES, DEFAULT_OBJECTIVES, STRATEGY_CARDS } from './data/gameData';
 import { formatTime, isAgendaFullyVoted, shuffleArray } from './utils/game';
@@ -120,9 +119,6 @@ import { DraftModal } from './components/DraftModal';
             const [activeTurnIdx, setActiveTurnIdx] = useState(() => loadJson('ti4_activeTurnIdx', 0));
             const [passed, setPassed] = useState(() => loadJson('ti4_passed', {}));
 
-            const [showObjectiveModal, setShowObjectiveModal] = useState(false);
-            const [selectedStage, setSelectedStage] = useState(1); // 1 или 2 этап
-
             // Модальные окна
             const [showStatusPhaseModal, setShowStatusPhaseModal] = useState(false);
             const [statusPhaseChecks, setStatusPhaseChecks] = useState({
@@ -159,8 +155,6 @@ import { DraftModal } from './components/DraftModal';
                 { type: null, votes: {}, locked: {} }
             ]);
             const [currentAgendaIndex, setCurrentAgendaIndex] = useState(0);
-            const [otherChoices, setOtherChoices] = useState(['']);
-
             const toggleMinimize = (modalName) => {
                 setMinimizedModals(prev => ({ ...prev, [modalName]: !prev[modalName] }));
             };
@@ -425,8 +419,8 @@ import { DraftModal } from './components/DraftModal';
                 try {
                     const { history } = await fetchCloudBin();
                     return history;
-                } catch (e) {
-                    console.error(e);
+                } catch (err) {
+                    console.error(err);
                     return [];
                 }
             };
@@ -455,7 +449,7 @@ import { DraftModal } from './components/DraftModal';
                     await putCloudBin({ history: updated, saves });
                     setGlobalHistory(updated);
                     alert("Партия удалена.");
-                } catch (e) {
+                } catch {
                     alert("Ошибка при удалении.");
                 }
             };
@@ -476,7 +470,7 @@ import { DraftModal } from './components/DraftModal';
                     await putCloudBin({ history: [], saves });
                     setGlobalHistory([]);
                     alert("Вся статистика очищена.");
-                } catch (e) {
+                } catch {
                     alert("Ошибка при очистке.");
                 }
             };
@@ -513,7 +507,7 @@ import { DraftModal } from './components/DraftModal';
                     history.unshift(gameRecord);
                     await putCloudBin({ history, saves });
                     alert("Партия успешно сохранена в общую статистику! 🏆");
-                } catch (e) {
+                } catch {
                     alert("Ошибка при сохранении в облако.");
                 }
             };
@@ -568,7 +562,7 @@ import { DraftModal } from './components/DraftModal';
                 const newId = Date.now();
                 const unassignedFaction = availableFactions.find(f => !players.some(p => p.factionId === f.id)) || availableFactions[0];
                 // Цвет изначально не выбран ('')
-                setPlayers([...players, { id: newId, name: `Игрок ${players.length + 1}`, factionId: unassignedFaction.id, color: '', secrets: 0, extra: 0, breakthrough: false, totalTime: 0, damageDealt: 0, eliminated: false }]);
+                setPlayers([...players, { id: newId, name: `Игрок ${players.length + 1}`, factionId: unassignedFaction.id, color: '', secrets: 0, extra: 0, totalTime: 0, damageDealt: 0, eliminated: false }]);
             };
 
             const removePlayer = (id) => {
@@ -710,7 +704,7 @@ import { DraftModal } from './components/DraftModal';
 
                     navigator.clipboard.writeText(saveId);
                     alert(`Партия сохранена! Код сохранения: ${saveId} (скопирован в буфер обмена)`);
-                } catch (e) {
+                } catch {
                     alert('Ошибка при сохранении в облако.');
                 }
             };
@@ -766,7 +760,7 @@ import { DraftModal } from './components/DraftModal';
 
                     applyGameSnapshot(snap, snapshotActions);
                     alert('Партия успешно загружена из облака!');
-                } catch (e) {
+                } catch {
                     alert('Ошибка при загрузке из облака.');
                 }
             };
@@ -1120,15 +1114,7 @@ import { DraftModal } from './components/DraftModal';
                             <GameBoard
                                 turnOrder={turnOrder}
                                 passed={passed}
-                                openStrategyDraft={openStrategyDraft}
-                                roundActive={roundActive}
-                                handleStartRound={handleStartRound}
-                                handleEndRound={handleEndRound}
                                 activePlayer={activePlayer}
-                                activeStrategyCard={activeStrategyCard}
-                                isCurrentStrategyPlayed={isCurrentStrategyPlayed}
-                                playStrategyCard={playStrategyCard}
-                                nextTurn={nextTurn}
                                 sortedPlayersForBoard={sortedPlayersForBoard}
                                 getPlayerScore={getPlayerScore}
                                 players={players}
@@ -1141,17 +1127,11 @@ import { DraftModal } from './components/DraftModal';
                                 removeObjective={removeObjective}
                                 addRandomObjective={addRandomObjective}
                                 addCustomObjective={addCustomObjective}
-                                setShowObjectiveModal={setShowObjectiveModal}
-                                setSelectedStage={setSelectedStage}
-                                setShowCombatModal={setShowCombatModal}
-                                roundNumber={roundNumber}
                                 targetScore={targetScore}
-                                canStartRound={canStartRound}
                                 speakerId={speakerId}
                                 handleAddSecret={handleAddSecret}
                                 eliminatePlayer={eliminatePlayer}
                                 isGameActive={isGameActive}
-                                setObjectives={setObjectives}
                             />
                         )}
 
