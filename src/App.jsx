@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { ADMIN_PIN, isCloudConfigured } from './config';
 import { ALL_FACTIONS, BASE_OBJECTIVES, DEFAULT_OBJECTIVES, STRATEGY_CARDS } from './data/gameData';
-import { formatTime, isAgendaFullyVoted, shuffleArray } from './utils/game';
+import { shuffleArray } from './utils/game';
 import { loadJson } from './utils/storage';
 import { applyGameSnapshot } from './utils/snapshot';
 import { fetchCloudBin, putCloudBin } from './utils/cloud';
@@ -15,6 +15,10 @@ import { StatsModal } from './components/StatsModal';
 import { StatusPhaseModal } from './components/StatusPhaseModal';
 import { EndGameModal } from './components/EndGameModal';
 import { DraftModal } from './components/DraftModal';
+import { PoliticsModal } from './components/PoliticsModal';
+import { CombatModal } from './components/CombatModal';
+import { ActiveTurnBar } from './components/ActiveTurnBar';
+import { SpeakerSelectionModal } from './components/SpeakerSelectionModal';
 
 
 
@@ -901,6 +905,14 @@ import { DraftModal } from './components/DraftModal';
                 return a.id - b.id;
             });
 
+            const openCombatModal = () => {
+                setCombatOpponentId(null);
+                setCombatRound(1);
+                setTotalCombatDamage({ attacker: 0, defender: 0 });
+                setCombatHits({ attacker: 0, defender: 0 });
+                setShowCombatModal(true);
+            };
+
             const activePlayers = players.filter(p => !p.eliminated);
             const canStartRound = activePlayers.length > 0 && activePlayers.every(p => p.cards && p.cards.length > 0);
             const draftInProgress = draftQueue.length > 0;
@@ -1007,80 +1019,17 @@ import { DraftModal } from './components/DraftModal';
                             </div>
                         </div>
 
-                        {/* ПАНЕЛЬ АКТИВНОГО ХОДА */}
                         {isGameActive && turnOrder.length > 0 && activePlayer && !passed[activePlayer.id] && (
-                            <div className="bg-slate-950 border-2 border-cyan-500/70 p-4 rounded-2xl flex flex-wrap items-center justify-between gap-4 mt-4 shadow-[0_0_20px_rgba(6,182,212,0.2)]">
-                                <div className="flex items-center gap-4">
-                                    {(() => {
-                                        const fact = ALL_FACTIONS.find(f => f.id === activePlayer.factionId);
-                                        return (
-                                            <div className="w-14 h-14 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-center p-1 overflow-hidden shadow">
-                                                <img src={fact?.iconUrl} alt={fact?.name} className="w-full h-full object-contain" />
-                                            </div>
-                                        );
-                                    })()}
-                                    <div>
-                                        <div className="text-xs text-cyan-400 font-bold uppercase tracking-wider">Сейчас ходит:</div>
-                                        <div className="font-bold text-white text-xl md:text-2xl leading-none">{activePlayer.name}</div>
-                                    </div>
-                                </div>
-
-                                {activeStrategyCard && (
-                                    <div className="flex items-center gap-3 bg-slate-900 px-4 py-2 rounded-xl border border-slate-800">
-                                        <div>
-                                            <div className="text-[10px] text-slate-400 uppercase font-bold">Карта Стратегии:</div>
-                                            <div className="font-orbitron font-extrabold text-sm md:text-base text-amber-300">{activeStrategyCard.name}</div>
-                                        </div>
-                                        <button
-                                            onClick={playStrategyCard}
-                                            className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition ${isCurrentStrategyPlayed
-                                                ? 'bg-emerald-950 border-emerald-500 text-emerald-300'
-                                                : 'bg-amber-500 hover:bg-amber-400 text-black border-amber-400 shadow'
-                                                }`}>
-                                            {isCurrentStrategyPlayed ? '✓ Сыграна' : 'Сыграть стратегию'}
-                                        </button>
-                                    </div>
-                                )}
-
-                                <div className="flex items-center gap-5 bg-slate-900 px-5 py-2 rounded-xl border border-slate-800">
-                                    <div className="text-center">
-                                        <div className="text-[10px] text-slate-500 uppercase font-bold">Ход</div>
-                                        <div className="font-orbitron font-black text-amber-400 text-lg md:text-xl">{formatTime(turnTime)}</div>
-                                    </div>
-                                    <div className="w-px h-8 bg-slate-800"></div>
-                                    <div className="text-center">
-                                        <div className="text-[10px] text-slate-500 uppercase font-bold">Всего</div>
-                                        <div className="font-orbitron font-bold text-slate-300 text-base md:text-lg">{formatTime(activePlayer.totalTime || 0)}</div>
-                                    </div>
-                                </div>
-
-                                <div className="flex items-center gap-3">
-                                    <button onClick={nextTurn} className="bg-cyan-500 hover:bg-cyan-400 text-black font-extrabold px-5 py-3 rounded-xl text-sm md:text-base flex items-center gap-2 shadow-lg transition active:scale-95 font-orbitron uppercase">
-                                        Завершить ход <i className="fa-solid fa-forward"></i>
-                                    </button>
-                                    <button
-                                        onClick={() => passTurn(activePlayer.id)}
-                                        disabled={!isCurrentStrategyPlayed}
-                                        title={!isCurrentStrategyPlayed ? "Сначала сыграйте карту стратегии!" : ""}
-                                        className={`font-bold px-4 py-3 rounded-xl text-sm border transition ${isCurrentStrategyPlayed
-                                            ? 'bg-red-950 hover:bg-red-900 text-red-300 border-red-800 cursor-pointer'
-                                            : 'bg-slate-900 text-slate-600 border-slate-800 cursor-not-allowed opacity-60'
-                                            }`}>
-                                        Пас
-                                    </button>
-                                    <button
-                                        onClick={() => {
-                                            setCombatOpponentId(null); // Сбрасываем оппонента при открытии
-                                            setCombatRound(1); // Начинаем с 1-го раунда
-                                            setTotalCombatDamage({ attacker: 0, defender: 0 }); // Сбрасываем общий урон
-                                            setCombatHits({ attacker: 0, defender: 0 }); // Сбрасываем счетчики
-                                            setShowCombatModal(true);
-                                        }}
-                                        className="bg-red-950 hover:bg-red-900 text-red-300 font-bold px-4 py-3 rounded-xl text-sm border border-red-800 transition flex items-center gap-1.5" title="Открыть окно боя">
-                                        <i className="fa-solid fa-crosshairs"></i>
-                                    </button>
-                                </div>
-                            </div>
+                            <ActiveTurnBar
+                                activePlayer={activePlayer}
+                                activeStrategyCard={activeStrategyCard}
+                                isCurrentStrategyPlayed={isCurrentStrategyPlayed}
+                                onPlayStrategy={playStrategyCard}
+                                turnTime={turnTime}
+                                onNextTurn={nextTurn}
+                                onPassTurn={passTurn}
+                                onOpenCombat={openCombatModal}
+                            />
                         )}
                     </header>
 
@@ -1182,522 +1131,55 @@ import { DraftModal } from './components/DraftModal';
                             handleReassignCard={handleReassignCard}
                             confirmDraft={confirmDraft}
                         />
-                        {/* ВСПЛЫВАЮЩЕЕ ОКНО 4: ФАЗА ПОЛИТИКИ (ПЕРЕРАБОТАНО) */}
-                        {showPoliticsModal && (
-                            <div className={`fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 ${minimizedModals.politics ? 'hidden' : ''}`}>
-                                <div className="bg-slate-900 border border-purple-800 rounded-2xl max-w-4xl w-full p-6 max-h-[90vh] overflow-y-auto shadow-2xl shadow-purple-500/10">
-                                    <div className="flex justify-between items-center mb-4 pb-3 border-b border-slate-800">
-                                        <h2 className="font-orbitron text-lg font-bold text-purple-400 uppercase flex items-center gap-2">
-                                            <i className="fa-solid fa-gavel"></i> Фаза Политики
-                                        </h2>
-                                        <div className="flex items-center gap-4">
-                                            <button onClick={() => toggleMinimize('politics')} className="text-slate-500 hover:text-white transition">
-                                                <i className="fa-solid fa-window-minimize text-base"></i>
-                                            </button>
-                                            <button onClick={() => setShowPoliticsModal(false)} className="text-slate-500 hover:text-white transition">
-                                                <i className="fa-solid fa-xmark text-lg"></i>
-                                            </button>
-                                        </div>
-                                    </div>
-                                    <div>
-
-                                    {/* ШАГ 1: НАЗНАЧЕНИЕ ГОЛОСОВ */}
-                                    {politicsStep === 'SETUP' && (() => {
-                                        const currentAgenda = agendas[currentAgendaIndex];
-                                        const allVotedOnCurrentAgenda = activePlayers.length > 0 && activePlayers.every(p => !!currentAgenda.locked[p.id]);
-                                        if (allVotedOnCurrentAgenda) return null;
-                                        return (
-                                        <div className="space-y-4">
-                                            <p className="text-sm text-slate-400">Укажите количество голосов (влияния) для каждого игрока на всю фазу политики.</p>
-                                            <div className="space-y-2">
-                                                {activePlayers.map(p => (
-                                                    <div key={p.id} className="p-2 bg-slate-950 border border-slate-800 rounded-lg flex items-center justify-between gap-3">
-                                                        <div className="flex items-center gap-3">
-                                                            {(() => {
-                                                                const faction = ALL_FACTIONS.find(f => f.id === p.factionId);
-                                                                return <img src={faction?.iconUrl} alt={faction?.name} className="w-8 h-8 object-contain" />;
-                                                            })()}
-                                                            <div className="font-bold text-white">{p.name}</div>
-                                                        </div>
-                                                        <input
-                                                            type="number"
-                                                            min="0"
-                                                            value={p.influence || 0}
-                                                            onChange={(e) => setPlayers(players.map(player => player.id === p.id ? { ...player, influence: parseInt(e.target.value) || 0 } : player))}
-                                                            className="bg-slate-800 border border-slate-700 rounded-md w-20 text-center font-orbitron font-bold text-lg text-amber-400 focus:outline-none focus:border-amber-500"
-                                                        />
-                                                    </div>
-                                                ))}
-                                            </div>
-                                            <div className="pt-4 border-t border-slate-800 flex justify-end">
-                                                <button onClick={() => setPoliticsStep('VOTE')} className="bg-purple-600 hover:bg-purple-500 text-white font-orbitron font-extrabold py-2 px-6 rounded-xl text-sm transition uppercase">
-                                                    Перейти к голосованию <i className="fa-solid fa-arrow-right"></i>
-                                                </button>
-                                            </div>
-                                        </div>);
-                                    })()}
-
-                                    {/* ШАГ 2: ГОЛОСОВАНИЕ (ЗАКОНЫ) */}
-                                    {politicsStep === 'VOTE' && (() => {
-                                        const currentAgenda = agendas[currentAgendaIndex];
-                                        const setAgendaType = (type) => {
-                                            const newAgendas = agendas.map((agenda, index) => {
-                                                if (index === currentAgendaIndex) {
-                                                    // При выборе "Другой", инициализируем с одним пустым вариантом
-                                                    return { ...agenda, type: type, customChoices: type === 'OTHER' ? [''] : undefined };
-                                                }
-                                                return agenda;
-                                            });
-                                            setAgendas(newAgendas);
-                                        };
-                                        const setAgendaVotes = (playerId, vote) => {
-                                            const newAgendas = [...agendas];
-                                            newAgendas[currentAgendaIndex].votes[playerId] = vote;
-                                            setAgendas(newAgendas);
-                                        };
-                                        const lockVote = (playerId) => {
-                                            const newAgendas = [...agendas];
-                                            newAgendas[currentAgendaIndex].locked[playerId] = true;
-                                            setAgendas(newAgendas);
-                                        };
-                                        const handleNextAgenda = () => {
-                                            const nextIndex = currentAgendaIndex + 1;
-                                            if (!agendas[nextIndex]) {
-                                                const newAgendas = [...agendas, { type: null, votes: {}, locked: {}, customChoices: undefined }];
-                                                setAgendas(newAgendas);
-                                            }
-                                            setCurrentAgendaIndex(nextIndex);
-                                        };
-                                        const handleSkipAgenda = () => {
-                                            // Просто переходим к следующему закону, не помечая текущий как "проголосованный"
-                                            // Он останется с type: null и не будет считаться в итоге
-                                            handleNextAgenda();
-                                        };
-                                        const setCustomChoices = (newChoices) => {
-                                            const newAgendas = agendas.map((agenda, index) => {
-                                                if (index === currentAgendaIndex) {
-                                                    return { ...agenda, customChoices: newChoices };
-                                                }
-                                                return agenda;
-                                            });
-                                            setAgendas(newAgendas);
-                                        };
-
-                                        const voteTotals = (() => {
-                                            if (!currentAgenda || !currentAgenda.type) return {};
-                                            const totals = {};
-                                            // Правильный перебор голосов
-                                            Object.entries(currentAgenda.votes).forEach(([playerId, vote]) => {
-                                                if (
-                                                    currentAgenda.locked[playerId] && // Учитываем только подтвержденные голоса
-                                                    vote &&
-                                                    vote.choice !== 'abstain' &&
-                                                    vote.amount > 0
-                                                ) {
-                                                    totals[vote.choice] = (totals[vote.choice] || 0) + vote.amount;
-                                                }
-                                            });
-                                            return totals;
-                                        })();
-
-                                        const winningChoice = (() => {
-                                            if (Object.keys(voteTotals).length === 0) return null;
-                                            const sortedVotes = Object.entries(voteTotals).sort((a, b) => b[1] - a[1]);
-                                            // Проверяем на ничью: если есть больше одного варианта и голоса у первого и второго равны
-                                            if (sortedVotes.length > 1 && sortedVotes[0][1] === sortedVotes[1][1] && sortedVotes[0][1] > 0) {
-                                                return null; // Ничья, нет победителя
-                                            }
-                                            // Возвращаем ключ (choice) победившего варианта
-                                            return sortedVotes[0][0];
-                                        })();
-
-                                        const allVotedOnCurrentAgenda = isAgendaFullyVoted(currentAgenda, activePlayers);
-
-                                        const completedAgendasCount = agendas.filter((agenda) =>
-                                            isAgendaFullyVoted(agenda, activePlayers)
-                                        ).length;
-
-                                        return (
-                                        <div className="space-y-4">
-                                            <div className="flex justify-between items-center">
-                                                <button onClick={() => setPoliticsStep('SETUP')} className="text-xs text-slate-400 hover:text-white font-bold flex items-center gap-1"><i className="fa-solid fa-arrow-left"></i> Назад к голосам</button>
-                                                <div className="font-orbitron font-bold text-lg text-amber-400">ЗАКОН №{currentAgendaIndex + 1}</div>
-                                            </div>
-
-                                            {/* Экран выбора типа повестки (пока не выбран) */}
-                                            {!currentAgenda.type && (
-                                                <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-2">
-                                                    <button onClick={() => setAgendaType('FOR_AGAINST')} className="p-6 bg-slate-950 hover:bg-slate-800 border border-slate-800 rounded-xl text-center space-y-2 transition hover:border-cyan-500">
-                                                        <div className="text-3xl">👍 / 👎</div>
-                                                        <div className="font-bold text-cyan-400">За / Против</div>
-                                                    </button>
-                                                    <button onClick={() => setAgendaType('PLAYER_CHOICE')} className="p-6 bg-slate-950 hover:bg-slate-800 border border-slate-800 rounded-xl text-center space-y-2 transition hover:border-amber-500">
-                                                        <div className="text-3xl">👥</div>
-                                                        <div className="font-bold text-amber-400">Выбор игрока</div>
-                                                    </button>
-                                                    <button onClick={() => setAgendaType('OTHER')} className="p-6 bg-slate-950 hover:bg-slate-800 border border-slate-800 rounded-xl text-center space-y-2 transition hover:border-rose-500">
-                                                        <div className="text-3xl">📝</div>
-                                                        <div className="font-bold text-rose-400">Другой выбор</div>
-                                                    </button>
-                                                </div>
-                                            )}
-
-                                            {/* Интерфейс голосования */}
-                                            {currentAgenda.type && (<>
-                                                {/* Блок подсчета голосов */}
-                                                <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800">
-                                                    <h4 className="font-orbitron font-bold text-sm text-amber-400 uppercase mb-3">Итоги голосования</h4>
-                                                    {Object.keys(voteTotals).length > 0 ? (
-                                                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                                                            {Object.entries(voteTotals).sort((a, b) => b[1] - a[1]).map(([choice, total]) => {
-                                                                let choiceName = choice;
-                                                                const isWinner = choice === winningChoice;
-                                                                if (currentAgenda.type === 'FOR_AGAINST') {
-                                                                    choiceName = choice === 'for' ? 'ЗА' : 'ПРОТИВ';
-                                                                } else if (currentAgenda.type === 'PLAYER_CHOICE') {
-                                                                    choiceName = players.find(p => p.id == choice)?.name || 'Неизвестно';
-                                                                } else if (currentAgenda.type === 'OTHER') {
-                                                                    choiceName = currentAgenda.customChoices?.[choice] || `Вариант ${parseInt(choice)+1}`;
-                                                                }
-                                                                return (
-                                                                    <div key={choice} className={`bg-slate-900 p-3 rounded-xl border text-center transition-all ${isWinner ? 'border-amber-400 shadow-lg shadow-amber-500/20' : 'border-slate-800/70'}`}>
-                                                                        <div className="font-bold text-xs uppercase text-slate-400 truncate">{choiceName}</div>
-                                                                        <div className="font-orbitron font-black text-3xl text-white mt-1">{total}</div>
-                                                                    </div>
-                                                                );
-                                                            })}
-                                                        </div>
-                                                    ) : (
-                                                        <div className="text-center text-sm text-slate-500 py-4">Голоса еще не отданы.</div>
-                                                    )}
-                                                </div>
-
-                                                {/* Блок для ввода вариантов "Другой выбор" */}
-                                                {currentAgenda.type === 'OTHER' && (
-                                                    <div className="space-y-2 pt-4 border-t border-slate-800">
-                                                        <h4 className="font-orbitron font-bold text-sm text-rose-400 uppercase mb-2">Варианты для голосования</h4>
-                                                        {currentAgenda.customChoices?.map((choice, index) => (
-                                                            <div key={index} className="flex items-center gap-2">
-                                                                <span className="text-xs font-bold text-slate-500 w-10 text-right">#{index + 1}</span>
-                                                                <input
-                                                                    type="text"
-                                                                    value={choice}
-                                                                    onChange={e => {
-                                                                        const newChoices = [...currentAgenda.customChoices];
-                                                                        newChoices[index] = e.target.value;
-                                                                        setCustomChoices(newChoices);
-                                                                    }}
-                                                                    placeholder={`Введите вариант ${index + 1}`}
-                                                                    className="bg-slate-900 border border-slate-700 px-3 py-1.5 rounded-md font-bold text-sm text-white focus:outline-none focus:border-rose-400 flex-grow"
-                                                                />
-                                                            </div>
-                                                        ))}
-                                                        <button
-                                                            onClick={() => setCustomChoices([...(currentAgenda.customChoices || []), ''])}
-                                                            className="w-full mt-2 py-2 bg-slate-800/50 hover:bg-slate-800 border border-dashed border-slate-700 rounded-lg text-slate-400 text-xs font-bold transition"
-                                                        >
-                                                            + Добавить вариант
-                                                        </button>
-                                                    </div>
-                                                )}
-                                                <div className="space-y-3 pt-4 border-t border-slate-800">
-                                                    {activePlayers.map(p => {
-                                                        const vote = currentAgenda.votes[p.id] || { choice: 'abstain', amount: 0 };
-                                                        const isLocked = !!currentAgenda.locked[p.id];
-                                                        const votesSpentOnPrevAgendas = agendas.slice(0, currentAgendaIndex).reduce((acc, agenda) => {
-                                                            const playerVote = agenda.votes[p.id];
-                                                            // Суммируем только если голос был подтвержден (locked)
-                                                            if (playerVote && agenda.locked[p.id]) {
-                                                                return acc + (playerVote.amount || 0);
-                                                            }
-                                                            return acc;
-                                                        }, 0);
-                                                        const availableInfluence = (p.influence || 0) - votesSpentOnPrevAgendas;
-
-                                                        return (
-                                                            <div key={p.id} className={`p-4 bg-slate-950 border rounded-xl flex items-center justify-between gap-4 transition ${isLocked ? 'border-purple-700/50 opacity-60' : 'border-slate-800'}`}>
-                                                                {/* Блок: Герб, Имя, Доступные голоса */}
-                                                                <div className="flex items-center gap-3 flex-shrink-0">
-                                                                    {(() => {
-                                                                        const faction = ALL_FACTIONS.find(f => f.id === p.factionId);
-                                                                        return <img src={faction?.iconUrl} alt={faction?.name} className="w-9 h-9 object-contain" />;
-                                                                    })()}
-                                                                    <div className="font-bold text-lg text-white">{p.name}</div>
-                                                                    <div className="text-center w-20">
-                                                                        <div className="text-xs text-slate-400">Доступно</div>
-                                                                        <div className="font-orbitron font-black text-3xl text-amber-400">{availableInfluence}</div>
-                                                                    </div>
-                                                                </div>
-
-                                                                {/* Блок голосования */}
-                                                                <div className="flex items-center gap-2">
-                                                                    <select
-                                                                        value={vote.choice}
-                                                                        onChange={e => setAgendaVotes(p.id, { ...vote, choice: e.target.value })}
-                                                                        disabled={isLocked}
-                                                                        className="bg-slate-800 border border-slate-700 rounded-md px-2 py-2 text-xs text-white focus:outline-none focus:border-purple-400 w-32 disabled:opacity-50"
-                                                                    >
-                                                                        <option value="abstain">Воздержаться</option>
-                                                                        {currentAgenda.type === 'FOR_AGAINST' && <>
-                                                                            <option value="for">За</option>
-                                                                            <option value="against">Против</option>
-                                                                        </>}
-                                                                        {currentAgenda.type === 'PLAYER_CHOICE' && activePlayers.map(target => (<option key={target.id} value={target.id}>{target.name}</option>))}
-                                                                        {currentAgenda.type === 'OTHER' && currentAgenda.customChoices?.map((opt, idx) => (
-                                                                            opt && <option key={idx} value={idx}>{opt}</option>
-                                                                        ))}
-                                                                    </select>
-                                                                    <input
-                                                                        type="number"
-                                                                        min="0" max={availableInfluence}
-                                                                        value={vote.amount}
-                                                                        onChange={e => {
-                                                                            const newAmount = Math.max(0, Math.min(availableInfluence, parseInt(e.target.value) || 0));
-                                                                            setAgendaVotes(p.id, { ...vote, amount: newAmount });
-                                                                        }}
-                                                                        disabled={isLocked || vote.choice === 'abstain'}
-                                                                        className="bg-slate-800 border border-slate-700 rounded-md w-28 text-center font-orbitron font-black text-4xl text-cyan-400 focus:outline-none focus:border-cyan-500 disabled:opacity-50"
-                                                                    />
-                                                                    <button onClick={() => lockVote(p.id)} disabled={isLocked} className="px-4 py-2 bg-purple-800 hover:bg-purple-700 text-sm font-bold rounded-md disabled:bg-slate-800 disabled:text-slate-500 disabled:cursor-not-allowed">
-                                                                        {isLocked ? '✓' : 'OK'}
-                                                                    </button>
-                                                                </div>
-                                                            </div>
-                                                        );
-                                                    })}
-                                                </div>
-                                            </>)}
-                                            <div className="pt-4 border-t border-slate-800 grid grid-cols-3 gap-3">
-                                                <button
-                                                    onClick={() => setPoliticsStep('SPEAKER')}
-                                                    disabled={completedAgendasCount < 2}
-                                                    className="col-span-1 bg-emerald-600 hover:bg-emerald-500 text-white font-orbitron font-extrabold py-3 rounded-xl text-sm transition uppercase disabled:bg-slate-800 disabled:text-slate-600 disabled:cursor-not-allowed"
-                                                    title={completedAgendasCount < 2 ? "Нужно проголосовать минимум по 2 законам" : "Перейти к выбору Спикера"}
-                                                >
-                                                    Завершить голосование
-                                                </button>
-                                                <button onClick={handleSkipAgenda} className="col-span-1 bg-slate-700 hover:bg-slate-600 text-white font-orbitron font-bold py-3 rounded-xl text-sm transition uppercase">
-                                                    Пропустить закон
-                                                </button>
-                                                <button onClick={handleNextAgenda} disabled={!allVotedOnCurrentAgenda} className="col-span-1 bg-purple-600 hover:bg-purple-500 text-white font-orbitron font-extrabold py-3 rounded-xl text-sm transition uppercase disabled:bg-slate-800 disabled:text-slate-600 disabled:cursor-not-allowed">
-                                                    Следующий закон <i className="fa-solid fa-arrow-right"></i>
-                                                </button>
-                                            </div>
-                                        </div>
-                                    );
-                                    })()}
-
-                                    {/* ШАГ 3: ВЫБОР СПИКЕРА */}
-                                    {politicsStep === 'SPEAKER' && (() => {
-                                        const currentSpeaker = activePlayers.find(p => p.id === speakerId);
-                                        return (
-                                            <div className="space-y-4">
-                                                <h3 className="font-orbitron font-bold text-lg text-amber-400 text-center">Передача жетона Спикера</h3>
-                                                <p className="text-sm text-slate-400 text-center">
-                                                    Текущий Спикер (<span className="font-bold text-white">{currentSpeaker?.name || 'Неизвестно'}</span>) выбирает следующего Спикера.
-                                                </p>
-                                                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 pt-2">
-                                                    {activePlayers.map(player => {
-                                                        const faction = ALL_FACTIONS.find(f => f.id === player.factionId);
-                                                        return (
-                                                            <button
-                                                                key={player.id}
-                                                                onClick={() => {
-                                                                    setSpeakerId(player.id);
-                                                                    setShowPoliticsModal(false);
-                                                                    startNewRound();
-                                                                }}
-                                                                className="p-4 bg-slate-950 hover:bg-slate-800 border border-slate-800 rounded-xl text-center space-y-2 transition hover:border-purple-500"
-                                                            >
-                                                                <img src={faction?.iconUrl} alt={faction?.name} className="w-16 h-16 mx-auto object-contain" />
-                                                                <div className="font-bold text-purple-400">{player.name}</div>
-                                                            </button>
-                                                        );
-                                                    })}
-                                                </div>
-                                            </div>
-                                        );
-                                    })()}
-                                    </div>
-                                </div>
-                            </div>
-                        )}
-                        {/* ВСПЛЫВАЮЩЕЕ ОКНО 5: БОЙ */}
-                        {showCombatModal && activePlayer && (
-                            <div className={`fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 ${minimizedModals.combat ? 'hidden' : ''}`}>
-                                <div className="bg-slate-900 border border-red-800 rounded-2xl max-w-4xl w-full p-6 shadow-2xl shadow-red-500/10">
-                                    <div className="flex justify-between items-center mb-4 pb-3 border-b border-slate-800">
-                                        <h2 className="font-orbitron text-lg font-bold text-red-400 uppercase flex items-center gap-2">
-                                            <i className="fa-solid fa-crosshairs"></i> Окно Сражения
-                                        </h2>
-                                        <div className="flex items-center gap-4">
-                                            <button onClick={() => toggleMinimize('combat')} className="text-slate-500 hover:text-white transition">
-                                                <i className="fa-solid fa-window-minimize text-base"></i>
-                                            </button>
-                                            <button onClick={() => setShowCombatModal(false)} className="text-slate-500 hover:text-white transition">
-                                                <i className="fa-solid fa-xmark text-lg"></i>
-                                            </button>
-                                        </div>
-                                    </div>
-                                    <div>
-
-                                    {!combatOpponentId ? (
-                                        /* Шаг 1: Выбор оппонента */
-                                        <div className="space-y-3">
-                                            <h3 className="text-center font-bold text-slate-300">Выберите защищающегося игрока:</h3>
-                                            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                                                {activePlayers.filter(p => p.id !== activePlayer.id).map(opponent => {
-                                                    const faction = ALL_FACTIONS.find(f => f.id === opponent.factionId);
-                                                    return (
-                                                        <button key={opponent.id} onClick={() => setCombatOpponentId(opponent.id)} className="p-4 bg-slate-950 hover:bg-slate-800 border border-slate-800 rounded-xl text-center space-y-2 transition hover:border-red-500">
-                                                            <img src={faction?.iconUrl} alt={faction?.name} className="w-16 h-16 mx-auto object-contain" />
-                                                            <div className="font-bold text-red-400">{opponent.name}</div>
-                                                        </button>
-                                                    );
-                                                })}
-                                            </div>
-                                        </div>
-                                    ) : (
-                                        /* Шаг 2: Счетчик попаданий */
-                                        (() => {
-                                            const opponent = players.find(p => p.id === combatOpponentId);
-                                            const handleEndCombat = () => {
-                                                // Добавляем урон из последнего раунда
-                                                const finalAttackerDamage = totalCombatDamage.attacker + combatHits.attacker;
-                                                const finalDefenderDamage = totalCombatDamage.defender + combatHits.defender;
-
-                                                setPlayers(prevPlayers => prevPlayers.map(p => {
-                                                    if (p.id === activePlayer.id) {
-                                                        return { ...p, damageDealt: (p.damageDealt || 0) + finalAttackerDamage };
-                                                    }
-                                                    if (p.id === opponent.id) {
-                                                        return { ...p, damageDealt: (p.damageDealt || 0) + finalDefenderDamage };
-                                                    }
-                                                    return p;
-                                                }));
-
-                                                setShowCombatModal(false);
-                                            };
-
-                                            const handleNextCombatRound = () => {
-                                                setTotalCombatDamage(prev => ({
-                                                    attacker: prev.attacker + combatHits.attacker,
-                                                    defender: prev.defender + combatHits.defender
-                                                }));
-                                                setCombatHits({ attacker: 0, defender: 0 });
-                                                setCombatRound(prev => prev + 1);
-                                            };
-
-                                            if (!opponent) return null;
-                                            const attackerFaction = ALL_FACTIONS.find(f => f.id === activePlayer.factionId);
-                                            const defenderFaction = ALL_FACTIONS.find(f => f.id === opponent.factionId);
-
-                                            return (
-                                                <div className="space-y-4">
-                                                    <div className="grid grid-cols-2 gap-4">
-                                                        <div className="col-span-2 text-center">
-                                                            <div className="text-sm text-slate-400">Раунд боя</div>
-                                                            <div className="font-orbitron font-black text-3xl text-amber-400">{combatRound}</div>
-                                                        </div>
-                                                        {/* Атакующий */}
-                                                        <div className="bg-slate-950 p-4 rounded-xl border border-cyan-700 text-center space-y-3">
-                                                            <div className="text-xs font-bold text-cyan-400 uppercase">АТАКУЮЩИЙ</div>
-                                                            <img src={attackerFaction?.iconUrl} alt={attackerFaction?.name} className="w-20 h-20 mx-auto object-contain" />
-                                                            <div className="font-bold text-lg text-white">{activePlayer.name}</div>
-                                                            <div className="flex items-center justify-center gap-3">
-                                                                <button onClick={() => setCombatHits(h => ({ ...h, attacker: Math.max(0, h.attacker - 1) }))} className="w-12 h-12 bg-slate-800 hover:bg-slate-700 rounded-full text-2xl font-bold transition">-</button>
-                                                                <div className="font-orbitron font-black text-5xl text-cyan-400 w-24">{combatHits.attacker}</div>
-                                                                <button onClick={() => setCombatHits(h => ({ ...h, attacker: h.attacker + 1 }))} className="w-12 h-12 bg-slate-800 hover:bg-slate-700 rounded-full text-2xl font-bold transition">+</button>
-                                                            </div>
-                                                            <div className="text-xs font-bold text-slate-400 uppercase">Попаданий</div>
-                                                            <div className="text-xs text-slate-500 pt-2 border-t border-slate-800">
-                                                                Всего урона в бою: 
-                                                                <span className="font-bold text-base text-cyan-300 ml-1">{totalCombatDamage.attacker + combatHits.attacker}</span>
-                                                            </div>
-                                                        </div>
-
-                                                        {/* Защищающийся */}
-                                                        <div className="bg-slate-950 p-4 rounded-xl border border-red-700 text-center space-y-3">
-                                                            <div className="text-xs font-bold text-red-400 uppercase">ЗАЩИЩАЮЩИЙСЯ</div>
-                                                            <img src={defenderFaction?.iconUrl} alt={defenderFaction?.name} className="w-20 h-20 mx-auto object-contain" />
-                                                            <div className="font-bold text-lg text-white">{opponent.name}</div>
-                                                            <div className="flex items-center justify-center gap-3">
-                                                                <button onClick={() => setCombatHits(h => ({ ...h, defender: Math.max(0, h.defender - 1) }))} className="w-12 h-12 bg-slate-800 hover:bg-slate-700 rounded-full text-2xl font-bold transition">-</button>
-                                                                <div className="font-orbitron font-black text-5xl text-red-400 w-24">{combatHits.defender}</div>
-                                                                <button onClick={() => setCombatHits(h => ({ ...h, defender: h.defender + 1 }))} className="w-12 h-12 bg-slate-800 hover:bg-slate-700 rounded-full text-2xl font-bold transition">+</button>
-                                                            </div>
-                                                            <div className="text-xs font-bold text-slate-400 uppercase">Попаданий</div>
-                                                            <div className="text-xs text-slate-500 pt-2 border-t border-slate-800">
-                                                                Всего урона в бою: 
-                                                                <span className="font-bold text-base text-red-300 ml-1">{totalCombatDamage.defender + combatHits.defender}</span>
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                    <div className="flex items-center justify-center gap-3 pt-4 border-t border-slate-800">
-                                                        <button
-                                                            onClick={() => setCombatOpponentId(null)}
-                                                            className="bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold px-4 py-3 rounded-xl text-xs transition"
-                                                        >
-                                                            <i className="fa-solid fa-users mr-1"></i> Сменить оппонента
-                                                        </button>
-                                                        <button
-                                                            onClick={handleNextCombatRound}
-                                                            className="bg-amber-600 hover:bg-amber-500 text-black font-orbitron font-bold px-5 py-3 rounded-xl text-sm transition"
-                                                        >
-                                                            Следующий раунд <i className="fa-solid fa-arrow-right ml-1"></i>
-                                                        </button>
-                                                        <button
-                                                            onClick={handleEndCombat}
-                                                            className="bg-red-950 hover:bg-red-900 text-red-300 font-bold px-4 py-3 rounded-xl text-xs transition border border-red-800"
-                                                        >
-                                                            <i className="fa-solid fa-flag-checkered mr-1"></i> Завершить бой
-                                                        </button>
-                                                    </div>
-                                                </div>
-                                            );
-                                        })()
-                                    )}
-                                </div>
-                                </div>
-                            </div>
-                        )}
-                        {/* ВСПЛЫВАЮЩЕЕ ОКНО 7: ВЫБОР СПИКЕРА (КАРТА ПОЛИТИКИ) */}
-                        {showSpeakerSelectionModal && activePlayer && (
-                            <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-                                <div className="bg-slate-900 border border-purple-800 rounded-2xl max-w-4xl w-full p-6 shadow-2xl shadow-purple-500/10">
-                                    <div className="flex justify-between items-center mb-4 pb-3 border-b border-slate-800">
-                                        <h2 className="font-orbitron text-lg font-bold text-purple-400 uppercase flex items-center gap-2">
-                                            <i className="fa-solid fa-gavel"></i> Карта Политики: Выбор Спикера
-                                        </h2>
-                                    </div>
-                                    <div className="space-y-4">
-                                        <h3 className="font-orbitron font-bold text-lg text-amber-400 text-center">Выберите следующего Спикера</h3>
-                                        <p className="text-sm text-slate-400 text-center">
-                                            Игрок <span className="font-bold text-white">{activePlayer.name}</span> выбирает следующего Спикера.
-                                        </p>
-                                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 pt-2">
-                                            {activePlayers.map(player => {
-                                                const faction = ALL_FACTIONS.find(f => f.id === player.factionId);
-                                                return (
-                                                    <button
-                                                        key={player.id}
-                                                        onClick={() => {
-                                                            setSpeakerId(player.id);
-                                                            markStrategyAsPlayed();
-                                                            setShowSpeakerSelectionModal(false);
-                                                        }}
-                                                        className="p-4 bg-slate-950 hover:bg-slate-800 border border-slate-800 rounded-xl text-center space-y-2 transition hover:border-purple-500"
-                                                    >
-                                                        <img src={faction?.iconUrl} alt={faction?.name} className="w-16 h-16 mx-auto object-contain" />
-                                                        <div className="font-bold text-purple-400">{player.name}</div>
-                                                    </button>
-                                                );
-                                            })}
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        )}
+                        <PoliticsModal
+                            show={showPoliticsModal}
+                            minimized={!!minimizedModals.politics}
+                            onMinimize={() => toggleMinimize('politics')}
+                            onClose={() => setShowPoliticsModal(false)}
+                            politicsStep={politicsStep}
+                            setPoliticsStep={setPoliticsStep}
+                            agendas={agendas}
+                            setAgendas={setAgendas}
+                            currentAgendaIndex={currentAgendaIndex}
+                            setCurrentAgendaIndex={setCurrentAgendaIndex}
+                            activePlayers={activePlayers}
+                            players={players}
+                            setPlayers={setPlayers}
+                            speakerId={speakerId}
+                            setSpeakerId={setSpeakerId}
+                            onFinish={() => {
+                                setShowPoliticsModal(false);
+                                startNewRound();
+                            }}
+                        />
+                        <CombatModal
+                            show={showCombatModal}
+                            minimized={!!minimizedModals.combat}
+                            onMinimize={() => toggleMinimize('combat')}
+                            onClose={() => setShowCombatModal(false)}
+                            activePlayer={activePlayer}
+                            activePlayers={activePlayers}
+                            players={players}
+                            setPlayers={setPlayers}
+                            combatOpponentId={combatOpponentId}
+                            setCombatOpponentId={setCombatOpponentId}
+                            combatHits={combatHits}
+                            setCombatHits={setCombatHits}
+                            combatRound={combatRound}
+                            setCombatRound={setCombatRound}
+                            totalCombatDamage={totalCombatDamage}
+                            setTotalCombatDamage={setTotalCombatDamage}
+                        />
+                        <SpeakerSelectionModal
+                            show={showSpeakerSelectionModal}
+                            activePlayer={activePlayer}
+                            activePlayers={activePlayers}
+                            onSelectSpeaker={(playerId) => {
+                                setSpeakerId(playerId);
+                                markStrategyAsPlayed();
+                                setShowSpeakerSelectionModal(false);
+                            }}
+                        />
                         <GameSummaryModal
                             show={showGameSummaryModal}
                             onClose={() => { setShowGameSummaryModal(false); resetGameState(); }}
