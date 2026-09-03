@@ -74,4 +74,4 @@ export function makeSaveCode() {
   return Math.random().toString(36).substring(2, 7);
 }
 
-export { resolveAdminPin };
+export { resolveAdminPin, resolveBinId, resolveMasterKey };

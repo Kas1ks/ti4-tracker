@@ -4,6 +4,8 @@ import {
   makeSaveCode,
   putCloudBin,
   resolveAdminPin,
+  resolveBinId,
+  resolveMasterKey,
 } from './jsonbin.js';
 
 function json(data, status = 200) {
@@ -51,12 +53,24 @@ export async function handleApi(request, env) {
   }
 
   if (!isJsonBinConfigured(env)) {
-    return json({ error: 'not-configured' }, 503);
+    return json({
+      error: 'not-configured',
+      hasBinId: Boolean(resolveBinId(env)),
+      hasMasterKey: Boolean(resolveMasterKey(env)),
+      hasAdminPin: Boolean(resolveAdminPin(env)),
+      hint: 'Add Worker runtime Secrets JSONBIN_BIN_ID + JSONBIN_MASTER_KEY (VITE_ prefix also ok). Build-only vars are not enough.',
+    }, 503);
   }
 
   try {
     if (method === 'GET' && pathname === '/api/health') {
-      return json({ ok: true, cloud: true });
+      return json({
+        ok: true,
+        cloudConfigured: isJsonBinConfigured(env),
+        hasBinId: Boolean(resolveBinId(env)),
+        hasMasterKey: Boolean(resolveMasterKey(env)),
+        hasAdminPin: Boolean(resolveAdminPin(env)),
+      });
     }
 
     if (method === 'GET' && pathname === '/api/stats') {
