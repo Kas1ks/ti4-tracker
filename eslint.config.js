@@ -7,22 +7,24 @@ import reactRefresh from 'eslint-plugin-react-refresh';
 export default [
   { ignores: ['dist/**'] },
   {
-    files: ['vite.config.js'],
+    files: ['vite.config.js', 'worker/**/*.js'],
     languageOptions: {
       ecmaVersion: 'latest',
       sourceType: 'module',
-      globals: globals.node,
+      globals: {
+        ...globals.node,
+        ...globals.worker,
+      },
     },
   },
   {
     files: ['**/*.{js,jsx}'],
-    ignores: ['vite.config.js'],
+    ignores: ['vite.config.js', 'worker/**'],
     languageOptions: {
       ecmaVersion: 'latest',
       sourceType: 'module',
       globals: {
         ...globals.browser,
-        __TI4_CLOUD__: 'readonly',
       },
       parserOptions: {
         ecmaFeatures: { jsx: true },

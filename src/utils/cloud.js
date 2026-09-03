@@ -1,57 +1,79 @@
-import { JSONBIN_BIN_ID, JSONBIN_MASTER_KEY, isCloudConfigured } from '../config';
+import { isCloudConfigured } from '../config';
 
-const BIN_URL = () => `https://api.jsonbin.io/v3/b/${JSONBIN_BIN_ID}`;
+async function api(path, options = {}) {
+  const response = await fetch(path, {
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(options.headers || {}),
+    },
+  });
 
-function headers() {
-  return {
-    'Content-Type': 'application/json',
-    'X-Master-Key': JSONBIN_MASTER_KEY,
-    'X-Bin-Meta': 'false',
-  };
+  let data = null;
+  try {
+    data = await response.json();
+  } catch {
+    data = null;
+  }
+
+  if (!response.ok) {
+    const err = new Error(data?.error || `api-${response.status}`);
+    err.status = response.status;
+    err.data = data;
+    throw err;
+  }
+
+  return data;
 }
 
-export function parseCloudBin(data) {
-  if (Array.isArray(data)) {
-    return { history: data, saves: {} };
-  }
-
-  const record = data?.record && typeof data.record === 'object' ? data.record : data;
-  if (Array.isArray(record)) {
-    return { history: record, saves: {} };
-  }
-  if (record && typeof record === 'object') {
-    return {
-      history: Array.isArray(record.history) ? record.history : [],
-      saves: record.saves && typeof record.saves === 'object' ? record.saves : {},
-    };
-  }
-  return { history: [], saves: {} };
-}
-
-export async function fetchCloudBin() {
+function ensureCloud() {
   if (!isCloudConfigured) {
     throw new Error('not-configured');
   }
-  const response = await fetch(`${BIN_URL()}/latest`, {
-    method: 'GET',
-    headers: headers(),
-  });
-  if (!response.ok) {
-    throw new Error(`jsonbin-get-${response.status}`);
-  }
-  return parseCloudBin(await response.json());
 }
 
-export async function putCloudBin({ history, saves }) {
-  if (!isCloudConfigured) {
-    throw new Error('not-configured');
-  }
-  const response = await fetch(BIN_URL(), {
-    method: 'PUT',
-    headers: headers(),
-    body: JSON.stringify({ history, saves }),
+export async function fetchCloudStats() {
+  ensureCloud();
+  const data = await api('/api/stats');
+  return Array.isArray(data?.history) ? data.history : [];
+}
+
+export async function postGameRecord(record) {
+  ensureCloud();
+  await api('/api/games', {
+    method: 'POST',
+    body: JSON.stringify(record),
   });
-  if (!response.ok) {
-    throw new Error(`jsonbin-put-${response.status}`);
-  }
+}
+
+export async function createCloudSave(state) {
+  ensureCloud();
+  const data = await api('/api/saves', {
+    method: 'POST',
+    body: JSON.stringify({ state }),
+  });
+  return data.code;
+}
+
+export async function fetchCloudSave(code) {
+  ensureCloud();
+  const data = await api(`/api/saves/${encodeURIComponent(code)}`);
+  return data.state;
+}
+
+export async function deleteCloudGame(gameId, pin) {
+  ensureCloud();
+  const data = await api(`/api/stats/${encodeURIComponent(gameId)}`, {
+    method: 'DELETE',
+    body: JSON.stringify({ pin }),
+  });
+  return Array.isArray(data?.history) ? data.history : null;
+}
+
+export async function clearCloudStats(pin) {
+  ensureCloud();
+  await api('/api/stats', {
+    method: 'DELETE',
+    body: JSON.stringify({ pin }),
+  });
 }

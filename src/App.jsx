@@ -1,10 +1,17 @@
 import React, { useState } from 'react';
-import { ADMIN_PIN, isCloudConfigured } from './config';
+import { isCloudConfigured } from './config';
 import { ALL_FACTIONS, BASE_OBJECTIVES, DEFAULT_OBJECTIVES, STRATEGY_CARDS } from './data/gameData';
 import { shuffleArray } from './utils/game';
 import { loadJson } from './utils/storage';
 import { applyGameSnapshot } from './utils/snapshot';
-import { fetchCloudBin, putCloudBin } from './utils/cloud';
+import {
+    clearCloudStats,
+    createCloudSave,
+    deleteCloudGame,
+    fetchCloudSave,
+    fetchCloudStats,
+    postGameRecord,
+} from './utils/cloud';
 import { useGamePersistence } from './hooks/useGamePersistence';
 import { useTurnTimer } from './hooks/useTurnTimer';
 import { GameSummaryModal } from './components/GameSummaryModal';
@@ -416,13 +423,11 @@ import { SpeakerSelectionModal } from './components/SpeakerSelectionModal';
                 strategyCardBonuses, isAgendaPhasePending,
             });
 
-            // Разделяем useEffect для лучшей производительности и логики
-            // Загрузить историю из облака
+            // Загрузить историю из облака через /api (секреты на Worker / Vite middleware)
             const fetchGlobalStats = async () => {
                 if (!isCloudConfigured) return [];
                 try {
-                    const { history } = await fetchCloudBin();
-                    return history;
+                    return await fetchCloudStats();
                 } catch (err) {
                     console.error(err);
                     return [];
@@ -438,43 +443,42 @@ import { SpeakerSelectionModal } from './components/SpeakerSelectionModal';
             };
 
             const deleteSingleGame = async (gameId) => {
-                if (!isCloudConfigured || !ADMIN_PIN) {
+                if (!isCloudConfigured) {
                     alert("Облачная статистика не настроена.");
                     return;
                 }
                 const pin = prompt("Введите ADMIN PIN для удаления:");
-                if (pin !== ADMIN_PIN) {
-                    alert("Неверный PIN!");
-                    return;
-                }
+                if (pin === null) return;
                 try {
-                    const { history, saves } = await fetchCloudBin();
-                    const updated = history.filter(g => g.id !== gameId);
-                    await putCloudBin({ history: updated, saves });
-                    setGlobalHistory(updated);
+                    const updated = await deleteCloudGame(gameId, pin);
+                    if (updated) setGlobalHistory(updated);
                     alert("Партия удалена.");
-                } catch {
+                } catch (err) {
+                    if (err.status === 401) {
+                        alert("Неверный PIN!");
+                        return;
+                    }
                     alert("Ошибка при удалении.");
                 }
             };
 
             const clearAllStats = async () => {
-                if (!isCloudConfigured || !ADMIN_PIN) {
+                if (!isCloudConfigured) {
                     alert("Облачная статистика не настроена.");
                     return;
                 }
                 const pin = prompt("Введите ADMIN PIN для сброса всей статистики:");
-                if (pin !== ADMIN_PIN) {
-                    alert("Неверный PIN!");
-                    return;
-                }
+                if (pin === null) return;
                 if (!confirm("Вы уверены? Вся история будет удалена безвозвратно!")) return;
                 try {
-                    const { saves } = await fetchCloudBin();
-                    await putCloudBin({ history: [], saves });
+                    await clearCloudStats(pin);
                     setGlobalHistory([]);
                     alert("Вся статистика очищена.");
-                } catch {
+                } catch (err) {
+                    if (err.status === 401) {
+                        alert("Неверный PIN!");
+                        return;
+                    }
                     alert("Ошибка при очистке.");
                 }
             };
@@ -507,9 +511,7 @@ import { SpeakerSelectionModal } from './components/SpeakerSelectionModal';
                 }
 
                 try {
-                    const { history, saves } = await fetchCloudBin();
-                    history.unshift(gameRecord);
-                    await putCloudBin({ history, saves });
+                    await postGameRecord(gameRecord);
                     alert("Партия успешно сохранена в общую статистику! 🏆");
                 } catch {
                     alert("Ошибка при сохранении в облако.");
@@ -672,7 +674,6 @@ import { SpeakerSelectionModal } from './components/SpeakerSelectionModal';
                     alert("Облачное сохранение не настроено.");
                     return;
                 }
-                const saveId = Math.random().toString(36).substring(2, 7); // Генерирует короткий ID (напр. "x7k9p")
                 const gameState = {
                     targetScore,
                     roundNumber,
@@ -689,10 +690,10 @@ import { SpeakerSelectionModal } from './components/SpeakerSelectionModal';
                     draftStep,
                     showDraftModal,
                     turnOrder,
-                    stage1Deck, // Добавляем колоды в сохранение
+                    stage1Deck,
                     stage2Deck,
                     strategyCardBonuses,
-                    speakerId, // Восстанавливаем спикера
+                    speakerId,
                     isPoliticsActive,
                     isAgendaPhasePending,
                     activeTurnIdx,
@@ -702,10 +703,7 @@ import { SpeakerSelectionModal } from './components/SpeakerSelectionModal';
                 };
 
                 try {
-                    const { history, saves } = await fetchCloudBin();
-                    saves[saveId] = gameState;
-                    await putCloudBin({ history, saves });
-
+                    const saveId = await createCloudSave(gameState);
                     navigator.clipboard.writeText(saveId);
                     alert(`Партия сохранена! Код сохранения: ${saveId} (скопирован в буфер обмена)`);
                 } catch {
@@ -754,17 +752,14 @@ import { SpeakerSelectionModal } from './components/SpeakerSelectionModal';
                 }
 
                 try {
-                    const { saves } = await fetchCloudBin();
-                    const snap = saves[cleanId];
-
-                    if (!snap) {
+                    const snap = await fetchCloudSave(cleanId);
+                    applyGameSnapshot(snap, snapshotActions);
+                    alert('Партия успешно загружена из облака!');
+                } catch (err) {
+                    if (err.status === 404) {
                         alert('Сохранение с таким кодом не найдено!');
                         return;
                     }
-
-                    applyGameSnapshot(snap, snapshotActions);
-                    alert('Партия успешно загружена из облака!');
-                } catch {
                     alert('Ошибка при загрузке из облака.');
                 }
             };

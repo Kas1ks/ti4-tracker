@@ -31,7 +31,7 @@ export function StatsModal({ showStatsModal, setShowStatsModal, isStatsLoading, 
                                         <div className="text-center py-12 text-slate-500">
                                             {isCloudConfigured
                                                 ? 'История игр пока пуста. Завершите хотя бы одну партию!'
-                                                : 'Облачная статистика не подключена. Перезапустите npm run dev после настройки .env.local.'}
+                                                : 'Облачная статистика выключена. Задайте VITE_CLOUD_ENABLED=true и серверные секреты (см. .env.example).'}
                                         </div>
                                     ) : (
                                         <div className="space-y-6">

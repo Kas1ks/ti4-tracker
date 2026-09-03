@@ -1,0 +1,5 @@
+# Cloudflare Worker / `wrangler dev` secrets (not committed).
+# Same names as Worker env bindings:
+JSONBIN_BIN_ID=
+JSONBIN_MASTER_KEY=
+ADMIN_PIN=
