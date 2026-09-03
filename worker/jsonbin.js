@@ -29,13 +29,27 @@ function headers(masterKey) {
 }
 
 export function isJsonBinConfigured(env) {
-  return Boolean(env?.JSONBIN_BIN_ID && env?.JSONBIN_MASTER_KEY);
+  return Boolean(resolveBinId(env) && resolveMasterKey(env));
+}
+
+function resolveBinId(env) {
+  return env?.JSONBIN_BIN_ID || env?.VITE_JSONBIN_BIN_ID || '';
+}
+
+function resolveMasterKey(env) {
+  return env?.JSONBIN_MASTER_KEY || env?.VITE_JSONBIN_MASTER_KEY || '';
+}
+
+function resolveAdminPin(env) {
+  return env?.ADMIN_PIN || env?.VITE_ADMIN_PIN || '';
 }
 
 export async function getCloudBin(env) {
-  const response = await fetch(`${binUrl(env.JSONBIN_BIN_ID)}/latest`, {
+  const binId = resolveBinId(env);
+  const masterKey = resolveMasterKey(env);
+  const response = await fetch(`${binUrl(binId)}/latest`, {
     method: 'GET',
-    headers: headers(env.JSONBIN_MASTER_KEY),
+    headers: headers(masterKey),
   });
   if (!response.ok) {
     throw new Error(`jsonbin-get-${response.status}`);
@@ -44,9 +58,11 @@ export async function getCloudBin(env) {
 }
 
 export async function putCloudBin(env, { history, saves }) {
-  const response = await fetch(binUrl(env.JSONBIN_BIN_ID), {
+  const binId = resolveBinId(env);
+  const masterKey = resolveMasterKey(env);
+  const response = await fetch(binUrl(binId), {
     method: 'PUT',
-    headers: headers(env.JSONBIN_MASTER_KEY),
+    headers: headers(masterKey),
     body: JSON.stringify({ history, saves }),
   });
   if (!response.ok) {
@@ -57,3 +73,5 @@ export async function putCloudBin(env, { history, saves }) {
 export function makeSaveCode() {
   return Math.random().toString(36).substring(2, 7);
 }
+
+export { resolveAdminPin };

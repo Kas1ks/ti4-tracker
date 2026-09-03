@@ -3,6 +3,7 @@ import {
   isJsonBinConfigured,
   makeSaveCode,
   putCloudBin,
+  resolveAdminPin,
 } from './jsonbin.js';
 
 function json(data, status = 200) {
@@ -24,7 +25,8 @@ async function readJsonBody(request) {
 }
 
 function pinMatches(env, pin) {
-  return Boolean(env.ADMIN_PIN) && pin === env.ADMIN_PIN;
+  const expected = resolveAdminPin(env);
+  return Boolean(expected) && pin === expected;
 }
 
 /**
