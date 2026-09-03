@@ -21,17 +21,15 @@ Cloud buttons are on by default. Set `VITE_CLOUD_ENABLED=false` only if you want
 
 Vite serves `/api/*` via a local middleware that keeps secrets on the Node side.
 
-The old one-file app is saved as `legacy.html`.
-
 ## Cloudflare Worker deploy
 
 - Build: `npm ci && npm run build`
 - Deploy: `npx wrangler deploy` (or `npm run deploy`)
-- Worker secrets (Dashboard → Workers → Settings → Variables / Secrets):
+- Worker secrets (runtime — via `wrangler secret put` or Worker Bindings / Variables that the Worker can read):
   - `JSONBIN_BIN_ID`
   - `JSONBIN_MASTER_KEY`
   - `ADMIN_PIN`
-- Remove old `VITE_JSONBIN_*` / `VITE_ADMIN_PIN` from build env — they must not appear in `dist/`
+- Remove old `VITE_JSONBIN_*` / `VITE_ADMIN_PIN` from **build** env — they must not appear in `dist/`
 - Optional: `VITE_CLOUD_ENABLED=false` only if you want to hide cloud UI
 - Do not use `public/_redirects` with `/* /index.html 200` — Workers treats that as an infinite loop
 
@@ -45,3 +43,8 @@ The old one-file app is saved as `legacy.html`.
 | GET | `/api/saves/:code` | Load save |
 | DELETE | `/api/stats/:id` | Body `{ "pin" }` |
 | DELETE | `/api/stats` | Clear history; body `{ "pin" }` |
+| GET | `/api/health` | Diagnostics (`hasBinId`, etc.) |
+
+## Security note
+
+Older single-file HTML copies (`legacy.html`, `indexv*.html`) were removed from the repo because they contained hardcoded JSONBin keys. If those files were ever public, **rotate** your JSONBin master key and admin PIN.

@@ -1,5 +1,6 @@
 import { ALL_FACTIONS } from '../data/gameData';
 import { isAgendaFullyVoted } from '../utils/game';
+import { useEscapeKey } from '../hooks/useEscapeKey';
 
 export function PoliticsModal({
   show,
@@ -19,6 +20,8 @@ export function PoliticsModal({
   setSpeakerId,
   onFinish,
 }) {
+  useEscapeKey(onClose, show && !minimized);
+
   if (!show) return null;
 
   const currentAgenda = agendas[currentAgendaIndex];
@@ -96,10 +99,15 @@ export function PoliticsModal({
   const currentSpeaker = activePlayers.find(p => p.id === speakerId);
 
   return (
-    <div className={`fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 ${minimized ? 'hidden' : ''}`}>
-      <div className="bg-slate-900 border border-purple-800 rounded-2xl max-w-4xl w-full p-6 max-h-[90vh] overflow-y-auto shadow-2xl shadow-purple-500/10">
+    <div className={`fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 ${minimized ? 'hidden' : ''}`} role="presentation">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="politics-modal-title"
+        className="bg-slate-900 border border-purple-800 rounded-2xl max-w-4xl w-full p-6 max-h-[90vh] overflow-y-auto shadow-2xl shadow-purple-500/10"
+      >
         <div className="flex justify-between items-center mb-4 pb-3 border-b border-slate-800">
-          <h2 className="font-orbitron text-lg font-bold text-purple-400 uppercase flex items-center gap-2">
+          <h2 id="politics-modal-title" className="font-orbitron text-lg font-bold text-purple-400 uppercase flex items-center gap-2">
             <i className="fa-solid fa-gavel" /> Фаза Политики
           </h2>
           <div className="flex items-center gap-4">

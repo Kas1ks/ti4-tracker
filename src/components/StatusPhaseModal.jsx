@@ -1,4 +1,5 @@
 import { ChecklistItem } from './ChecklistItem';
+import { useEscapeKey } from '../hooks/useEscapeKey';
 
 const STATUS_STEPS = [
   ['scoreObjectives', '1. Достижение целей'],
@@ -19,23 +20,29 @@ export function StatusPhaseModal({
   onClose,
   onMinimize,
 }) {
+  useEscapeKey(onClose, show && !minimized);
   if (!show) return null;
   const allDone = Object.values(checks).every(Boolean);
 
   return (
-    <div className={`fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4 ${minimized ? 'hidden' : ''}`}>
-      <div className="bg-slate-900 border border-cyan-500/40 p-6 rounded-3xl max-w-2xl w-full space-y-6 shadow-[0_0_40px_rgba(6,182,212,0.25)]">
+    <div className={`fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4 ${minimized ? 'hidden' : ''}`} role="presentation">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="status-phase-title"
+        className="bg-slate-900 border border-cyan-500/40 p-6 rounded-3xl max-w-2xl w-full space-y-6 shadow-[0_0_40px_rgba(6,182,212,0.25)]"
+      >
         <div className="flex justify-between items-center pb-3 border-b border-slate-800">
-          <h2 className="font-orbitron font-bold text-lg text-cyan-400 uppercase flex items-center gap-2">
-            <i className="fa-solid fa-clipboard-check" />
+          <h2 id="status-phase-title" className="font-orbitron font-bold text-lg text-cyan-400 uppercase flex items-center gap-2">
+            <i className="fa-solid fa-clipboard-check" aria-hidden="true" />
             <span>Фаза статуса (Раунд {roundNumber})</span>
           </h2>
           <div className="flex items-center gap-4">
-            <button onClick={onMinimize} className="text-slate-500 hover:text-white transition" aria-label="Свернуть">
-              <i className="fa-solid fa-window-minimize text-base" />
+            <button type="button" onClick={onMinimize} className="text-slate-500 hover:text-white transition" aria-label="Свернуть">
+              <i className="fa-solid fa-window-minimize text-base" aria-hidden="true" />
             </button>
-            <button onClick={onClose} className="text-slate-500 hover:text-white transition" aria-label="Закрыть">
-              <i className="fa-solid fa-xmark text-lg" />
+            <button type="button" onClick={onClose} className="text-slate-500 hover:text-white transition" aria-label="Закрыть">
+              <i className="fa-solid fa-xmark text-lg" aria-hidden="true" />
             </button>
           </div>
         </div>

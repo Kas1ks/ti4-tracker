@@ -26,6 +26,8 @@ import { PoliticsModal } from './components/PoliticsModal';
 import { CombatModal } from './components/CombatModal';
 import { ActiveTurnBar } from './components/ActiveTurnBar';
 import { SpeakerSelectionModal } from './components/SpeakerSelectionModal';
+import { AppDialog } from './components/AppDialog';
+import { useAppDialog } from './hooks/useAppDialog';
 
 function cloudErrorMessage(err, fallback) {
     if (err?.data?.error === 'not-configured' || err?.status === 503) {
@@ -41,6 +43,7 @@ function cloudErrorMessage(err, fallback) {
         
 
         function App() {
+            const { dialog, close, uiAlert, uiConfirm, uiPrompt, uiForm } = useAppDialog();
             const [isGameActive, setIsGameActive] = useState(() => loadJson('ti4_active', false));
             const [targetScore, setTargetScore] = useState(() => loadJson('ti4_targetScore', 10));
             const [roundNumber, setRoundNumber] = useState(() => loadJson('ti4_round', 1));
@@ -453,34 +456,48 @@ function cloudErrorMessage(err, fallback) {
 
             const deleteSingleGame = async (gameId) => {
                 if (!isCloudConfigured) {
-                    alert("Облачная статистика не настроена.");
+                    await uiAlert('Облачная статистика не настроена.', { variant: 'danger', title: 'Облако' });
                     return;
                 }
-                const pin = prompt("Введите ADMIN PIN для удаления:");
+                const pin = await uiPrompt('Введите ADMIN PIN для удаления:', {
+                    title: 'Удаление партии',
+                    inputType: 'password',
+                    variant: 'danger',
+                    confirmLabel: 'Удалить',
+                });
                 if (pin === null) return;
                 try {
                     const updated = await deleteCloudGame(gameId, pin);
                     if (updated) setGlobalHistory(updated);
-                    alert("Партия удалена.");
+                    await uiAlert('Партия удалена.', { variant: 'success', title: 'Готово' });
                 } catch (err) {
-                    alert(cloudErrorMessage(err, 'Ошибка при удалении'));
+                    await uiAlert(cloudErrorMessage(err, 'Ошибка при удалении'), { variant: 'danger', title: 'Ошибка' });
                 }
             };
 
             const clearAllStats = async () => {
                 if (!isCloudConfigured) {
-                    alert("Облачная статистика не настроена.");
+                    await uiAlert('Облачная статистика не настроена.', { variant: 'danger', title: 'Облако' });
                     return;
                 }
-                const pin = prompt("Введите ADMIN PIN для сброса всей статистики:");
+                const pin = await uiPrompt('Введите ADMIN PIN для сброса всей статистики:', {
+                    title: 'Сброс статистики',
+                    inputType: 'password',
+                    variant: 'danger',
+                    confirmLabel: 'Продолжить',
+                });
                 if (pin === null) return;
-                if (!confirm("Вы уверены? Вся история будет удалена безвозвратно!")) return;
+                const confirmed = await uiConfirm('Вы уверены? Вся история будет удалена безвозвратно!', {
+                    title: 'Очистить всё?',
+                    confirmLabel: 'Удалить всё',
+                });
+                if (!confirmed) return;
                 try {
                     await clearCloudStats(pin);
                     setGlobalHistory([]);
-                    alert("Вся статистика очищена.");
+                    await uiAlert('Вся статистика очищена.', { variant: 'success', title: 'Готово' });
                 } catch (err) {
-                    alert(cloudErrorMessage(err, 'Ошибка при очистке'));
+                    await uiAlert(cloudErrorMessage(err, 'Ошибка при очистке'), { variant: 'danger', title: 'Ошибка' });
                 }
             };
 
@@ -507,15 +524,24 @@ function cloudErrorMessage(err, fallback) {
                 localStorage.setItem('ti4_gameSummary', JSON.stringify(gameRecord));
 
                 if (!isCloudConfigured) {
-                    alert("Партия сохранена только на этом устройстве. Облачная статистика не настроена.");
+                    await uiAlert('Партия сохранена только на этом устройстве. Облачная статистика не настроена.', {
+                        title: 'Локальное сохранение',
+                        variant: 'info',
+                    });
                     return;
                 }
 
                 try {
                     await postGameRecord(gameRecord);
-                    alert("Партия успешно сохранена в общую статистику! 🏆");
+                    await uiAlert('Партия успешно сохранена в общую статистику!', {
+                        title: 'Сохранено',
+                        variant: 'success',
+                    });
                 } catch (err) {
-                    alert(cloudErrorMessage(err, 'Ошибка при сохранении в облако'));
+                    await uiAlert(cloudErrorMessage(err, 'Ошибка при сохранении в облако'), {
+                        title: 'Ошибка',
+                        variant: 'danger',
+                    });
                 }
             };
 
@@ -582,14 +608,20 @@ function cloudErrorMessage(err, fallback) {
             };
 
             // Запуск партии с валидацией
-            const handleStartGame = () => {
+            const handleStartGame = async () => {
                 if (players.length < 2) {
-                    alert('Для начала игры нужно добавить минимум 2 игроков!');
+                    await uiAlert('Для начала игры нужно добавить минимум 2 игроков!', {
+                        title: 'Недостаточно игроков',
+                        variant: 'danger',
+                    });
                     return;
                 }
                 const uncoloredPlayer = players.find(p => !p.color);
                 if (uncoloredPlayer) {
-                    alert(`Игрок "${uncoloredPlayer.name}" не выбрал цвет! Выберите цвет для всех игроков.`);
+                    await uiAlert(`Игрок "${uncoloredPlayer.name}" не выбрал цвет! Выберите цвет для всех игроков.`, {
+                        title: 'Цвет обязателен',
+                        variant: 'danger',
+                    });
                     return;
                 }
                 // Назначаем спикера, если он еще не назначен (первый запуск)
@@ -611,7 +643,7 @@ function cloudErrorMessage(err, fallback) {
             };
 
             // ОБНОВЛЕННАЯ ФУНКЦИЯ: теперь берет следующую цель из "колоды"
-            const addRandomObjective = (stage) => {
+            const addRandomObjective = async (stage) => {
                 const deck = stage === 1 ? stage1Deck : stage2Deck;
 
                 // 1. Находим первую цель в колоде, которой еще нет в списке активных
@@ -621,7 +653,10 @@ function cloudErrorMessage(err, fallback) {
 
                 // 2. Если такая цель не найдена (колода исчерпана), сообщаем об этом
                 if (!nextObjective) {
-                    alert(`Все цели ${stage} этапа уже открыты!`);
+                    await uiAlert(`Все цели ${stage} этапа уже открыты!`, {
+                        title: 'Колода пуста',
+                        variant: 'info',
+                    });
                     return;
                 }
 
@@ -629,24 +664,41 @@ function cloudErrorMessage(err, fallback) {
                 setObjectives(prev => [...prev, { ...nextObjective }]);
             };
 
-            const addCustomObjective = () => {
-                const title = prompt("Введите название своей цели:");
-                if (!title) return;
-
-                const desc = prompt("Введите описание цели:", "Пользовательская цель");
-                if (desc === null) return;
-
-                let stage;
-                while (true) {
-                    stage = prompt("Введите этап цели (1 или 2):", "1");
-                    if (stage === "1" || stage === "2") {
-                        break;
-                    }
-                    if (stage === null) return; // Пользователь нажал "Отмена"
-                    alert("Неверный этап. Пожалуйста, введите 1 или 2.");
+            const addCustomObjective = async () => {
+                const result = await uiForm({
+                    title: 'Своя цель',
+                    message: 'Заполните название, описание и этап.',
+                    fields: [
+                        { name: 'title', label: 'Название', placeholder: 'Название цели' },
+                        { name: 'desc', label: 'Описание', defaultValue: 'Пользовательская цель' },
+                        {
+                            name: 'stage',
+                            label: 'Этап',
+                            type: 'select',
+                            defaultValue: '1',
+                            options: [
+                                { value: '1', label: 'Этап 1 (1 ПО)' },
+                                { value: '2', label: 'Этап 2 (2 ПО)' },
+                            ],
+                        },
+                    ],
+                    confirmLabel: 'Добавить',
+                });
+                if (!result) return;
+                const title = (result.title || '').trim();
+                if (!title) {
+                    await uiAlert('Нужно указать название цели.', { variant: 'danger', title: 'Пустое название' });
+                    return;
                 }
-
-                setObjectives(prev => [...prev, { id: 'custom_' + Date.now(), title, desc, stage: Number(stage), points: Number(stage) }]);
+                const desc = result.desc ?? 'Пользовательская цель';
+                const stage = result.stage === '2' ? 2 : 1;
+                setObjectives(prev => [...prev, {
+                    id: 'custom_' + Date.now(),
+                    title,
+                    desc,
+                    stage,
+                    points: stage,
+                }]);
             };
 
             const toggleCompletion = (pId, oId) => {
@@ -656,23 +708,25 @@ function cloudErrorMessage(err, fallback) {
             const removeObjective = (objectiveId) => {
                 setObjectives(prev => prev.filter(obj => obj.id !== objectiveId));
             };
-            const handleAddSecret = (playerId) => {
-                setPlayers(prev => prev.map(p => {
-                    if (p.id !== playerId) return p;
+            const handleAddSecret = async (playerId) => {
+                const player = players.find(p => p.id === playerId);
+                if (!player || player.secrets >= 4) return;
 
-                    if (p.secrets === 3) {
-                        const confirmFourth = window.confirm(
-                            `У ${p.name} уже 3 секретные цели (стандартный лимит). Добавить 4-ю целевую секретку?`
-                        );
-                        if (!confirmFourth) return p;
-                    }
+                if (player.secrets === 3) {
+                    const confirmFourth = await uiConfirm(
+                        `У ${player.name} уже 3 секретные цели (стандартный лимит). Добавить 4-ю целевую секретку?`,
+                        { title: 'Лимит секреток', confirmLabel: 'Добавить 4-ю' },
+                    );
+                    if (!confirmFourth) return;
+                }
 
-                    return { ...p, secrets: Math.min(4, p.secrets + 1) };
-                }));
+                setPlayers(prev => prev.map(p => (
+                    p.id === playerId ? { ...p, secrets: Math.min(4, p.secrets + 1) } : p
+                )));
             };
             const exportGameToken = async () => {
                 if (!isCloudConfigured) {
-                    alert("Облачное сохранение не настроено.");
+                    await uiAlert('Облачное сохранение не настроено.', { variant: 'danger', title: 'Облако' });
                     return;
                 }
                 const gameState = {
@@ -706,9 +760,15 @@ function cloudErrorMessage(err, fallback) {
                 try {
                     const saveId = await createCloudSave(gameState);
                     navigator.clipboard.writeText(saveId);
-                    alert(`Партия сохранена! Код сохранения: ${saveId} (скопирован в буфер обмена)`);
+                    await uiAlert(`Партия сохранена! Код сохранения: ${saveId} (скопирован в буфер обмена)`, {
+                        title: 'Код сохранения',
+                        variant: 'success',
+                    });
                 } catch (err) {
-                    alert(cloudErrorMessage(err, 'Ошибка при сохранении в облако'));
+                    await uiAlert(cloudErrorMessage(err, 'Ошибка при сохранении в облако'), {
+                        title: 'Ошибка',
+                        variant: 'danger',
+                    });
                 }
             };
 
@@ -743,26 +803,33 @@ function cloudErrorMessage(err, fallback) {
 
             const importGameToken = async (saveId) => {
                 if (!isCloudConfigured) {
-                    alert("Облачная загрузка не настроена.");
+                    await uiAlert('Облачная загрузка не настроена.', { variant: 'danger', title: 'Облако' });
                     return;
                 }
                 const cleanId = saveId ? saveId.trim() : '';
                 if (!cleanId) {
-                    alert('Введите код партии!');
+                    await uiAlert('Введите код партии!', { variant: 'danger', title: 'Пустой код' });
                     return;
                 }
 
                 try {
                     const snap = await fetchCloudSave(cleanId);
                     applyGameSnapshot(snap, snapshotActions);
-                    alert('Партия успешно загружена из облака!');
+                    await uiAlert('Партия успешно загружена из облака!', { variant: 'success', title: 'Загружено' });
                 } catch (err) {
-                    alert(cloudErrorMessage(err, 'Ошибка при загрузке из облака'));
+                    await uiAlert(cloudErrorMessage(err, 'Ошибка при загрузке из облака'), {
+                        title: 'Ошибка',
+                        variant: 'danger',
+                    });
                 }
             };
 
-            const restoreSnapshot = (snap) => {
-                if (!confirm(`Восстановить сохранение от ${snap.timestamp}? Текущий прогресс изменится.`)) return;
+            const restoreSnapshot = async (snap) => {
+                const confirmed = await uiConfirm(
+                    `Восстановить сохранение от ${snap.timestamp}? Текущий прогресс изменится.`,
+                    { title: 'Восстановить?', confirmLabel: 'Восстановить' },
+                );
+                if (!confirmed) return;
                 applyGameSnapshot(snap, snapshotActions);
             };
 
@@ -787,9 +854,12 @@ function cloudErrorMessage(err, fallback) {
                 setTurnTime(0);
             };
 
-            const passTurn = (pId) => {
+            const passTurn = async (pId) => {
                 if (!isCurrentStrategyPlayed) {
-                    alert('Нельзя пасовать, пока вы не сыграли свою карту стратегии!');
+                    await uiAlert('Нельзя пасовать, пока вы не сыграли свою карту стратегии!', {
+                        title: 'Сначала стратегия',
+                        variant: 'danger',
+                    });
                     return;
                 }
 
@@ -805,13 +875,15 @@ function cloudErrorMessage(err, fallback) {
                 }
             };
 
-            const eliminatePlayer = (playerId) => {
+            const eliminatePlayer = async (playerId) => {
                 const playerToEliminate = players.find(p => p.id === playerId);
                 if (!playerToEliminate) return;
 
-                if (!window.confirm(`Вы уверены, что хотите устранить игрока "${playerToEliminate.name}"? Это действие необратимо в рамках текущей партии.`)) {
-                    return;
-                }
+                const confirmed = await uiConfirm(
+                    `Вы уверены, что хотите устранить игрока "${playerToEliminate.name}"? Это действие необратимо в рамках текущей партии.`,
+                    { title: 'Устранить игрока?', confirmLabel: 'Устранить' },
+                );
+                if (!confirmed) return;
 
                 setPlayers(prevPlayers => prevPlayers.map(p =>
                     p.id === playerId ? { ...p, eliminated: true } : p
@@ -834,7 +906,10 @@ function cloudErrorMessage(err, fallback) {
                     }
                     if (newSpeaker) {
                         setSpeakerId(newSpeaker.id);
-                        alert(`Игрок ${playerToEliminate.name} был спикером. Новым спикером становится ${newSpeaker.name}.`);
+                        await uiAlert(
+                            `Игрок ${playerToEliminate.name} был спикером. Новым спикером становится ${newSpeaker.name}.`,
+                            { title: 'Новый спикер', variant: 'info' },
+                        );
                     } else {
                         const remainingPlayers = players.filter(p => p.id !== playerId && !p.eliminated);
                         setSpeakerId(remainingPlayers[0]?.id || null);
@@ -1185,6 +1260,7 @@ function cloudErrorMessage(err, fallback) {
                         showStatusPhaseModal={showStatusPhaseModal}
                         onRestore={toggleMinimize}
                     />
+                    <AppDialog dialog={dialog} onClose={close} />
                 </div>
             );
         }

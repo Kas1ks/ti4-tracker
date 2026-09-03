@@ -1,15 +1,24 @@
+import { useEscapeKey } from '../hooks/useEscapeKey';
+
 export function EndGameModal({ showEndGameModal, setShowEndGameModal, players, getPlayerScore, saveGameToCloud, setShowGameSummaryModal, resetGameState }) {
+  useEscapeKey(() => setShowEndGameModal(false), showEndGameModal);
+
   return (
     <>
 {showEndGameModal && (
-                            <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4">
-                                <div className="bg-slate-900 border border-red-500/40 p-6 md:p-8 rounded-3xl max-w-md w-full space-y-6 text-center shadow-[0_0_40px_rgba(239,68,68,0.2)]">
-                                    <div className="w-16 h-16 bg-red-950 border-2 border-red-500 rounded-2xl flex items-center justify-center mx-auto text-red-400 text-2xl">
+                            <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4" role="presentation">
+                                <div
+                                  role="dialog"
+                                  aria-modal="true"
+                                  aria-labelledby="end-game-title"
+                                  className="bg-slate-900 border border-red-500/40 p-6 md:p-8 rounded-3xl max-w-md w-full space-y-6 text-center shadow-[0_0_40px_rgba(239,68,68,0.2)]"
+                                >
+                                    <div className="w-16 h-16 bg-red-950 border-2 border-red-500 rounded-2xl flex items-center justify-center mx-auto text-red-400 text-2xl" aria-hidden="true">
                                         <i className="fa-solid fa-flag-checkered"></i>
                                     </div>
 
                                     <div>
-                                        <h3 className="font-orbitron font-black text-xl md:text-2xl text-white uppercase">Завершить партию?</h3>
+                                        <h3 id="end-game-title" className="font-orbitron font-black text-xl md:text-2xl text-white uppercase">Завершить партию?</h3>
                                         <p className="text-xs md:text-sm text-slate-400 mt-2">
                                             Выберите, нужно ли сохранить результаты этой игры в общую статистику компании.
                                         </p>

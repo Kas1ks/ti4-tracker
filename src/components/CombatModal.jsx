@@ -1,4 +1,5 @@
 import { ALL_FACTIONS } from '../data/gameData';
+import { useEscapeKey } from '../hooks/useEscapeKey';
 
 export function CombatModal({
   show,
@@ -18,6 +19,7 @@ export function CombatModal({
   totalCombatDamage,
   setTotalCombatDamage,
 }) {
+  useEscapeKey(onClose, show && !minimized && !!activePlayer);
   if (!show || !activePlayer) return null;
 
   const opponent = players.find(p => p.id === combatOpponentId);
@@ -54,10 +56,15 @@ export function CombatModal({
   const defenderFaction = opponent ? ALL_FACTIONS.find(f => f.id === opponent.factionId) : null;
 
   return (
-    <div className={`fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 ${minimized ? 'hidden' : ''}`}>
-      <div className="bg-slate-900 border border-red-800 rounded-2xl max-w-4xl w-full p-6 shadow-2xl shadow-red-500/10">
+    <div className={`fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 ${minimized ? 'hidden' : ''}`} role="presentation">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="combat-modal-title"
+        className="bg-slate-900 border border-red-800 rounded-2xl max-w-4xl w-full p-6 shadow-2xl shadow-red-500/10"
+      >
         <div className="flex justify-between items-center mb-4 pb-3 border-b border-slate-800">
-          <h2 className="font-orbitron text-lg font-bold text-red-400 uppercase flex items-center gap-2">
+          <h2 id="combat-modal-title" className="font-orbitron text-lg font-bold text-red-400 uppercase flex items-center gap-2">
             <i className="fa-solid fa-crosshairs" /> Окно Сражения
           </h2>
           <div className="flex items-center gap-4">

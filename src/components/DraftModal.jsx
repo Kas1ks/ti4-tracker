@@ -1,24 +1,35 @@
 import { STRATEGY_CARDS } from '../data/gameData';
+import { useEscapeKey } from '../hooks/useEscapeKey';
 
 export function DraftModal({ showDraftModal, minimizedModals, toggleMinimize, setShowDraftModal, draftStep, draftQueue, players, currentQueueIndex, draftAssignments, strategyCardBonuses, handleSelectCard, handleUndoLastPick, handleReassignCard, confirmDraft, draftPickOrder }) {
+  const visible = showDraftModal && !minimizedModals.draft;
+  useEscapeKey(() => setShowDraftModal(false), visible);
+
   return (
     <>
 {showDraftModal && (
-                            <div className={`fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 ${minimizedModals.draft ? 'hidden' : ''}`}>
-                                <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-6xl w-full p-6 max-h-[90vh] overflow-y-auto shadow-2xl">
+                            <div className={`fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 ${minimizedModals.draft ? 'hidden' : ''}`} role="presentation">
+                                <div
+                                  role="dialog"
+                                  aria-modal="true"
+                                  aria-labelledby="draft-modal-title"
+                                  className="bg-slate-900 border border-slate-800 rounded-2xl max-w-6xl w-full p-6 max-h-[90vh] overflow-y-auto shadow-2xl"
+                                >
                                     <div className="flex justify-between items-center mb-4">
-                                        <h2 className="font-russo text-xl text-amber-400">
+                                        <h2 id="draft-modal-title" className="font-russo text-xl text-amber-400">
                                             {draftStep === 'DRAFT' ? "ВЫБОР КАРТ СТРАТЕГИЙ" : "ПОДТВЕРЖДЕНИЕ И ОБМЕН"}
                                         </h2>
                                         <div className="flex items-center gap-4">
-                                            <button onClick={() => toggleMinimize('draft')} className="text-slate-500 hover:text-white transition">
-                                                <i className="fa-solid fa-window-minimize text-base"></i>
+                                            <button type="button" onClick={() => toggleMinimize('draft')} aria-label="Свернуть драфт" className="text-slate-500 hover:text-white transition">
+                                                <i className="fa-solid fa-window-minimize text-base" aria-hidden="true"></i>
                                             </button>
                                             <button
+                                                type="button"
                                                 onClick={() => setShowDraftModal(false)}
+                                                aria-label="Закрыть драфт"
                                                 className="text-slate-500 hover:text-white transition"
                                             >
-                                                <i className="fa-solid fa-xmark text-lg"></i>
+                                                <i className="fa-solid fa-xmark text-lg" aria-hidden="true"></i>
                                             </button>
                                         </div>
                                     </div>
