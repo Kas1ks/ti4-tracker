@@ -27,6 +27,15 @@ import { CombatModal } from './components/CombatModal';
 import { ActiveTurnBar } from './components/ActiveTurnBar';
 import { SpeakerSelectionModal } from './components/SpeakerSelectionModal';
 
+function cloudErrorMessage(err, fallback) {
+    if (err?.data?.error === 'not-configured' || err?.status === 503) {
+        return 'Облако на сервере не настроено. В Cloudflare → Worker → Settings → Variables and Secrets добавьте Secrets: JSONBIN_BIN_ID, JSONBIN_MASTER_KEY, ADMIN_PIN.';
+    }
+    if (err?.status === 401) return 'Неверный PIN!';
+    if (err?.status === 404) return 'Сохранение с таким кодом не найдено!';
+    if (err?.status === 502) return 'Сервер не смог связаться с JSONBin. Проверьте ключи Worker Secrets.';
+    return `${fallback} (код ${err?.status || '?'}).`;
+}
 
 
         
@@ -454,11 +463,7 @@ import { SpeakerSelectionModal } from './components/SpeakerSelectionModal';
                     if (updated) setGlobalHistory(updated);
                     alert("Партия удалена.");
                 } catch (err) {
-                    if (err.status === 401) {
-                        alert("Неверный PIN!");
-                        return;
-                    }
-                    alert("Ошибка при удалении.");
+                    alert(cloudErrorMessage(err, 'Ошибка при удалении'));
                 }
             };
 
@@ -475,11 +480,7 @@ import { SpeakerSelectionModal } from './components/SpeakerSelectionModal';
                     setGlobalHistory([]);
                     alert("Вся статистика очищена.");
                 } catch (err) {
-                    if (err.status === 401) {
-                        alert("Неверный PIN!");
-                        return;
-                    }
-                    alert("Ошибка при очистке.");
+                    alert(cloudErrorMessage(err, 'Ошибка при очистке'));
                 }
             };
 
@@ -513,8 +514,8 @@ import { SpeakerSelectionModal } from './components/SpeakerSelectionModal';
                 try {
                     await postGameRecord(gameRecord);
                     alert("Партия успешно сохранена в общую статистику! 🏆");
-                } catch {
-                    alert("Ошибка при сохранении в облако.");
+                } catch (err) {
+                    alert(cloudErrorMessage(err, 'Ошибка при сохранении в облако'));
                 }
             };
 
@@ -706,8 +707,8 @@ import { SpeakerSelectionModal } from './components/SpeakerSelectionModal';
                     const saveId = await createCloudSave(gameState);
                     navigator.clipboard.writeText(saveId);
                     alert(`Партия сохранена! Код сохранения: ${saveId} (скопирован в буфер обмена)`);
-                } catch {
-                    alert('Ошибка при сохранении в облако.');
+                } catch (err) {
+                    alert(cloudErrorMessage(err, 'Ошибка при сохранении в облако'));
                 }
             };
 
@@ -756,11 +757,7 @@ import { SpeakerSelectionModal } from './components/SpeakerSelectionModal';
                     applyGameSnapshot(snap, snapshotActions);
                     alert('Партия успешно загружена из облака!');
                 } catch (err) {
-                    if (err.status === 404) {
-                        alert('Сохранение с таким кодом не найдено!');
-                        return;
-                    }
-                    alert('Ошибка при загрузке из облака.');
+                    alert(cloudErrorMessage(err, 'Ошибка при загрузке из облака'));
                 }
             };
 
