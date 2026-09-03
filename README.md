@@ -14,9 +14,10 @@ Open the URL Vite prints (usually http://localhost:5173).
 ### Local cloud (optional)
 
 1. Copy `.env.example` → `.env.local`
-2. Set `VITE_CLOUD_ENABLED=true`
-3. Fill `JSONBIN_BIN_ID`, `JSONBIN_MASTER_KEY`, `ADMIN_PIN` (no `VITE_` prefix)
-4. Or use `cloud.local.json`: `{ "binId", "masterKey", "adminPin" }`
+2. Fill `JSONBIN_BIN_ID`, `JSONBIN_MASTER_KEY`, `ADMIN_PIN` (no `VITE_` prefix)
+3. Or use `cloud.local.json`: `{ "binId", "masterKey", "adminPin" }`
+
+Cloud buttons are on by default. Set `VITE_CLOUD_ENABLED=false` only if you want to hide them.
 
 Vite serves `/api/*` via a local middleware that keeps secrets on the Node side.
 
@@ -30,8 +31,8 @@ The old one-file app is saved as `legacy.html`.
   - `JSONBIN_BIN_ID`
   - `JSONBIN_MASTER_KEY`
   - `ADMIN_PIN`
-- Build-time client flag only: `VITE_CLOUD_ENABLED=true` (not a secret)
 - Remove old `VITE_JSONBIN_*` / `VITE_ADMIN_PIN` from build env — they must not appear in `dist/`
+- Optional: `VITE_CLOUD_ENABLED=false` only if you want to hide cloud UI
 - Do not use `public/_redirects` with `/* /index.html 200` — Workers treats that as an infinite loop
 
 ### API
