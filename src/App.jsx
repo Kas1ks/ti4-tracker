@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import * as select from './game/selectors';
 import { useSyncedGame } from './sync/useSyncedGame';
 import { useElapsedSeconds } from './hooks/useTurnTimer';
@@ -9,6 +10,8 @@ import { AppDialog } from './components/AppDialog';
 import { GameHeader } from './components/GameHeader';
 import { GameSummaryModal } from './components/GameSummaryModal';
 import { MinimizedModalControls } from './components/MinimizedModalControls';
+import { RoomHub } from './components/RoomHub';
+import { GuestLobby } from './components/GuestLobby';
 import { SetupScreen } from './components/SetupScreen';
 import { GameBoard } from './components/GameBoard';
 import { StatsModal } from './components/StatsModal';
@@ -33,6 +36,8 @@ function App() {
     resetLocalGame,
     perms,
   } = useSyncedGame();
+
+  const [soloSetup, setSoloSetup] = useState(false);
 
   const ui = useLocalUi();
   const getPlayerScore = (playerId) => select.playerScore(game, playerId);
@@ -75,23 +80,33 @@ function App() {
     && Number.isFinite(turnStartedAt);
   const turnTime = useElapsedSeconds(turnStartedAt, clockRunning);
 
+  const isLive = roomStatus === 'live' && !!room?.roomId;
+  const isConnecting = roomStatus === 'connecting';
+  const hasRoomSession = isLive || isConnecting || !!room?.roomId;
+  const canSetup = perms?.can('setup') !== false;
+  const showHub = !isGameActive && !soloSetup && !hasRoomSession;
+  const showAdminSetup = !isGameActive && canSetup && (soloSetup || hasRoomSession);
+  const showGuestLobby = !isGameActive && !canSetup && hasRoomSession;
+
   const resetGameState = () => {
+    setSoloSetup(false);
     resetLocalGame();
     ui.closeEndGameUi();
   };
 
   const handleCreateRoom = async () => {
+    setSoloSetup(false);
     try {
       const created = await startHostRoom();
-      await uiAlert(`Комната создана. Код: ${created.roomId}`, {
-        title: 'Онлайн-комната',
-        variant: 'success',
-      });
       try {
         await navigator.clipboard.writeText(created.roomId);
       } catch {
         /* clipboard may be blocked */
       }
+      await uiAlert(`Комната создана. Код: ${created.roomId}`, {
+        title: 'Онлайн-комната',
+        variant: 'success',
+      });
     } catch (err) {
       await uiAlert(`Не удалось создать комнату: ${err.message || err}`, {
         title: 'Ошибка',
@@ -101,18 +116,21 @@ function App() {
   };
 
   const handleJoinRoom = async (code, joinOpts = {}) => {
+    setSoloSetup(false);
     try {
       await joinRoomById(code, joinOpts);
-      await uiAlert(`Вы в комнате ${String(code).trim().toUpperCase()}`, {
-        title: 'Подключено',
-        variant: 'success',
-      });
     } catch (err) {
       await uiAlert(`Комната не найдена или недоступна: ${err.message || err}`, {
         title: 'Ошибка',
         variant: 'danger',
       });
+      throw err;
     }
+  };
+
+  const handleLeaveRoom = () => {
+    setSoloSetup(false);
+    leaveRoom();
   };
 
   return (
@@ -148,7 +166,26 @@ function App() {
       />
 
       <main className="py-6 flex-grow space-y-8">
-        {!isGameActive && (
+        {showHub && (
+          <RoomHub
+            roomStatus={roomStatus}
+            roomError={roomError}
+            onCreateRoom={handleCreateRoom}
+            onJoinRoom={handleJoinRoom}
+            onPlaySolo={() => setSoloSetup(true)}
+            importGameToken={cloud.importGameToken}
+          />
+        )}
+
+        {showGuestLobby && (
+          <GuestLobby
+            room={room}
+            players={players}
+            onLeaveRoom={handleLeaveRoom}
+          />
+        )}
+
+        {showAdminSetup && (
           <SetupScreen
             targetScore={targetScore}
             setTargetScore={(value) => dispatch({ type: 'SET_TARGET_SCORE', value })}
@@ -163,15 +200,12 @@ function App() {
             availableFactions={dialogs.availableFactions}
             isFactionTaken={(factionId, playerId) => select.isFactionTaken(game, factionId, playerId)}
             isColorTaken={(colorHex, playerId) => select.isColorTaken(game, colorHex, playerId)}
-            importGameToken={cloud.importGameToken}
             handleStartGame={dialogs.handleStartGame}
             room={room}
             roomStatus={roomStatus}
             roomError={roomError}
-            onCreateRoom={handleCreateRoom}
-            onJoinRoom={handleJoinRoom}
-            onLeaveRoom={leaveRoom}
-            perms={perms}
+            onLeaveRoom={handleLeaveRoom}
+            isSolo={soloSetup && !hasRoomSession}
           />
         )}
 
