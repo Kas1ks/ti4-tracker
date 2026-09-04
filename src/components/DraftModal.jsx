@@ -1,9 +1,23 @@
 import { STRATEGY_CARDS } from '../data/gameData';
 import { useEscapeKey } from '../hooks/useEscapeKey';
 
-export function DraftModal({ showDraftModal, minimizedModals, toggleMinimize, setShowDraftModal, draftStep, draftQueue, players, currentQueueIndex, draftAssignments, strategyCardBonuses, handleSelectCard, handleUndoLastPick, handleReassignCard, confirmDraft, draftPickOrder }) {
+export function DraftModal({
+  showDraftModal, minimizedModals, toggleMinimize, setShowDraftModal, draftStep, draftQueue,
+  players, currentQueueIndex, draftAssignments, strategyCardBonuses, handleSelectCard,
+  handleUndoLastPick, handleReassignCard, confirmDraft, draftPickOrder, perms,
+}) {
   const visible = showDraftModal && !minimizedModals.draft;
   useEscapeKey(() => setShowDraftModal(false), visible);
+
+  const currentPickerId = draftQueue[currentQueueIndex];
+  const lastCardId = draftPickOrder?.[draftPickOrder.length - 1];
+  const lastOwner = lastCardId != null ? draftAssignments[lastCardId] : null;
+  const seatId = perms?.seatPlayerId;
+  const canAdmin = !perms || perms.can('draftAdmin');
+  const canPick = canAdmin || (!!perms?.can('draftPick') && seatId != null && currentPickerId === seatId);
+  const canUndo = canAdmin || (!!perms?.can('draftPick') && seatId != null && lastOwner === seatId);
+  const canConfirm = !perms || perms.can('confirmDraft');
+  const canReassign = !perms || perms.can('reassignCard');
 
   return (
     <>
@@ -59,6 +73,7 @@ export function DraftModal({ showDraftModal, minimizedModals, toggleMinimize, se
                                                 })}
                                             </div>
 
+                                            {canUndo && (
                                             <div className="flex justify-end mb-4">
                                                 <button
                                                     type="button"
@@ -70,6 +85,7 @@ export function DraftModal({ showDraftModal, minimizedModals, toggleMinimize, se
                                                     Отменить последний выбор
                                                 </button>
                                             </div>
+                                            )}
 
                                             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                                                 {STRATEGY_CARDS.map(card => {
@@ -77,13 +93,14 @@ export function DraftModal({ showDraftModal, minimizedModals, toggleMinimize, se
                                                     const isTaken = !!takenByPlayerId;
                                                     const owner = players.find(p => p.id === takenByPlayerId);
                                                     const bonus = strategyCardBonuses[card.id] || 0;
+                                                    const pickDisabled = isTaken || !canPick;
 
                                                     return (
                                                         <button
                                                             key={card.id}
-                                                            disabled={isTaken}
+                                                            disabled={pickDisabled}
                                                             onClick={() => handleSelectCard(card.id)}
-                                                            className={`text-left transition relative group ${isTaken
+                                                            className={`text-left transition relative group ${pickDisabled
                                                                 ? 'cursor-not-allowed'
                                                                 : 'cursor-pointer'
                                                                 }`}
@@ -133,6 +150,7 @@ export function DraftModal({ showDraftModal, minimizedModals, toggleMinimize, se
                                                                         #{card.id} {card.ruName || card.name}
                                                                     </td>
                                                                     <td className="p-3">
+                                                                        {canReassign ? (
                                                                         <select
                                                                             value={ownerId}
                                                                             onChange={(e) => handleReassignCard(card.id, e.target.value)}
@@ -142,6 +160,9 @@ export function DraftModal({ showDraftModal, minimizedModals, toggleMinimize, se
                                                                                 <option key={p.id} value={p.id}>{p.name}</option>
                                                                             ))}
                                                                         </select>
+                                                                        ) : (
+                                                                          <span className="text-slate-300">{players.find(p => p.id === ownerId)?.name || '—'}</span>
+                                                                        )}
                                                                     </td>
                                                                 </tr>
                                                             );
@@ -151,6 +172,7 @@ export function DraftModal({ showDraftModal, minimizedModals, toggleMinimize, se
                                             </div>
 
                                             <div className="flex justify-end pt-2 gap-2">
+                                                {canUndo && (
                                                 <button
                                                     type="button"
                                                     onClick={handleUndoLastPick}
@@ -160,12 +182,15 @@ export function DraftModal({ showDraftModal, minimizedModals, toggleMinimize, se
                                                     <i className="fa-solid fa-rotate-left mr-1"></i>
                                                     Отменить последний выбор
                                                 </button>
+                                                )}
+                                                {canConfirm && (
                                                 <button
                                                     onClick={confirmDraft}
                                                     className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-russo px-5 py-2.5 rounded-xl text-xs transition shadow-lg shadow-amber-500/10"
                                                 >
                                                     ПОДТВЕРДИТЬ И ЗАКРЫТЬ
                                                 </button>
+                                                )}
                                             </div>
                                         </div>
                                     )}

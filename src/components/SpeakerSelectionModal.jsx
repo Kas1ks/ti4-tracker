@@ -5,6 +5,7 @@ export function SpeakerSelectionModal({
   activePlayer,
   activePlayers,
   onSelectSpeaker,
+  readOnly = false,
 }) {
   if (!show || !activePlayer) return null;
 
@@ -24,7 +25,9 @@ export function SpeakerSelectionModal({
         <div className="space-y-4">
           <h3 className="font-orbitron font-bold text-lg text-amber-400 text-center">Выберите следующего Спикера</h3>
           <p className="text-sm text-slate-400 text-center">
-            Игрок <span className="font-bold text-white">{activePlayer.name}</span> выбирает следующего Спикера.
+            {readOnly
+              ? 'Ожидание выбора спикера…'
+              : <>Игрок <span className="font-bold text-white">{activePlayer.name}</span> выбирает следующего Спикера.</>}
           </p>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 pt-2">
             {activePlayers.map(player => {
@@ -33,8 +36,11 @@ export function SpeakerSelectionModal({
                 <button
                   key={player.id}
                   type="button"
-                  onClick={() => onSelectSpeaker(player.id)}
-                  className="p-4 bg-slate-950 hover:bg-slate-800 border border-slate-800 rounded-xl text-center space-y-2 transition hover:border-purple-500"
+                  disabled={readOnly}
+                  onClick={() => !readOnly && onSelectSpeaker(player.id)}
+                  className={`p-4 bg-slate-950 border border-slate-800 rounded-xl text-center space-y-2 transition ${
+                    readOnly ? 'opacity-70 cursor-default' : 'hover:bg-slate-800 hover:border-purple-500'
+                  }`}
                 >
                   <img src={faction?.iconUrl} alt={faction?.name} className="w-16 h-16 mx-auto object-contain" />
                   <div className="font-bold text-purple-400">{player.name}</div>

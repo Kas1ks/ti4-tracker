@@ -1,4 +1,7 @@
 import { handleApi } from './api.js';
+import { GameRoom } from './rooms/GameRoom.js';
+
+export { GameRoom };
 
 export default {
   async fetch(request, env) {
@@ -8,8 +11,6 @@ export default {
       return handleApi(request, env);
     }
 
-    // Static assets / SPA fallback are handled by the assets binding
-    // when run_worker_first is limited to /api/*.
     if (env.ASSETS) {
       return env.ASSETS.fetch(request);
     }

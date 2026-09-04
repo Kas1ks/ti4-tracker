@@ -19,6 +19,7 @@ export function StatusPhaseModal({
   onConfirm,
   onClose,
   onMinimize,
+  readOnly = false,
 }) {
   useEscapeKey(onClose, show && !minimized);
   if (!show) return null;
@@ -47,15 +48,24 @@ export function StatusPhaseModal({
           </div>
         </div>
         <div className="space-y-3 text-left">
-          <p className="text-sm text-slate-400 text-center -mt-4 mb-4">Выполните все шаги в указанном порядке.</p>
+          <p className="text-sm text-slate-400 text-center -mt-4 mb-4">
+            {readOnly ? 'Только просмотр — шаги отмечает админ.' : 'Выполните все шаги в указанном порядке.'}
+          </p>
           {STATUS_STEPS.map(([key, text]) => (
-            <ChecklistItem key={key} checked={!!checks[key]} onCheck={() => onCheck(key)} text={text} />
+            <ChecklistItem
+              key={key}
+              checked={!!checks[key]}
+              onCheck={readOnly ? undefined : () => onCheck(key)}
+              text={text}
+              disabled={readOnly}
+            />
           ))}
         </div>
         <div className="flex items-center gap-4 pt-4 border-t border-slate-800">
           <button onClick={onClose} className="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold py-3.5 rounded-2xl text-xs md:text-sm transition">
-            Отмена
+            {readOnly ? 'Закрыть' : 'Отмена'}
           </button>
+          {!readOnly && (
           <button
             onClick={onConfirm}
             disabled={!allDone}
@@ -63,6 +73,7 @@ export function StatusPhaseModal({
           >
             Продолжить
           </button>
+          )}
         </div>
       </div>
     </div>

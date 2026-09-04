@@ -8,8 +8,7 @@ export function CombatModal({
   onClose,
   activePlayer,
   activePlayers,
-  players,
-  setPlayers,
+  onRecordDamage,
   combatOpponentId,
   setCombatOpponentId,
   combatHits,
@@ -18,27 +17,20 @@ export function CombatModal({
   setCombatRound,
   totalCombatDamage,
   setTotalCombatDamage,
+  readOnly = false,
 }) {
   useEscapeKey(onClose, show && !minimized && !!activePlayer);
   if (!show || !activePlayer) return null;
 
-  const opponent = players.find(p => p.id === combatOpponentId);
+  const opponent = activePlayers.find(p => p.id === combatOpponentId);
 
   const handleEndCombat = () => {
     if (!opponent) return;
 
-    const finalAttackerDamage = totalCombatDamage.attacker + combatHits.attacker;
-    const finalDefenderDamage = totalCombatDamage.defender + combatHits.defender;
-
-    setPlayers(prevPlayers => prevPlayers.map(p => {
-      if (p.id === activePlayer.id) {
-        return { ...p, damageDealt: (p.damageDealt || 0) + finalAttackerDamage };
-      }
-      if (p.id === opponent.id) {
-        return { ...p, damageDealt: (p.damageDealt || 0) + finalDefenderDamage };
-      }
-      return p;
-    }));
+    onRecordDamage({
+      [activePlayer.id]: totalCombatDamage.attacker + combatHits.attacker,
+      [opponent.id]: totalCombatDamage.defender + combatHits.defender,
+    });
 
     onClose();
   };
@@ -61,17 +53,17 @@ export function CombatModal({
         role="dialog"
         aria-modal="true"
         aria-labelledby="combat-modal-title"
-        className="bg-slate-900 border border-red-800 rounded-2xl max-w-4xl w-full p-6 shadow-2xl shadow-red-500/10"
+        className={`bg-slate-900 border border-red-800 rounded-2xl max-w-4xl w-full p-6 shadow-2xl shadow-red-500/10 ${readOnly ? '[&_button:not([aria-label])]:pointer-events-none [&_button:not([aria-label])]:opacity-60' : ''}`}
       >
         <div className="flex justify-between items-center mb-4 pb-3 border-b border-slate-800">
           <h2 id="combat-modal-title" className="font-orbitron text-lg font-bold text-red-400 uppercase flex items-center gap-2">
             <i className="fa-solid fa-crosshairs" /> Окно Сражения
           </h2>
           <div className="flex items-center gap-4">
-            <button type="button" onClick={onMinimize} className="text-slate-500 hover:text-white transition">
+            <button type="button" onClick={onMinimize} aria-label="Свернуть" className="text-slate-500 hover:text-white transition">
               <i className="fa-solid fa-window-minimize text-base" />
             </button>
-            <button type="button" onClick={onClose} className="text-slate-500 hover:text-white transition">
+            <button type="button" onClick={onClose} aria-label="Закрыть" className="text-slate-500 hover:text-white transition">
               <i className="fa-solid fa-xmark text-lg" />
             </button>
           </div>

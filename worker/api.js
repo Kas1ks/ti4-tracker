@@ -7,6 +7,7 @@ import {
   resolveBinId,
   resolveMasterKey,
 } from './jsonbin.js';
+import { handleRoomsApi } from './rooms/roomsApi.js';
 
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -34,7 +35,7 @@ function pinMatches(env, pin) {
 /**
  * Shared API handler for Cloudflare Worker and Vite dev middleware.
  * @param {Request} request
- * @param {{ JSONBIN_BIN_ID?: string, JSONBIN_MASTER_KEY?: string, ADMIN_PIN?: string }} env
+ * @param {object} env
  */
 export async function handleApi(request, env) {
   const url = new URL(request.url);
@@ -52,6 +53,28 @@ export async function handleApi(request, env) {
     });
   }
 
+  if (method === 'GET' && pathname === '/api/health') {
+    return json({
+      ok: true,
+      cloudConfigured: isJsonBinConfigured(env),
+      rooms: Boolean(env?.GAME_ROOMS) ? 'durable-object' : 'memory',
+      hasBinId: Boolean(resolveBinId(env)),
+      hasMasterKey: Boolean(resolveMasterKey(env)),
+      hasAdminPin: Boolean(resolveAdminPin(env)),
+    });
+  }
+
+  // Live rooms do not need JSONBin — handle before the cloud gate.
+  if (pathname === '/api/rooms' || pathname.startsWith('/api/rooms/')) {
+    try {
+      const roomResponse = await handleRoomsApi(request, env);
+      if (roomResponse) return roomResponse;
+    } catch (err) {
+      console.error('[rooms]', err);
+      return json({ error: 'room-error', message: String(err?.message || err) }, 500);
+    }
+  }
+
   if (!isJsonBinConfigured(env)) {
     return json({
       error: 'not-configured',
@@ -63,22 +86,12 @@ export async function handleApi(request, env) {
   }
 
   try {
-    if (method === 'GET' && pathname === '/api/health') {
-      return json({
-        ok: true,
-        cloudConfigured: isJsonBinConfigured(env),
-        hasBinId: Boolean(resolveBinId(env)),
-        hasMasterKey: Boolean(resolveMasterKey(env)),
-        hasAdminPin: Boolean(resolveAdminPin(env)),
-      });
-    }
-
     if (method === 'GET' && pathname === '/api/stats') {
       const { history } = await getCloudBin(env);
       return json({ history });
     }
 
-    if (method === 'POST' && pathname === '/api/games') {
+    if (method === 'POST' && pathname === '/api/game') {
       const record = await readJsonBody(request);
       if (!record || typeof record !== 'object' || Array.isArray(record)) {
         return json({ error: 'invalid-body' }, 400);

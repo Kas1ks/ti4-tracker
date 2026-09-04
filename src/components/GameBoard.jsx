@@ -1,6 +1,7 @@
 import { motion } from 'framer-motion';
 import { ALL_FACTIONS } from '../data/gameData';
 import { formatTime } from '../utils/game';
+import { areAllStrategiesPlayed, isStrategyCardPlayed } from '../game/selectors';
 
 export function GameBoard({
   turnOrder,
@@ -9,7 +10,8 @@ export function GameBoard({
   sortedPlayersForBoard,
   getPlayerScore,
   players,
-  setPlayers,
+  adjustSecrets,
+  adjustMecatol,
   objectives,
   completions,
   toggleCompletion,
@@ -23,7 +25,16 @@ export function GameBoard({
   handleAddSecret,
   eliminatePlayer,
   isGameActive,
+  perms,
 }) {
+  const canAdminBoard = !perms || perms.can('secrets');
+  const canEliminate = !perms || perms.can('eliminate');
+  const canScoreAny = !perms || perms.can('scoreAny');
+  const canScoreSelf = !perms || perms.can('scoreSelf');
+  const seatId = perms?.seatPlayerId;
+  const canToggleFor = (playerId) =>
+    canScoreAny || (canScoreSelf && seatId != null && playerId === seatId);
+
   return (
                             <div className="space-y-8">
 
@@ -43,7 +54,7 @@ export function GameBoard({
                                             {turnOrder.map((p) => {
                                                 if (!p) return null;
                                                 const hasPassed = !!passed[p.id];
-                                                const isStrategyUsed = !!p.strategyPlayed;
+                                                const isStrategyUsed = areAllStrategiesPlayed(p);
                                                 const isCurrent = activePlayer && activePlayer.id === p.id;
                                                 const faction = ALL_FACTIONS.find(f => f.id === p.factionId);
                                                 const isBlack = p.color === '#000000' || p.color === '#090d16';
@@ -85,7 +96,9 @@ export function GameBoard({
                                                                 <div className="font-bold text-base text-white truncate">{p.name}</div>
                                                                 <div className="text-sm text-amber-300/80 truncate font-semibold">
                                                                     {playerCards.length
-                                                                        ? playerCards.map(card => card.name).join(', ')
+                                                                        ? playerCards.map(card => (
+                                                                          `${isStrategyCardPlayed(p, card.id) ? '✓ ' : ''}${card.name}`
+                                                                        )).join(', ')
                                                                         : 'Без карты'}
                                                                 </div>
                                                             </div>
@@ -170,7 +183,7 @@ export function GameBoard({
                                                                         </span>
                                                                     )}
                                                                 </div>
-                                                                {!p.eliminated && isGameActive && (
+                                                                {!p.eliminated && isGameActive && canEliminate && (
                                                                     <button onClick={() => eliminatePlayer(p.id)} className="absolute top-1 right-1 text-slate-600 hover:text-red-500 text-xs p-1 transition" title={`Устранить игрока ${p.name}`}>
                                                                         <i className="fa-solid fa-skull" />
                                                                     </button>
@@ -202,8 +215,10 @@ export function GameBoard({
                                                                     </div>
 
                                                                     <div className="flex items-center gap-1">
+                                                                        {canAdminBoard ? (
+                                                                          <>
                                                                         <button
-                                                                            onClick={() => setPlayers(players.map(x => x.id === p.id ? { ...x, secrets: Math.max(0, x.secrets - 1) } : x))}
+                                                                            onClick={() => adjustSecrets(p.id, -1)}
                                                                             className="w-5 h-5 bg-slate-800 hover:bg-slate-700 active:bg-slate-600 text-slate-200 font-bold rounded flex items-center justify-center transition border border-slate-700"
                                                                         >–</button>
 
@@ -215,6 +230,12 @@ export function GameBoard({
                                                                             onClick={() => handleAddSecret(p.id)}
                                                                             className="w-5 h-5 bg-slate-800 hover:bg-slate-700 active:bg-slate-600 text-cyan-400 font-bold rounded flex items-center justify-center transition border border-slate-700"
                                                                         >+</button>
+                                                                          </>
+                                                                        ) : (
+                                                                        <span className="font-sans font-extrabold w-4 text-center text-sm text-slate-200">
+                                                                            {p.secrets}
+                                                                        </span>
+                                                                        )}
                                                                     </div>
                                                                 </div>
 
@@ -224,15 +245,21 @@ export function GameBoard({
                                                                     </div>
 
                                                                     <div className="flex items-center gap-1">
+                                                                        {canAdminBoard ? (
+                                                                          <>
                                                                         <button
-                                                                            onClick={() => setPlayers(players.map(x => x.id === p.id ? { ...x, extra: Math.max(0, x.extra - 1) } : x))}
+                                                                            onClick={() => adjustMecatol(p.id, -1)}
                                                                             className="w-5 h-5 bg-slate-800 hover:bg-slate-700 active:bg-slate-600 text-slate-200 font-bold rounded flex items-center justify-center transition border border-slate-700"
                                                                         >–</button>
                                                                         <span className="font-sans font-extrabold text-purple-300 w-4 text-center text-sm">{p.extra}</span>
                                                                         <button
-                                                                            onClick={() => setPlayers(players.map(x => x.id === p.id ? { ...x, extra: x.extra + 1 } : x))}
+                                                                            onClick={() => adjustMecatol(p.id, 1)}
                                                                             className="w-5 h-5 bg-slate-800 hover:bg-slate-700 active:bg-slate-600 text-cyan-400 font-bold rounded flex items-center justify-center transition border border-slate-700"
                                                                         >+</button>
+                                                                          </>
+                                                                        ) : (
+                                                                        <span className="font-sans font-extrabold text-purple-300 w-4 text-center text-sm">{p.extra}</span>
+                                                                        )}
                                                                     </div>
                                                                 </div>
                                                             </div>
@@ -299,6 +326,7 @@ export function GameBoard({
                                                                                     {isExpanded ? '▲' : '▼'}
                                                                                 </button>
                                                                             )}
+                                                                            {canAdminBoard && (
                                                                             <button
                                                                                 type="button"
                                                                                 onClick={() => removeObjective(obj.id)}
@@ -307,6 +335,7 @@ export function GameBoard({
                                                                             >
                                                                                 ✕
                                                                             </button>
+                                                                            )}
                                                                         </div>
                                                                     </div>
 
@@ -323,6 +352,7 @@ export function GameBoard({
                                                                                     <button
                                                                                         key={p.id}
                                                                                         type="button"
+                                                                                        disabled={!canToggleFor(p.id)}
                                                                                         onClick={() => toggleCompletion(p.id, obj.id)}
                                                                                         style={{
                                                                                             borderColor: isDone ? (isBlack ? '#ffffff' : pColor) : undefined,
@@ -330,7 +360,7 @@ export function GameBoard({
                                                                                         className={`px-2 py-1.5 rounded-xl text-xs md:text-sm font-bold transition-all duration-200 active:scale-95 flex items-center justify-between gap-1 border ${isDone
                                                                                             ? 'bg-slate-900 text-white shadow-md'
                                                                                             : 'bg-slate-900/60 text-slate-300 border-slate-800 hover:bg-slate-800 hover:text-white'
-                                                                                            } ${isDone && isBlack ? 'ring-2 ring-white/80' : ''}`}
+                                                                                            } ${isDone && isBlack ? 'ring-2 ring-white/80' : ''} ${!canToggleFor(p.id) ? 'opacity-70 cursor-default' : ''}`}
                                                                                     >
                                                                                         <span className="truncate">{p.name}</span>
                                                                                         {isDone && (
@@ -353,6 +383,7 @@ export function GameBoard({
                                                 </div>
 
                                                 {/* Кнопка добавления внизу столбца */}
+                                                {canAdminBoard && (
                                                 <div className="mt-auto pt-4 space-y-2">
                                                     {objectives.filter(o => o.stage === 1).length < 5 && (
                                                         <button
@@ -372,6 +403,7 @@ export function GameBoard({
                                                         + Ввести свою цель вручную
                                                     </button>
                                                 </div>
+                                                )}
                                             </div>
 
                                             {/* ПРАВЫЙ СТОЛБЕЦ: ЭТАП II (2 ПО) */}
@@ -426,6 +458,7 @@ export function GameBoard({
                                                                                     {isExpanded ? '▲' : '▼'}
                                                                                 </button>
                                                                             )}
+                                                                            {canAdminBoard && (
                                                                             <button
                                                                                 type="button"
                                                                                 onClick={() => removeObjective(obj.id)}
@@ -434,6 +467,7 @@ export function GameBoard({
                                                                             >
                                                                                 ✕
                                                                             </button>
+                                                                            )}
                                                                         </div>
                                                                     </div>
 
@@ -450,6 +484,7 @@ export function GameBoard({
                                                                                     <button
                                                                                         key={p.id}
                                                                                         type="button"
+                                                                                        disabled={!canToggleFor(p.id)}
                                                                                         onClick={() => toggleCompletion(p.id, obj.id)}
                                                                                         style={{
                                                                                             borderColor: isDone ? (isBlack ? '#ffffff' : pColor) : undefined,
@@ -457,7 +492,7 @@ export function GameBoard({
                                                                                         className={`px-2 py-1.5 rounded-xl text-xs md:text-sm font-bold transition-all duration-200 active:scale-95 flex items-center justify-between gap-1 border ${isDone
                                                                                             ? 'bg-slate-900 text-white shadow-md'
                                                                                             : 'bg-slate-900/60 text-slate-300 border-slate-800 hover:bg-slate-800 hover:text-white'
-                                                                                            } ${isDone && isBlack ? 'ring-2 ring-white/80' : ''}`}
+                                                                                            } ${isDone && isBlack ? 'ring-2 ring-white/80' : ''} ${!canToggleFor(p.id) ? 'opacity-70 cursor-default' : ''}`}
                                                                                     >
                                                                                         <span className="truncate">{p.name}</span>
                                                                                         {isDone && (
@@ -480,6 +515,7 @@ export function GameBoard({
                                                 </div>
 
                                                 {/* Кнопка добавления внизу столбца */}
+                                                {canAdminBoard && (
                                                 <div className="mt-auto pt-4 space-y-2">
                                                     {objectives.filter(o => o.stage === 2).length < 5 && (
                                                         <button
@@ -499,6 +535,7 @@ export function GameBoard({
                                                         + Ввести свою цель вручную
                                                     </button>
                                                 </div>
+                                                )}
                                             </div>
 
                                         </div>

@@ -1,11 +1,13 @@
-export function ChecklistItem({ checked, onCheck, text }) {
+export function ChecklistItem({ checked, onCheck, text, disabled = false }) {
   return (
     <div
-      onClick={onCheck}
-      className={`p-3 bg-slate-950 border rounded-lg flex items-center gap-4 cursor-pointer transition-all ${
+      onClick={disabled ? undefined : onCheck}
+      className={`p-3 bg-slate-950 border rounded-lg flex items-center gap-4 transition-all ${
+        disabled ? 'cursor-default' : 'cursor-pointer'
+      } ${
         checked
           ? 'border-emerald-500/50 bg-emerald-950/20 text-slate-300'
-          : 'border-slate-800 text-slate-400 hover:bg-slate-800'
+          : 'border-slate-800 text-slate-400' + (disabled ? '' : ' hover:bg-slate-800')
       }`}
     >
       <div className={`w-6 h-6 rounded-md border-2 flex items-center justify-center flex-shrink-0 ${checked ? 'bg-emerald-500 border-emerald-400' : 'border-slate-600'}`}>

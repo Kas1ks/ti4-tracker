@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { Readable } from 'node:stream';
 import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
 import { handleApi } from './worker/api.js';
@@ -64,22 +65,38 @@ function cloudApiPlugin(mode) {
             else headers.set(key, value);
           }
 
+          const abort = new AbortController();
+          res.on('close', () => abort.abort());
+
           const request = new Request(`http://${host}${req.url}`, {
             method: req.method || 'GET',
             headers,
             body: rawBody.length > 0 ? rawBody : undefined,
+            signal: abort.signal,
           });
           const response = await handleApi(request, env);
           res.statusCode = response.status;
           response.headers.forEach((value, key) => {
+            // Node will set its own transfer encoding for streams
+            if (key.toLowerCase() === 'content-length') return;
             res.setHeader(key, value);
           });
-          res.end(Buffer.from(await response.arrayBuffer()));
+
+          if (!response.body) {
+            res.end();
+            return;
+          }
+
+          const nodeStream = Readable.fromWeb(response.body);
+          nodeStream.pipe(res);
         } catch (err) {
+          if (err?.name === 'AbortError') return;
           console.error('[ti4-cloud-api]', err);
-          res.statusCode = 500;
-          res.setHeader('Content-Type', 'application/json');
-          res.end(JSON.stringify({ error: 'dev-api-error' }));
+          if (!res.headersSent) {
+            res.statusCode = 500;
+            res.setHeader('Content-Type', 'application/json');
+            res.end(JSON.stringify({ error: 'dev-api-error' }));
+          }
         }
       });
     },
