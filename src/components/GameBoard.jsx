@@ -15,6 +15,7 @@ export function GameBoard({
   objectives,
   completions,
   toggleCompletion,
+  scoring,
   expandedObjectives,
   toggleExpand,
   removeObjective,
@@ -24,26 +25,41 @@ export function GameBoard({
   speakerId,
   handleAddSecret,
   eliminatePlayer,
+  releaseSeat,
+  claimedSeats = [],
   isGameActive,
   perms,
 }) {
   const canAdminBoard = !perms || perms.can('secrets');
   const canEliminate = !perms || perms.can('eliminate');
+  const canReleaseSeat = typeof releaseSeat === 'function';
   const canScoreAny = !perms || perms.can('scoreAny');
   const canScoreSelf = !perms || perms.can('scoreSelf');
   const seatId = perms?.seatPlayerId;
-  const canToggleFor = (playerId) =>
-    canScoreAny || (canScoreSelf && seatId != null && playerId === seatId);
+  const scoringActive = !!scoring?.active;
+
+  const canToggleFor = (playerId) => {
+    // During the status-phase scoring window, use ObjectiveScoringModal only.
+    if (scoringActive) return false;
+    if (canScoreAny) return true;
+    return canScoreSelf && seatId != null && playerId === seatId;
+  };
+
+  const onObjectiveClick = (playerId, objectiveId) => {
+    toggleCompletion(playerId, objectiveId);
+  };
 
   return (
                             <div className="space-y-8">
 
                                 {/* ПАНЕЛЬ ОЧЕРЕДНОСТИ ХОДОВ */}
                                 {turnOrder.length > 0 && (
-                                    <section className="bg-slate-900 border border-slate-800 p-5 rounded-3xl space-y-4 shadow-lg">
-                                        <div className="flex items-center justify-between">
+                                    <section className="bg-slate-900 border border-slate-800 p-5 max-md:p-3 rounded-3xl space-y-4 shadow-lg">
+                                        <div className="flex items-center justify-between max-md:flex-col max-md:items-start max-md:gap-1">
                                             <h3 className="font-orbitron font-bold text-sm uppercase text-slate-400 flex items-center gap-2">
-                                                <i className="fa-solid fa-list-ol text-cyan-400"></i> Очередность хода (По инициативе)
+                                                <i className="fa-solid fa-list-ol text-cyan-400"></i>
+                                                <span className="max-md:hidden">Очередность хода (По инициативе)</span>
+                                                <span className="md:hidden">Очередь хода</span>
                                             </h3>
                                             <span className="text-xs font-bold text-slate-500 uppercase font-orbitron">
                                                 Активных: {turnOrder.filter(p => !passed[p.id]).length} / {turnOrder.length}
@@ -143,7 +159,7 @@ export function GameBoard({
                                                         key={p.id}
                                                         layout
                                                         transition={{ type: "spring", stiffness: 300, damping: 28 }}
-                                                        className={`relative p-3 rounded-2xl border flex items-center justify-between gap-3 shadow-md overflow-hidden ${isWinner
+                                                        className={`relative p-3 rounded-2xl border flex items-center justify-between gap-3 max-md:flex-col max-md:items-stretch shadow-md overflow-hidden ${isWinner
                                                             ? 'bg-amber-950/60 border-amber-500 shadow-amber-500/20'
                                                             : p.eliminated
                                                             ? 'bg-slate-950/70 border-slate-800 opacity-60 grayscale'
@@ -170,42 +186,59 @@ export function GameBoard({
                                                             >
                                                                 <img src={faction?.iconUrl} alt={faction?.name} className="w-full h-full object-contain filter drop-shadow" />
                                                             </div>
-                                                            <div className="truncate min-w-0">
-                                                                <div className="font-extrabold text-base md:text-lg text-white truncate leading-tight flex items-center gap-1.5">
-                                                                    <span>{p.name}</span>
-                                                                    {isLeader && !p.eliminated && (
-                                                                        <span title="Лидер партии" className="text-amber-400 text-sm filter drop-shadow">
-                                                                            👑
-                                                                        </span>)}
-                                                                    {p.id === speakerId && !p.eliminated && (
-                                                                        <span title="Спикер" className="ml-2 text-[10px] font-orbitron font-bold uppercase bg-purple-950 text-purple-300 border border-purple-700 px-2 py-0.5 rounded-md">
-                                                                            Speaker
-                                                                        </span>
+                                                            <div className="min-w-0 flex-1">
+                                                                <div className="flex items-center gap-1.5 min-w-0">
+                                                                    <div className="font-extrabold text-base md:text-lg text-white truncate leading-tight flex items-center gap-1.5 min-w-0">
+                                                                        <span className="truncate">{p.name}</span>
+                                                                        {isLeader && !p.eliminated && (
+                                                                            <span title="Лидер партии" className="text-amber-400 text-sm filter drop-shadow flex-shrink-0">
+                                                                                👑
+                                                                            </span>)}
+                                                                        {p.id === speakerId && !p.eliminated && (
+                                                                            <span title="Спикер" className="text-[10px] font-orbitron font-bold uppercase bg-purple-950 text-purple-300 border border-purple-700 px-2 py-0.5 rounded-md flex-shrink-0">
+                                                                                Speaker
+                                                                            </span>
+                                                                        )}
+                                                                    </div>
+                                                                    {!p.eliminated && isGameActive && canEliminate && (
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() => eliminatePlayer(p.id)}
+                                                                            className="flex-shrink-0 text-slate-600 hover:text-red-500 text-xs p-1.5 rounded-lg hover:bg-red-950/40 transition"
+                                                                            title={`Устранить игрока ${p.name}`}
+                                                                        >
+                                                                            <i className="fa-solid fa-skull" />
+                                                                        </button>
+                                                                    )}
+                                                                    {canReleaseSeat && claimedSeats.some(id => String(id) === String(p.id)) && (
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() => releaseSeat(p.id)}
+                                                                            className="flex-shrink-0 text-slate-600 hover:text-amber-400 text-xs p-1.5 rounded-lg hover:bg-amber-950/30 transition"
+                                                                            title={`Освободить место ${p.name} (сбросить устройство и код)`}
+                                                                        >
+                                                                            <i className="fa-solid fa-link-slash" />
+                                                                        </button>
                                                                     )}
                                                                 </div>
-                                                                {!p.eliminated && isGameActive && canEliminate && (
-                                                                    <button onClick={() => eliminatePlayer(p.id)} className="absolute top-1 right-1 text-slate-600 hover:text-red-500 text-xs p-1 transition" title={`Устранить игрока ${p.name}`}>
-                                                                        <i className="fa-solid fa-skull" />
-                                                                    </button>
-                                                                )}
                                                                 <div className="text-xs md:text-sm text-slate-300 font-semibold truncate mt-0.5">{faction?.name}</div>
                                                             </div>
                                                         </div>
 
-                                                        <div className="flex items-center gap-3 flex-shrink-0">
+                                                        <div className="flex items-center gap-3 flex-shrink-0 max-md:flex-wrap max-md:pl-1">
                                                             <div
                                                                 style={{
                                                                     color: isBlack ? '#090d16' : playerColor,
                                                                     WebkitTextStroke: isBlack ? '1.5px #f8fafc' : 'none',
                                                                     borderColor: isBlack ? '#334155' : playerColor
                                                                 }}
-                                                                className="font-rajdhani font-bold text-3xl md:text-4xl bg-slate-950 px-3 py-1 rounded-xl border text-center min-w-[65px] tracking-wider"
+                                                                className="font-rajdhani font-bold text-3xl md:text-4xl bg-slate-950 px-3 py-1 rounded-xl border text-center min-w-[65px] tracking-wider max-md:text-2xl max-md:min-w-[56px]"
                                                             >
                                                                 {score}
                                                             </div>
 
-                                                            <div className="flex flex-col gap-1.5 w-[115px]">
-                                                                <div className="flex items-center justify-between bg-slate-950 px-2.5 py-1 rounded-xl border border-slate-700/80 shadow-sm w-[125px]">
+                                                            <div className="flex flex-col gap-1.5 w-[115px] max-md:flex-row max-md:w-auto max-md:flex-wrap">
+                                                                <div className="flex items-center justify-between bg-slate-950 px-2.5 py-1 rounded-xl border border-slate-700/80 shadow-sm w-[125px] max-md:w-auto max-md:min-w-[110px]">
                                                                     <div className="text-[10px] font-bold text-slate-300 uppercase flex items-center justify-between w-[45px] flex-shrink-0">
                                                                         <span>Секр</span>
                                                                         <span className="w-3 text-center">
@@ -219,7 +252,7 @@ export function GameBoard({
                                                                           <>
                                                                         <button
                                                                             onClick={() => adjustSecrets(p.id, -1)}
-                                                                            className="w-5 h-5 bg-slate-800 hover:bg-slate-700 active:bg-slate-600 text-slate-200 font-bold rounded flex items-center justify-center transition border border-slate-700"
+                                                                            className="w-5 h-5 max-md:w-8 max-md:h-8 bg-slate-800 hover:bg-slate-700 active:bg-slate-600 text-slate-200 font-bold rounded flex items-center justify-center transition border border-slate-700"
                                                                         >–</button>
 
                                                                         <span className="font-sans font-extrabold w-4 text-center text-sm text-slate-200">
@@ -228,7 +261,7 @@ export function GameBoard({
 
                                                                         <button
                                                                             onClick={() => handleAddSecret(p.id)}
-                                                                            className="w-5 h-5 bg-slate-800 hover:bg-slate-700 active:bg-slate-600 text-cyan-400 font-bold rounded flex items-center justify-center transition border border-slate-700"
+                                                                            className="w-5 h-5 max-md:w-8 max-md:h-8 bg-slate-800 hover:bg-slate-700 active:bg-slate-600 text-cyan-400 font-bold rounded flex items-center justify-center transition border border-slate-700"
                                                                         >+</button>
                                                                           </>
                                                                         ) : (
@@ -249,12 +282,12 @@ export function GameBoard({
                                                                           <>
                                                                         <button
                                                                             onClick={() => adjustMecatol(p.id, -1)}
-                                                                            className="w-5 h-5 bg-slate-800 hover:bg-slate-700 active:bg-slate-600 text-slate-200 font-bold rounded flex items-center justify-center transition border border-slate-700"
+                                                                            className="w-5 h-5 max-md:w-8 max-md:h-8 bg-slate-800 hover:bg-slate-700 active:bg-slate-600 text-slate-200 font-bold rounded flex items-center justify-center transition border border-slate-700"
                                                                         >–</button>
                                                                         <span className="font-sans font-extrabold text-purple-300 w-4 text-center text-sm">{p.extra}</span>
                                                                         <button
                                                                             onClick={() => adjustMecatol(p.id, 1)}
-                                                                            className="w-5 h-5 bg-slate-800 hover:bg-slate-700 active:bg-slate-600 text-cyan-400 font-bold rounded flex items-center justify-center transition border border-slate-700"
+                                                                            className="w-5 h-5 max-md:w-8 max-md:h-8 bg-slate-800 hover:bg-slate-700 active:bg-slate-600 text-cyan-400 font-bold rounded flex items-center justify-center transition border border-slate-700"
                                                                         >+</button>
                                                                           </>
                                                                         ) : (
@@ -342,7 +375,7 @@ export function GameBoard({
                                                                     {/* Плавно скрываемая/раскрываемая сетка игроков */}
                                                                     <div className={`transition-all duration-300 ease-in-out overflow-hidden ${isExpanded ? 'max-h-96 opacity-100 pt-3 border-t border-slate-800/80' : 'max-h-0 opacity-0 pt-0 border-t-0'
                                                                         }`}>
-                                                                        <div className="grid grid-cols-3 gap-2">
+                                                                        <div className="grid grid-cols-3 max-md:grid-cols-2 gap-2">
                                                                             {players.map(p => {
                                                                                 const isDone = !!completions[`${p.id}_${obj.id}`];
                                                                                 const pColor = p.color || '#3b82f6';
@@ -353,7 +386,7 @@ export function GameBoard({
                                                                                         key={p.id}
                                                                                         type="button"
                                                                                         disabled={!canToggleFor(p.id)}
-                                                                                        onClick={() => toggleCompletion(p.id, obj.id)}
+                                                                                        onClick={() => onObjectiveClick(p.id, obj.id)}
                                                                                         style={{
                                                                                             borderColor: isDone ? (isBlack ? '#ffffff' : pColor) : undefined,
                                                                                         }}
@@ -474,7 +507,7 @@ export function GameBoard({
                                                                     {/* Плавно скрываемая/раскрываемая сетка игроков */}
                                                                     <div className={`transition-all duration-300 ease-in-out overflow-hidden ${isExpanded ? 'max-h-96 opacity-100 pt-3 border-t border-slate-800/80' : 'max-h-0 opacity-0 pt-0 border-t-0'
                                                                         }`}>
-                                                                        <div className="grid grid-cols-3 gap-2">
+                                                                        <div className="grid grid-cols-3 max-md:grid-cols-2 gap-2">
                                                                             {players.map(p => {
                                                                                 const isDone = !!completions[`${p.id}_${obj.id}`];
                                                                                 const pColor = p.color || '#ef4444';
@@ -485,7 +518,7 @@ export function GameBoard({
                                                                                         key={p.id}
                                                                                         type="button"
                                                                                         disabled={!canToggleFor(p.id)}
-                                                                                        onClick={() => toggleCompletion(p.id, obj.id)}
+                                                                                        onClick={() => onObjectiveClick(p.id, obj.id)}
                                                                                         style={{
                                                                                             borderColor: isDone ? (isBlack ? '#ffffff' : pColor) : undefined,
                                                                                         }}

@@ -17,6 +17,14 @@ export function useLocalUi() {
     setMinimizedModals(prev => ({ ...prev, [modalName]: !prev[modalName] }));
   };
 
+  const ensureMinimized = (modalName) => {
+    setMinimizedModals(prev => (prev[modalName] ? prev : { ...prev, [modalName]: true }));
+  };
+
+  const ensureExpanded = (modalName) => {
+    setMinimizedModals(prev => (prev[modalName] ? { ...prev, [modalName]: false } : prev));
+  };
+
   const toggleExpand = (id) => {
     setExpandedObjectives(prev => ({ ...prev, [id]: !prev[id] }));
   };
@@ -39,7 +47,7 @@ export function useLocalUi() {
     showGameSummaryModal, setShowGameSummaryModal,
     showCombatModal, setShowCombatModal,
     showSpeakerSelectionModal, setShowSpeakerSelectionModal,
-    minimizedModals, toggleMinimize,
+    minimizedModals, toggleMinimize, ensureMinimized, ensureExpanded,
     combatOpponentId, setCombatOpponentId,
     combatHits, setCombatHits,
     combatRound, setCombatRound,

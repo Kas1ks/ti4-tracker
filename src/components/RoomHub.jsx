@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { ALL_FACTIONS } from '../data/gameData';
 import { ROLES } from '../sync/permissions';
 import { fetchRoomSnapshot } from '../sync/roomApi';
+import { loadSeatSecret } from '../sync/seatSecrets';
 
 /**
  * First screen: Create party / Join by code.
@@ -14,6 +15,8 @@ export function RoomHub({
   onJoinRoom,
   onPlaySolo,
   importGameToken,
+  uiConfirm,
+  uiPrompt,
 }) {
   const [view, setView] = useState('hub'); // hub | join | extras
   const [joinCode, setJoinCode] = useState('');
@@ -51,10 +54,31 @@ export function RoomHub({
   const previewPlayers = preview?.state?.players || [];
   const claimed = preview?.claimedSeats || [];
 
-  const joinAsPlayer = async (seatPlayerId) => {
+  const joinAsPlayer = async (seatPlayerId, { taken = false } = {}) => {
+    let seatSecret;
+    if (taken) {
+      const remembered = loadSeatSecret(joinCode.trim().toUpperCase(), seatPlayerId);
+      const entered = uiPrompt
+        ? await uiPrompt(
+          'Введите код места (выдан при первом входе). Без него чужое место занять нельзя.',
+          {
+            title: 'Код места',
+            defaultValue: remembered || '',
+            placeholder: 'Напр. K7M2',
+            confirmLabel: 'Занять',
+            variant: 'info',
+          },
+        )
+        : window.prompt('Код места', remembered || '');
+      if (entered == null) return;
+      seatSecret = String(entered).trim().toUpperCase();
+      if (!seatSecret) return;
+    } else {
+      seatSecret = loadSeatSecret(joinCode.trim().toUpperCase(), seatPlayerId) || undefined;
+    }
     setJoining(true);
     try {
-      await onJoinRoom(joinCode, { role: ROLES.PLAYER, seatPlayerId });
+      await onJoinRoom(joinCode, { role: ROLES.PLAYER, seatPlayerId, seatSecret });
     } finally {
       setJoining(false);
     }
@@ -122,13 +146,13 @@ export function RoomHub({
                   <button
                     key={p.id}
                     type="button"
-                    disabled={taken || connecting}
-                    onClick={() => joinAsPlayer(p.id)}
+                    disabled={connecting}
+                    onClick={() => joinAsPlayer(p.id, { taken })}
                     className={`text-left p-4 rounded-2xl border transition flex items-center gap-3 ${
                       taken
-                        ? 'bg-slate-950/50 border-slate-800 opacity-50 cursor-not-allowed'
+                        ? 'bg-slate-900/80 border-amber-700/50 hover:border-amber-500 hover:bg-amber-950/20 cursor-pointer'
                         : 'bg-slate-900 border-slate-700 hover:border-cyan-500 hover:bg-slate-800/80 cursor-pointer'
-                    }`}
+                    } ${connecting ? 'opacity-50' : ''}`}
                   >
                     <div className="w-12 h-12 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-center p-1 flex-shrink-0">
                       <img src={faction?.iconUrl} alt={faction?.name} className="w-full h-full object-contain" />
@@ -139,7 +163,11 @@ export function RoomHub({
                       <div className="text-xs text-amber-400/80 truncate">{faction?.name || '—'}</div>
                     </div>
                     {taken ? (
-                      <span className="text-[10px] font-bold uppercase text-slate-500">Занято</span>
+                      <span className="text-[10px] font-bold uppercase text-amber-400 text-right leading-tight">
+                        Занято
+                        <br />
+                        <span className="text-amber-200/80 normal-case">код места</span>
+                      </span>
                     ) : (
                       <i className="fa-solid fa-chevron-right text-cyan-400" />
                     )}

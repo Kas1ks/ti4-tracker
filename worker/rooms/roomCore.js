@@ -21,6 +21,15 @@ export function makeHostKey() {
   return `host_${Date.now()}_${Math.random().toString(36).slice(2)}`;
 }
 
+export function makeSeatSecret() {
+  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let secret = '';
+  for (let i = 0; i < 4; i += 1) {
+    secret += alphabet[Math.floor(Math.random() * alphabet.length)];
+  }
+  return secret;
+}
+
 export function createRoomRecord(initialState = null) {
   const state = initialState
     ? normalizeGameState(initialState)
@@ -40,6 +49,8 @@ export function createRoomRecord(initialState = null) {
     },
     /** seatPlayerId → sessionToken */
     seatClaims: {},
+    /** seatPlayerId → short secret required to reclaim */
+    seatSecrets: {},
   };
 }
 
@@ -49,9 +60,11 @@ export function adminSessionFromRoom(room) {
 }
 
 /**
- * Join as player or viewer. Returns { ok, room, sessionToken, role, seatPlayerId } or error.
+ * Join as player or viewer.
+ * Empty seat: free claim + new seatSecret.
+ * Taken seat: only with matching seatSecret (device switch).
  */
-export function joinRoom(room, { role, seatPlayerId } = {}) {
+export function joinRoom(room, { role, seatPlayerId, seatSecret } = {}) {
   if (role === ROLES.ADMIN) {
     return { ok: false, error: 'use-host-key' };
   }
@@ -65,21 +78,52 @@ export function joinRoom(room, { role, seatPlayerId } = {}) {
     }
     const seat = room.state.players.find(p => String(p.id) === String(seatPlayerId));
     if (!seat) return { ok: false, error: 'unknown-seat' };
-    if (room.seatClaims[seat.id] != null) {
-      return { ok: false, error: 'seat-taken' };
+
+    const seatSecrets = { ...(room.seatSecrets || {}) };
+    const previousToken = room.seatClaims?.[seat.id] ?? null;
+    const existingSecret = seatSecrets[seat.id] ?? null;
+    const reclaimed = previousToken != null;
+
+    if (reclaimed) {
+      const provided = String(seatSecret || '').trim().toUpperCase();
+      if (!existingSecret) {
+        return { ok: false, error: 'seat-secret-required' };
+      }
+      if (!provided) {
+        return { ok: false, error: 'seat-secret-required' };
+      }
+      if (provided !== String(existingSecret).toUpperCase()) {
+        return { ok: false, error: 'bad-seat-secret' };
+      }
     }
 
     const sessionToken = makeSessionToken();
+    const secret = existingSecret || makeSeatSecret();
+    seatSecrets[seat.id] = secret;
+
+    const sessions = { ...(room.sessions || {}) };
+    if (previousToken && sessions[previousToken]) {
+      delete sessions[previousToken];
+    }
+    sessions[sessionToken] = { role: ROLES.PLAYER, seatPlayerId: seat.id };
+
     const next = {
       ...room,
-      sessions: {
-        ...room.sessions,
-        [sessionToken]: { role: ROLES.PLAYER, seatPlayerId: seat.id },
-      },
-      seatClaims: { ...room.seatClaims, [seat.id]: sessionToken },
+      sessions,
+      seatClaims: { ...(room.seatClaims || {}), [seat.id]: sessionToken },
+      seatSecrets,
       updatedAt: new Date().toISOString(),
     };
-    return { ok: true, room: next, sessionToken, role: ROLES.PLAYER, seatPlayerId: seat.id };
+    return {
+      ok: true,
+      room: next,
+      sessionToken,
+      role: ROLES.PLAYER,
+      seatPlayerId: seat.id,
+      seatSecret: secret,
+      reclaimed,
+      revokedSessionToken: previousToken,
+    };
   }
 
   const sessionToken = makeSessionToken();
@@ -91,7 +135,60 @@ export function joinRoom(room, { role, seatPlayerId } = {}) {
     },
     updatedAt: new Date().toISOString(),
   };
-  return { ok: true, room: next, sessionToken, role: ROLES.VIEWER, seatPlayerId: null };
+  return {
+    ok: true,
+    room: next,
+    sessionToken,
+    role: ROLES.VIEWER,
+    seatPlayerId: null,
+    reclaimed: false,
+    seatSecret: null,
+  };
+}
+
+/**
+ * Host frees a seat so the next join does not need the old secret.
+ */
+export function releaseSeat(room, seatPlayerId, auth = {}) {
+  let role = null;
+  if (auth.sessionToken && room.sessions?.[auth.sessionToken]) {
+    role = room.sessions[auth.sessionToken].role;
+  } else if (auth.hostKey && auth.hostKey === room.hostKey) {
+    role = ROLES.ADMIN;
+  } else {
+    return { ok: false, error: 'unauthorized' };
+  }
+  if (role !== ROLES.ADMIN) {
+    return { ok: false, error: 'forbidden' };
+  }
+
+  const seat = room.state.players.find(p => String(p.id) === String(seatPlayerId));
+  if (!seat) return { ok: false, error: 'unknown-seat' };
+
+  const previousToken = room.seatClaims?.[seat.id] ?? null;
+  const sessions = { ...(room.sessions || {}) };
+  if (previousToken && sessions[previousToken]) {
+    delete sessions[previousToken];
+  }
+
+  const seatClaims = { ...(room.seatClaims || {}) };
+  delete seatClaims[seat.id];
+  const seatSecrets = { ...(room.seatSecrets || {}) };
+  delete seatSecrets[seat.id];
+
+  const next = {
+    ...room,
+    sessions,
+    seatClaims,
+    seatSecrets,
+    updatedAt: new Date().toISOString(),
+  };
+  return {
+    ok: true,
+    room: next,
+    seatPlayerId: seat.id,
+    revokedSessionToken: previousToken,
+  };
 }
 
 /**

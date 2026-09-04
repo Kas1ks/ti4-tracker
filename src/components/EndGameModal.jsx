@@ -1,17 +1,19 @@
 import { useEscapeKey } from '../hooks/useEscapeKey';
+import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
 
 export function EndGameModal({ showEndGameModal, setShowEndGameModal, players, getPlayerScore, saveGameToCloud, setShowGameSummaryModal, resetGameState }) {
   useEscapeKey(() => setShowEndGameModal(false), showEndGameModal);
+  useBodyScrollLock(!!showEndGameModal);
 
   return (
     <>
 {showEndGameModal && (
-                            <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4" role="presentation">
+                            <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4 modal-overlay" role="presentation">
                                 <div
                                   role="dialog"
                                   aria-modal="true"
                                   aria-labelledby="end-game-title"
-                                  className="bg-slate-900 border border-red-500/40 p-6 md:p-8 rounded-3xl max-w-md w-full space-y-6 text-center shadow-[0_0_40px_rgba(239,68,68,0.2)]"
+                                  className="bg-slate-900 border border-red-500/40 p-6 md:p-8 rounded-3xl max-w-md w-full space-y-6 text-center shadow-[0_0_40px_rgba(239,68,68,0.2)] modal-scroll max-h-[90vh] overflow-y-auto"
                                 >
                                     <div className="w-16 h-16 bg-red-950 border-2 border-red-500 rounded-2xl flex items-center justify-center mx-auto text-red-400 text-2xl" aria-hidden="true">
                                         <i className="fa-solid fa-flag-checkered"></i>

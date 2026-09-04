@@ -1,5 +1,6 @@
 import { ALL_FACTIONS } from '../data/gameData';
 import { useEscapeKey } from '../hooks/useEscapeKey';
+import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
 
 export function CombatModal({
   show,
@@ -20,6 +21,7 @@ export function CombatModal({
   readOnly = false,
 }) {
   useEscapeKey(onClose, show && !minimized && !!activePlayer);
+  useBodyScrollLock(show && !minimized && !!activePlayer);
   if (!show || !activePlayer) return null;
 
   const opponent = activePlayers.find(p => p.id === combatOpponentId);
@@ -48,12 +50,12 @@ export function CombatModal({
   const defenderFaction = opponent ? ALL_FACTIONS.find(f => f.id === opponent.factionId) : null;
 
   return (
-    <div className={`fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 ${minimized ? 'hidden' : ''}`} role="presentation">
+    <div className={`fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 max-md:items-end max-md:p-2 modal-overlay ${minimized ? 'hidden' : ''}`} role="presentation">
       <div
         role="dialog"
         aria-modal="true"
         aria-labelledby="combat-modal-title"
-        className={`bg-slate-900 border border-red-800 rounded-2xl max-w-4xl w-full p-6 shadow-2xl shadow-red-500/10 ${readOnly ? '[&_button:not([aria-label])]:pointer-events-none [&_button:not([aria-label])]:opacity-60' : ''}`}
+        className={`bg-slate-900 border border-red-800 rounded-2xl max-w-4xl w-full p-6 shadow-2xl shadow-red-500/10 max-md:p-4 max-md:max-h-[min(92vh,100dvh)] max-md:overflow-y-auto modal-scroll ${readOnly ? '[&_button:not([aria-label])]:pointer-events-none [&_button:not([aria-label])]:opacity-60' : ''}`}
       >
         <div className="flex justify-between items-center mb-4 pb-3 border-b border-slate-800">
           <h2 id="combat-modal-title" className="font-orbitron text-lg font-bold text-red-400 uppercase flex items-center gap-2">
@@ -91,8 +93,8 @@ export function CombatModal({
           </div>
         ) : opponent && (
           <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div className="col-span-2 text-center">
+            <div className="grid grid-cols-2 gap-4 max-md:grid-cols-1">
+              <div className="col-span-2 max-md:col-span-1 text-center">
                 <div className="text-sm text-slate-400">Раунд боя</div>
                 <div className="font-orbitron font-black text-3xl text-amber-400">{combatRound}</div>
               </div>
@@ -130,7 +132,7 @@ export function CombatModal({
               </div>
             </div>
 
-            <div className="flex items-center justify-center gap-3 pt-4 border-t border-slate-800">
+            <div className="flex items-center justify-center gap-3 pt-4 border-t border-slate-800 max-md:flex-col max-md:items-stretch">
               <button
                 type="button"
                 onClick={() => setCombatOpponentId(null)}

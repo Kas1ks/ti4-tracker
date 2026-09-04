@@ -13,8 +13,10 @@ import {
   fetchRoomSnapshot,
   joinRoom,
   postRoomAction,
+  releaseSeat as releaseSeatApi,
   subscribeRoom,
 } from './roomApi';
+import { loadSeatSecret, saveSeatSecret } from './seatSecrets';
 
 function syncedReducer(state, action) {
   if (action?.type === '__REPLACE__') return action.state;
@@ -35,6 +37,7 @@ export function useSyncedGame() {
       sessionToken: saved.sessionToken,
       role: saved.role || ROLES.VIEWER,
       seatPlayerId: saved.seatPlayerId ?? null,
+      seatSecret: loadSeatSecret(saved.roomId, saved.seatPlayerId),
       seq: saved.seq || 0,
       claimedSeats: [],
     };
@@ -75,6 +78,7 @@ export function useSyncedGame() {
           sessionToken: saved.sessionToken,
           role: saved.role || ROLES.VIEWER,
           seatPlayerId: saved.seatPlayerId ?? null,
+          seatSecret: loadSeatSecret(saved.roomId, saved.seatPlayerId),
           seq: seqRef.current,
           claimedSeats: snap.claimedSeats || [],
         });
@@ -97,7 +101,35 @@ export function useSyncedGame() {
   useEffect(() => {
     if (!room?.roomId) return undefined;
 
+    const ejectStaleSession = (message) => {
+      clearRoomSession();
+      setRoom(null);
+      setRoomStatus('solo');
+      setGame({ type: 'RESET_GAME' });
+      setRoomError(message);
+    };
+
     const unsubscribe = subscribeRoom(room.roomId, (msg) => {
+      if (msg.type === 'seats') {
+        const current = roomRef.current;
+        const kicked = current?.role === ROLES.PLAYER
+          && msg.revokedSessionToken
+          && current.sessionToken === msg.revokedSessionToken;
+        if (kicked) {
+          ejectStaleSession(
+            msg.released
+              ? 'Хост освободил ваше место. Войдите снова, когда будете готовы.'
+              : 'Место занято с другого устройства. Войдите снова со своим кодом места.',
+          );
+          return;
+        }
+        setRoom(prev => (prev ? {
+          ...prev,
+          claimedSeats: msg.claimedSeats ?? prev.claimedSeats,
+        } : prev));
+        return;
+      }
+
       if ((msg.type === 'hello' || msg.type === 'state') && msg.state) {
         if (typeof msg.seq === 'number') {
           if (msg.seq < seqRef.current) return;
@@ -149,7 +181,9 @@ export function useSyncedGame() {
     if (current.role === ROLES.PLAYER) {
       const soft = [
         'PICK_CARD', 'UNDO_PICK', 'PLAY_STRATEGY', 'PASS_TURN', 'NEXT_TURN',
-        'TOGGLE_COMPLETION', 'SET_SPEAKER',
+        'SELECT_SCORING_PUBLIC', 'TOGGLE_SCORING_SECRET',
+        'CONFIRM_OBJECTIVE_SCORING', 'PASS_OBJECTIVE_SCORING',
+        'SET_SPEAKER',
         'SET_INFLUENCE', 'LOCK_INFLUENCE', 'SET_VOTE', 'LOCK_VOTE',
         'FINISH_AGENDA_PHASE',
       ];
@@ -172,7 +206,16 @@ export function useSyncedGame() {
       })
       .catch((err) => {
         console.error('[room] action failed', err);
-        setRoomError(String(err.message || err));
+        const message = String(err.message || err);
+        if (message === 'unauthorized' || message.includes('unauthorized')) {
+          clearRoomSession();
+          setRoom(null);
+          setRoomStatus('solo');
+          setGame({ type: 'RESET_GAME' });
+          setRoomError('Сессия места устарела. Войдите в комнату снова со своим кодом места.');
+          return;
+        }
+        setRoomError(message);
         fetchRoomSnapshot(roomId)
           .then((snap) => {
             if (snap?.state) setGame({ type: '__REPLACE__', state: snap.state });
@@ -208,7 +251,7 @@ export function useSyncedGame() {
     }
   }, [game]);
 
-  const joinRoomById = useCallback(async (roomId, { role, seatPlayerId } = {}) => {
+  const joinRoomById = useCallback(async (roomId, { role, seatPlayerId, seatSecret } = {}) => {
     const id = String(roomId || '').trim().toUpperCase();
     if (!id) throw new Error('missing-room');
     const joinRole = role === ROLES.VIEWER ? ROLES.VIEWER : ROLES.PLAYER;
@@ -218,9 +261,13 @@ export function useSyncedGame() {
       const joined = await joinRoom(id, {
         role: joinRole,
         seatPlayerId: joinRole === ROLES.PLAYER ? seatPlayerId : undefined,
+        seatSecret: joinRole === ROLES.PLAYER ? seatSecret : undefined,
       });
       seqRef.current = joined.seq || 0;
       setGame({ type: '__REPLACE__', state: joined.state });
+      if (joined.seatSecret && joined.seatPlayerId != null) {
+        saveSeatSecret(joined.roomId || id, joined.seatPlayerId, joined.seatSecret);
+      }
       const next = {
         roomId: joined.roomId || id,
         hostKey: null,
@@ -228,6 +275,7 @@ export function useSyncedGame() {
         seq: joined.seq || 0,
         role: joined.role,
         seatPlayerId: joined.seatPlayerId ?? null,
+        seatSecret: joined.seatSecret || null,
         claimedSeats: joined.claimedSeats || [],
       };
       setRoom(next);
@@ -239,6 +287,21 @@ export function useSyncedGame() {
       setRoomError(String(err.message || err));
       throw err;
     }
+  }, []);
+
+  const releaseSeatById = useCallback(async (seatPlayerId) => {
+    const current = roomRef.current;
+    if (!current?.roomId) throw new Error('no-room');
+    const result = await releaseSeatApi(current.roomId, {
+      seatPlayerId,
+      sessionToken: current.sessionToken,
+      hostKey: current.hostKey,
+    });
+    setRoom(prev => (prev ? {
+      ...prev,
+      claimedSeats: result.claimedSeats ?? prev.claimedSeats,
+    } : prev));
+    return result;
   }, []);
 
   const leaveRoom = useCallback(() => {
@@ -275,6 +338,7 @@ export function useSyncedGame() {
     perms,
     startHostRoom,
     joinRoomById,
+    releaseSeatById,
     leaveRoom,
     resetLocalGame,
   };

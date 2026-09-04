@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>TI4 Companion - XL Dashboard</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -13,6 +13,9 @@
         tailwind.config = {
             theme: {
                 extend: {
+                    screens: {
+                        xs: '400px',
+                    },
                     transitionProperty: { opacity: 'opacity' },
                     transitionDuration: { 1000: '1000ms' },
                 },
@@ -20,7 +23,7 @@
         };
     </script>
 </head>
-<body class="min-h-screen pb-10">
+<body class="min-h-screen">
     <video autoplay muted loop playsinline id="bg-video">
         <source src="https://pub-79986acbb49f41cdbe2c06fe76c8f197.r2.dev/12346801_1920_1080_24fps.mp4" type="video/mp4">
     </video>

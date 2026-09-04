@@ -2,6 +2,7 @@ import {
   applyRoomAction,
   createRoomRecord,
   joinRoom,
+  releaseSeat,
   publicRoomView,
   adminSessionFromRoom,
 } from './roomCore.js';
@@ -41,6 +42,34 @@ export function memoryJoin(roomId, body) {
   const result = joinRoom(room, body);
   if (!result.ok) return result;
   rooms.set(key, result.room);
+  notify(key, {
+    type: 'seats',
+    claimedSeats: publicRoomView(result.room).claimedSeats,
+    reclaimed: !!result.reclaimed,
+    seatPlayerId: result.seatPlayerId,
+    revokedSessionToken: result.revokedSessionToken || null,
+  });
+  return result;
+}
+
+export function memoryReleaseSeat(roomId, body) {
+  const key = String(roomId || '').toUpperCase();
+  const room = rooms.get(key);
+  if (!room) return { ok: false, error: 'not-found' };
+  const result = releaseSeat(room, body?.seatPlayerId, {
+    sessionToken: body?.sessionToken,
+    hostKey: body?.hostKey,
+  });
+  if (!result.ok) return result;
+  rooms.set(key, result.room);
+  notify(key, {
+    type: 'seats',
+    claimedSeats: publicRoomView(result.room).claimedSeats,
+    reclaimed: true,
+    seatPlayerId: result.seatPlayerId,
+    revokedSessionToken: result.revokedSessionToken || null,
+    released: true,
+  });
   return result;
 }
 

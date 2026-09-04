@@ -1,4 +1,5 @@
 import { ALL_FACTIONS } from '../data/gameData';
+import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
 
 export function SpeakerSelectionModal({
   show,
@@ -7,15 +8,16 @@ export function SpeakerSelectionModal({
   onSelectSpeaker,
   readOnly = false,
 }) {
+  useBodyScrollLock(!!show && !!activePlayer);
   if (!show || !activePlayer) return null;
 
   return (
-    <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4" role="presentation">
+    <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 modal-overlay" role="presentation">
       <div
         role="dialog"
         aria-modal="true"
         aria-labelledby="speaker-select-title"
-        className="bg-slate-900 border border-purple-800 rounded-2xl max-w-4xl w-full p-6 shadow-2xl shadow-purple-500/10"
+        className="bg-slate-900 border border-purple-800 rounded-2xl max-w-4xl w-full p-6 shadow-2xl shadow-purple-500/10 max-h-[90vh] overflow-y-auto modal-scroll"
       >
         <div className="flex justify-between items-center mb-4 pb-3 border-b border-slate-800">
           <h2 id="speaker-select-title" className="font-orbitron text-lg font-bold text-purple-400 uppercase flex items-center gap-2">

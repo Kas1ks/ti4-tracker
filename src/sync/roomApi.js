@@ -25,11 +25,21 @@ export async function fetchRoomSnapshot(roomId) {
   return res.json();
 }
 
-export async function joinRoom(roomId, { role, seatPlayerId }) {
+export async function joinRoom(roomId, { role, seatPlayerId, seatSecret }) {
   const res = await fetch(`/api/rooms/${encodeURIComponent(roomId)}/join`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ role, seatPlayerId }),
+    body: JSON.stringify({ role, seatPlayerId, seatSecret }),
+  });
+  if (!res.ok) throw new Error(await readError(res));
+  return res.json();
+}
+
+export async function releaseSeat(roomId, { seatPlayerId, sessionToken, hostKey }) {
+  const res = await fetch(`/api/rooms/${encodeURIComponent(roomId)}/release-seat`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ seatPlayerId, sessionToken, hostKey }),
   });
   if (!res.ok) throw new Error(await readError(res));
   return res.json();

@@ -22,6 +22,24 @@ export function activePlayers(state) {
   return state.players.filter(p => !p.eliminated);
 }
 
+export function objectiveScoring(state) {
+  return state.statusPhase?.scoring || { active: false, responses: {}, orderIds: [], currentIdx: 0 };
+}
+
+export function isObjectiveScoringActive(state) {
+  return !!objectiveScoring(state).active;
+}
+
+export function scoringResponseFor(state, playerId) {
+  return objectiveScoring(state).responses?.[playerId] || null;
+}
+
+export function currentScoringPlayerId(state) {
+  const scoring = objectiveScoring(state);
+  if (!scoring.active) return null;
+  return scoring.orderIds?.[scoring.currentIdx] ?? null;
+}
+
 /** Turn order as player objects, always resolved against the current players. */
 export function turnOrder(state) {
   const byId = new Map(state.players.map(p => [p.id, p]));

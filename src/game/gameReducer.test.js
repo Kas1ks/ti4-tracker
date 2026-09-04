@@ -458,19 +458,95 @@ describe('status phase', () => {
     return gameReducer(state, { type: 'END_ROUND' });
   };
 
-  it('ticks every checklist key, including the first one', () => {
-    const keys = Object.keys(atStatusPhase().statusPhase.checks);
-    const done = keys.reduce((state, key) => dispatch(state, { type: 'TOGGLE_STATUS_CHECK', key }), atStatusPhase());
-
-    expect(Object.values(done.statusPhase.checks).every(Boolean)).toBe(true);
+  it('does not toggle scoreObjectives via the checklist — scoring window owns that step', () => {
+    const state = dispatch(atStatusPhase(), { type: 'TOGGLE_STATUS_CHECK', key: 'scoreObjectives' });
+    expect(state.statusPhase.checks.scoreObjectives).toBe(false);
   });
 
-  it('ticks the checklist items independently', () => {
+  it('ticks the other checklist items independently', () => {
     let state = dispatch(atStatusPhase(), { type: 'TOGGLE_STATUS_CHECK', key: 'drawActionCards' });
     expect(state.statusPhase.checks).toMatchObject({ drawActionCards: true, scoreObjectives: false });
 
     state = dispatch(state, { type: 'TOGGLE_STATUS_CHECK', key: 'drawActionCards' });
     expect(state.statusPhase.checks.drawActionCards).toBe(false);
+  });
+
+  it('opens an objective scoring window and completes when everyone responds', () => {
+    const objective = BASE_OBJECTIVES[0];
+    let state = dispatch(atStatusPhase(), { type: 'ADD_OBJECTIVE', objective });
+    state = dispatch(state, { type: 'START_OBJECTIVE_SCORING' });
+    expect(state.statusPhase.scoring.active).toBe(true);
+    expect(state.statusPhase.scoring.orderIds[0]).toBe(1);
+    expect(state.statusPhase.scoring.currentIdx).toBe(0);
+    expect(state.statusPhase.scoring.responses[1].status).toBe('pending');
+
+    state = dispatch(state, { type: 'SELECT_SCORING_PUBLIC', playerId: 1, objectiveId: objective.id });
+    expect(state.objectives.completions[`1_${objective.id}`]).toBe(true);
+    state = dispatch(state, { type: 'TOGGLE_SCORING_SECRET', playerId: 1 });
+    expect(state.players.find(p => p.id === 1).secrets).toBe(1);
+    state = dispatch(state, { type: 'CONFIRM_OBJECTIVE_SCORING', playerId: 1 });
+    expect(state.statusPhase.scoring.responses[1].status).toBe('done');
+    expect(state.statusPhase.scoring.currentIdx).toBe(1);
+    expect(state.statusPhase.scoring.active).toBe(true);
+
+    state = dispatch(state, { type: 'PASS_OBJECTIVE_SCORING', playerId: 2 });
+    expect(state.statusPhase.scoring.active).toBe(false);
+    expect(state.statusPhase.checks.scoreObjectives).toBe(true);
+    expect(state.players.find(p => p.id === 1).secrets).toBe(1);
+  });
+
+  it('blocks scoring out of initiative order', () => {
+    const objective = BASE_OBJECTIVES[0];
+    let state = dispatch(atStatusPhase(), { type: 'ADD_OBJECTIVE', objective });
+    state = dispatch(state, { type: 'START_OBJECTIVE_SCORING' });
+
+    const blocked = dispatch(state, { type: 'SELECT_SCORING_PUBLIC', playerId: 2, objectiveId: objective.id });
+    expect(blocked).toBe(state);
+    expect(state.objectives.completions[`2_${objective.id}`]).toBeFalsy();
+
+    const blockedPass = dispatch(state, { type: 'PASS_OBJECTIVE_SCORING', playerId: 2 });
+    expect(blockedPass).toBe(state);
+  });
+
+  it('uses round initiative order for scoring', () => {
+    let state = gameWith([
+      player(1, 'A', { lastMinInitiative: 5 }),
+      player(2, 'B', { lastMinInitiative: 1 }),
+      player(3, 'C', { lastMinInitiative: 3 }),
+    ]);
+    state = dispatch(state, { type: 'START_ROUND' });
+    state = dispatch(state, { type: 'END_ROUND' });
+    state = dispatch(state, { type: 'START_OBJECTIVE_SCORING' });
+    expect(state.statusPhase.scoring.orderIds).toEqual([2, 3, 1]);
+    expect(state.statusPhase.scoring.currentIdx).toBe(0);
+  });
+
+  it('pass undoes public and secret picks made in the window', () => {
+    const objective = BASE_OBJECTIVES[0];
+    let state = dispatch(atStatusPhase(), { type: 'ADD_OBJECTIVE', objective });
+    state = dispatch(state, { type: 'START_OBJECTIVE_SCORING' });
+    state = dispatch(state, { type: 'SELECT_SCORING_PUBLIC', playerId: 1, objectiveId: objective.id });
+    state = dispatch(state, { type: 'TOGGLE_SCORING_SECRET', playerId: 1 });
+    state = dispatch(state, { type: 'PASS_OBJECTIVE_SCORING', playerId: 1 });
+
+    expect(state.objectives.completions[`1_${objective.id}`]).toBe(false);
+    expect(state.players.find(p => p.id === 1).secrets).toBe(0);
+    expect(state.statusPhase.scoring.responses[1].status).toBe('passed');
+  });
+
+  it('limits players to one public objective per scoring window', () => {
+    const a = BASE_OBJECTIVES[0];
+    const b = BASE_OBJECTIVES[1];
+    let state = atStatusPhase();
+    state = dispatch(state, { type: 'ADD_OBJECTIVE', objective: a });
+    state = dispatch(state, { type: 'ADD_OBJECTIVE', objective: b });
+    state = dispatch(state, { type: 'START_OBJECTIVE_SCORING' });
+    state = dispatch(state, { type: 'SELECT_SCORING_PUBLIC', playerId: 1, objectiveId: a.id });
+    state = dispatch(state, { type: 'SELECT_SCORING_PUBLIC', playerId: 1, objectiveId: b.id });
+
+    expect(state.objectives.completions[`1_${a.id}`]).toBe(false);
+    expect(state.objectives.completions[`1_${b.id}`]).toBe(true);
+    expect(state.statusPhase.scoring.responses[1].publicId).toBe(b.id);
   });
 
   it('starts the next round and clears the checklist when politics is off', () => {
@@ -481,6 +557,7 @@ describe('status phase', () => {
     expect(state.players.every(p => p.cards.length === 0)).toBe(true);
     expect(state.statusPhase.show).toBe(false);
     expect(state.statusPhase.checks.drawActionCards).toBe(false);
+    expect(state.statusPhase.scoring.active).toBe(false);
     expect(state.politics.showModal).toBe(false);
   });
 

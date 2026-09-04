@@ -129,7 +129,7 @@ describe('authorizeAction', () => {
     }).error).toBe('not-your-turn');
   });
 
-  it('allows TOGGLE_COMPLETION only for own seat', () => {
+  it('blocks direct TOGGLE_COMPLETION for players — scoring window only', () => {
     const state = normalizeGameState({
       isGameActive: true,
       players: [player(1, 'A'), player(2, 'B')],
@@ -139,13 +139,37 @@ describe('authorizeAction', () => {
       seatPlayerId: 1,
       action: { type: 'TOGGLE_COMPLETION', playerId: 1, objectiveId: 'o1' },
       state,
-    }).ok).toBe(true);
+    }).error).toBe('use-scoring-window');
+  });
+
+  it('allows scoring-window actions only for own seat while pending', () => {
+    let state = normalizeGameState({
+      isGameActive: true,
+      players: [player(1, 'A'), player(2, 'B')],
+      showStatusPhase: true,
+    });
+    state = gameReducer(state, { type: 'START_OBJECTIVE_SCORING' });
+
     expect(authorizeAction({
       role: ROLES.PLAYER,
       seatPlayerId: 1,
-      action: { type: 'TOGGLE_COMPLETION', playerId: 2, objectiveId: 'o1' },
+      action: { type: 'SELECT_SCORING_PUBLIC', playerId: 1, objectiveId: 'o1' },
+      state,
+    }).ok).toBe(true);
+
+    expect(authorizeAction({
+      role: ROLES.PLAYER,
+      seatPlayerId: 1,
+      action: { type: 'SELECT_SCORING_PUBLIC', playerId: 2, objectiveId: 'o1' },
       state,
     }).error).toBe('not-your-objective');
+
+    expect(authorizeAction({
+      role: ROLES.PLAYER,
+      seatPlayerId: 1,
+      action: { type: 'CONFIRM_OBJECTIVE_SCORING', playerId: 1 },
+      state,
+    }).ok).toBe(true);
   });
 });
 

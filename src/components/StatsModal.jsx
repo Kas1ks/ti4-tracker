@@ -1,19 +1,21 @@
 import { formatTime } from '../utils/game';
 import { isCloudConfigured } from '../config';
 import { useEscapeKey } from '../hooks/useEscapeKey';
+import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
 
 export function StatsModal({ showStatsModal, setShowStatsModal, isStatsLoading, globalHistory, deleteSingleGame, clearAllStats }) {
   useEscapeKey(() => setShowStatsModal(false), showStatsModal);
+  useBodyScrollLock(showStatsModal);
 
   return (
     <>
 {showStatsModal && (
-                            <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4" role="presentation">
+                            <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4 modal-overlay" role="presentation">
                                 <div
                                   role="dialog"
                                   aria-modal="true"
                                   aria-labelledby="stats-modal-title"
-                                  className="bg-slate-900 border border-purple-500/40 p-6 md:p-8 rounded-3xl max-w-4xl w-full space-y-6 shadow-[0_0_40px_rgba(168,85,247,0.2)] max-h-[90vh] overflow-y-auto relative"
+                                  className="bg-slate-900 border border-purple-500/40 p-6 md:p-8 rounded-3xl max-w-4xl w-full space-y-6 shadow-[0_0_40px_rgba(168,85,247,0.2)] max-h-[90vh] overflow-y-auto relative modal-scroll"
                                 >
 
                                     <button

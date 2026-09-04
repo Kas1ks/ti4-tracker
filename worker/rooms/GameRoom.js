@@ -2,6 +2,7 @@ import {
   applyRoomAction,
   createRoomRecord,
   joinRoom,
+  releaseSeat,
   publicRoomView,
   adminSessionFromRoom,
 } from './roomCore.js';
@@ -88,15 +89,56 @@ export class GameRoom {
       }
       const result = joinRoom(room, body || {});
       if (!result.ok) {
-        const status = result.error === 'seat-taken' ? 409 : 400;
+        const status = (result.error === 'seat-taken'
+          || result.error === 'seat-secret-required'
+          || result.error === 'bad-seat-secret') ? 409 : 400;
         return Response.json({ error: result.error }, { status });
       }
       await this.save(result.room);
+      this.broadcast({
+        type: 'seats',
+        claimedSeats: publicRoomView(result.room).claimedSeats,
+        reclaimed: !!result.reclaimed,
+        seatPlayerId: result.seatPlayerId,
+        revokedSessionToken: result.revokedSessionToken || null,
+      });
       return Response.json({
         ...publicRoomView(result.room),
         sessionToken: result.sessionToken,
         role: result.role,
         seatPlayerId: result.seatPlayerId,
+        seatSecret: result.seatSecret,
+        reclaimed: !!result.reclaimed,
+      });
+    }
+
+    if (method === 'POST' && path.endsWith('/release-seat')) {
+      let body = null;
+      try {
+        body = await request.json();
+      } catch {
+        return Response.json({ error: 'invalid-body' }, { status: 400 });
+      }
+      const released = releaseSeat(room, body?.seatPlayerId, {
+        sessionToken: body?.sessionToken,
+        hostKey: body?.hostKey,
+      });
+      if (!released.ok) {
+        const status = released.error === 'unauthorized' || released.error === 'forbidden' ? 403 : 400;
+        return Response.json({ error: released.error }, { status });
+      }
+      await this.save(released.room);
+      this.broadcast({
+        type: 'seats',
+        claimedSeats: publicRoomView(released.room).claimedSeats,
+        reclaimed: true,
+        released: true,
+        seatPlayerId: released.seatPlayerId,
+        revokedSessionToken: released.revokedSessionToken || null,
+      });
+      return Response.json({
+        ...publicRoomView(released.room),
+        seatPlayerId: released.seatPlayerId,
       });
     }
 

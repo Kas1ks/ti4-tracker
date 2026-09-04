@@ -1,7 +1,9 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import * as select from './game/selectors';
 import { useSyncedGame } from './sync/useSyncedGame';
 import { useElapsedSeconds } from './hooks/useTurnTimer';
+import { useYourTurnAlert } from './hooks/useYourTurnAlert';
+import { useVisualViewportShell } from './hooks/useVisualViewportShell';
 import { useAppDialog } from './hooks/useAppDialog';
 import { useCloudGame } from './hooks/useCloudGame';
 import { useLocalUi } from './hooks/useLocalUi';
@@ -14,13 +16,16 @@ import { RoomHub } from './components/RoomHub';
 import { GuestLobby } from './components/GuestLobby';
 import { SetupScreen } from './components/SetupScreen';
 import { GameBoard } from './components/GameBoard';
+import { PlayerMobileConsole } from './components/PlayerMobileConsole';
 import { StatsModal } from './components/StatsModal';
 import { StatusPhaseModal } from './components/StatusPhaseModal';
+import { ObjectiveScoringModal } from './components/ObjectiveScoringModal';
 import { EndGameModal } from './components/EndGameModal';
 import { DraftModal } from './components/DraftModal';
 import { PoliticsModal } from './components/PoliticsModal';
 import { CombatModal } from './components/CombatModal';
 import { SpeakerSelectionModal } from './components/SpeakerSelectionModal';
+import { ROLES } from './sync/permissions';
 
 function App() {
   const { dialog, close, uiAlert, uiConfirm, uiPrompt, uiForm } = useAppDialog();
@@ -32,6 +37,7 @@ function App() {
     roomError,
     startHostRoom,
     joinRoomById,
+    releaseSeatById,
     leaveRoom,
     resetLocalGame,
     perms,
@@ -65,7 +71,7 @@ function App() {
     showModal: showPoliticsModal, step: politicsStep, agendas, currentAgendaIndex,
     influenceLocked, voteReversed,
   } = game.politics;
-  const { show: showStatusPhaseModal, checks: statusPhaseChecks } = game.statusPhase;
+  const { show: showStatusPhaseModal, checks: statusPhaseChecks, scoring: objectiveScoring } = game.statusPhase;
 
   const turnOrder = select.turnOrder(game);
   const activePlayer = select.activePlayer(game);
@@ -87,6 +93,29 @@ function App() {
   const showHub = !isGameActive && !soloSetup && !hasRoomSession;
   const showAdminSetup = !isGameActive && canSetup && (soloSetup || hasRoomSession);
   const showGuestLobby = !isGameActive && !canSetup && hasRoomSession;
+  const isPlayerClient = perms?.role === ROLES.PLAYER;
+  const mySeatPlayer = isPlayerClient && perms?.seatPlayerId != null
+    ? players.find(p => p.id === perms.seatPlayerId)
+    : null;
+  const isMyTurn = !!(
+    isGameActive
+    && mySeatPlayer
+    && activePlayer
+    && activePlayer.id === mySeatPlayer.id
+    && !passed[mySeatPlayer.id]
+  );
+  useYourTurnAlert({ enabled: isPlayerClient && isGameActive, isYourTurn: isMyTurn });
+
+  const playerMobileShell = isPlayerClient && isGameActive;
+  useVisualViewportShell(playerMobileShell);
+
+  // During objective scoring: tuck status, open scoring modal.
+  useEffect(() => {
+    if (objectiveScoring?.active) {
+      ui.ensureMinimized('statusPhase');
+      ui.ensureExpanded('objectiveScoring');
+    }
+  }, [objectiveScoring?.active]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const resetGameState = () => {
     setSoloSetup(false);
@@ -118,9 +147,24 @@ function App() {
   const handleJoinRoom = async (code, joinOpts = {}) => {
     setSoloSetup(false);
     try {
-      await joinRoomById(code, joinOpts);
+      const joined = await joinRoomById(code, joinOpts);
+      if (joined?.seatSecret) {
+        await uiAlert(
+          joined.reclaimed
+            ? `Место перенесено на это устройство.\nКод места: ${joined.seatSecret}`
+            : `Сохраните код места — он нужен, чтобы сесть сюда с другого устройства.\n\nКод места: ${joined.seatSecret}`,
+          { title: joined.reclaimed ? 'Место перенесено' : 'Код места', variant: 'success' },
+        );
+      }
+      return joined;
     } catch (err) {
-      await uiAlert(`Комната не найдена или недоступна: ${err.message || err}`, {
+      const codeErr = String(err.message || err);
+      const message = codeErr === 'seat-secret-required'
+        ? 'Место занято. Нужен код места (выдаётся при первом входе).'
+        : codeErr === 'bad-seat-secret'
+          ? 'Неверный код места.'
+          : `Комната не найдена или недоступна: ${codeErr}`;
+      await uiAlert(message, {
         title: 'Ошибка',
         variant: 'danger',
       });
@@ -134,7 +178,13 @@ function App() {
   };
 
   return (
-    <div className="max-w-[1800px] mx-auto min-h-screen flex flex-col text-slate-100 px-3 md:px-8">
+    <div
+      className={`max-w-[1800px] mx-auto flex flex-col text-slate-100 ${
+        playerMobileShell
+          ? 'player-app-frame min-h-screen max-md:min-h-0 md:relative md:h-auto md:max-h-none md:overflow-visible md:px-8 max-md:px-0'
+          : 'min-h-screen px-3 md:px-8'
+      }`}
+    >
       <GameHeader
         isGameActive={isGameActive}
         roundNumber={roundNumber}
@@ -163,9 +213,16 @@ function App() {
         room={room}
         roomStatus={roomStatus}
         perms={perms}
+        hideTurnBarOnMobile={isPlayerClient}
       />
 
-      <main className="py-6 flex-grow space-y-8">
+      <main
+        className={`py-6 flex-grow space-y-8 ${
+          playerMobileShell
+            ? 'md:px-0 max-md:py-0 max-md:space-y-0 max-md:flex-1 max-md:min-h-0 max-md:overflow-hidden max-md:flex max-md:flex-col'
+            : ''
+        }`}
+      >
         {showHub && (
           <RoomHub
             roomStatus={roomStatus}
@@ -174,6 +231,8 @@ function App() {
             onJoinRoom={handleJoinRoom}
             onPlaySolo={() => setSoloSetup(true)}
             importGameToken={cloud.importGameToken}
+            uiConfirm={uiConfirm}
+            uiPrompt={uiPrompt}
           />
         )}
 
@@ -210,30 +269,85 @@ function App() {
         )}
 
         {isGameActive && (
-          <GameBoard
-            turnOrder={turnOrder}
-            passed={passed}
-            activePlayer={activePlayer}
-            sortedPlayersForBoard={sortedPlayersForBoard}
-            getPlayerScore={getPlayerScore}
-            players={players}
-            adjustSecrets={(playerId, delta) => dispatch({ type: 'ADJUST_SECRETS', playerId, delta })}
-            adjustMecatol={(playerId, delta) => dispatch({ type: 'ADJUST_MECATOL', playerId, delta })}
-            objectives={objectives}
-            completions={completions}
-            toggleCompletion={(playerId, objectiveId) => dispatch({ type: 'TOGGLE_COMPLETION', playerId, objectiveId })}
-            expandedObjectives={ui.expandedObjectives}
-            toggleExpand={ui.toggleExpand}
-            removeObjective={(objectiveId) => dispatch({ type: 'REMOVE_OBJECTIVE', objectiveId })}
-            addRandomObjective={dialogs.addRandomObjective}
-            addCustomObjective={dialogs.addCustomObjective}
-            targetScore={targetScore}
-            speakerId={speakerId}
-            handleAddSecret={dialogs.handleAddSecret}
-            eliminatePlayer={dialogs.eliminatePlayer}
-            isGameActive={isGameActive}
-            perms={perms}
-          />
+          <>
+            {isPlayerClient && (
+              <PlayerMobileConsole
+                me={mySeatPlayer}
+                seatSecret={room?.seatSecret || null}
+                activePlayer={activePlayer}
+                turnOrder={turnOrder}
+                players={players}
+                passed={passed}
+                strategyCards={strategyCards}
+                allStrategiesPlayed={allStrategiesPlayed}
+                strategyActionTaken={!!strategyActionTaken}
+                turnTime={turnTime}
+                onPlayStrategy={dialogs.playStrategyCard}
+                onNextTurn={() => dispatch({ type: 'NEXT_TURN' })}
+                onPassTurn={dialogs.passTurn}
+                getPlayerScore={getPlayerScore}
+                targetScore={targetScore}
+                speakerId={speakerId}
+                objectives={objectives}
+                completions={completions}
+                scoring={objectiveScoring}
+                onSelectPublic={(playerId, objectiveId) => dispatch({ type: 'SELECT_SCORING_PUBLIC', playerId, objectiveId })}
+                onToggleSecret={(playerId) => dispatch({ type: 'TOGGLE_SCORING_SECRET', playerId })}
+                onConfirmScoring={(playerId) => dispatch({ type: 'CONFIRM_OBJECTIVE_SCORING', playerId })}
+                onPassScoring={(playerId) => dispatch({ type: 'PASS_OBJECTIVE_SCORING', playerId })}
+                roundActive={roundActive}
+                canPlay={!!mySeatPlayer && (!perms?.seatPlayerId || activePlayer?.id === perms.seatPlayerId)}
+                canNextTurn={!!mySeatPlayer && (!perms?.seatPlayerId || activePlayer?.id === perms.seatPlayerId)}
+              />
+            )}
+            <div className={isPlayerClient ? 'hidden md:block' : undefined}>
+              <GameBoard
+                turnOrder={turnOrder}
+                passed={passed}
+                activePlayer={activePlayer}
+                sortedPlayersForBoard={sortedPlayersForBoard}
+                getPlayerScore={getPlayerScore}
+                players={players}
+                adjustSecrets={(playerId, delta) => dispatch({ type: 'ADJUST_SECRETS', playerId, delta })}
+                adjustMecatol={(playerId, delta) => dispatch({ type: 'ADJUST_MECATOL', playerId, delta })}
+                objectives={objectives}
+                completions={completions}
+                toggleCompletion={(playerId, objectiveId) => dispatch({ type: 'TOGGLE_COMPLETION', playerId, objectiveId })}
+                scoring={objectiveScoring}
+                expandedObjectives={ui.expandedObjectives}
+                toggleExpand={ui.toggleExpand}
+                removeObjective={(objectiveId) => dispatch({ type: 'REMOVE_OBJECTIVE', objectiveId })}
+                addRandomObjective={dialogs.addRandomObjective}
+                addCustomObjective={dialogs.addCustomObjective}
+                targetScore={targetScore}
+                speakerId={speakerId}
+                handleAddSecret={dialogs.handleAddSecret}
+                eliminatePlayer={dialogs.eliminatePlayer}
+                releaseSeat={
+                  perms?.isLive && perms?.role === ROLES.ADMIN
+                    ? async (playerId) => {
+                      const ok = await uiConfirm(
+                        'Освободить место? Игрок на устройстве будет отключён, код места сбросится — можно занять место заново без старого кода.',
+                        { title: 'Освободить место', confirmLabel: 'Освободить', variant: 'danger' },
+                      );
+                      if (!ok) return;
+                      try {
+                        await releaseSeatById(playerId);
+                      } catch (err) {
+                        await uiAlert(`Не удалось освободить место: ${err.message || err}`, {
+                          title: 'Ошибка',
+                          variant: 'danger',
+                        });
+                      }
+                    }
+                    : undefined
+                }
+                claimedSeats={room?.claimedSeats || []}
+                isGameActive={isGameActive}
+                perms={perms}
+              />
+            </div>
+          </>
         )}
 
         <StatusPhaseModal
@@ -241,11 +355,34 @@ function App() {
           minimized={!!ui.minimizedModals.statusPhase}
           roundNumber={roundNumber}
           checks={statusPhaseChecks}
+          scoring={objectiveScoring}
+          players={players}
           onCheck={(key) => dispatch({ type: 'TOGGLE_STATUS_CHECK', key })}
+          onStartScoring={() => {
+            ui.ensureMinimized('statusPhase');
+            dispatch({ type: 'START_OBJECTIVE_SCORING' });
+          }}
           onConfirm={() => dispatch({ type: 'CONFIRM_STATUS_PHASE' })}
           onClose={() => dispatch({ type: 'SET_STATUS_PHASE_VISIBLE', visible: false })}
           onMinimize={() => ui.toggleMinimize('statusPhase')}
           readOnly={!perms.can('statusPhase')}
+        />
+
+        <ObjectiveScoringModal
+          show={!!objectiveScoring?.active}
+          minimized={!!ui.minimizedModals.objectiveScoring}
+          players={players}
+          objectives={objectives}
+          completions={completions}
+          scoring={objectiveScoring}
+          seatPlayerId={perms?.seatPlayerId ?? null}
+          canScoreAny={perms.can('scoreAny')}
+          onSelectPublic={(playerId, objectiveId) => dispatch({ type: 'SELECT_SCORING_PUBLIC', playerId, objectiveId })}
+          onToggleSecret={(playerId) => dispatch({ type: 'TOGGLE_SCORING_SECRET', playerId })}
+          onConfirm={(playerId) => dispatch({ type: 'CONFIRM_OBJECTIVE_SCORING', playerId })}
+          onPass={(playerId) => dispatch({ type: 'PASS_OBJECTIVE_SCORING', playerId })}
+          onMinimize={() => ui.toggleMinimize('objectiveScoring')}
+          onClose={() => ui.ensureMinimized('objectiveScoring')}
         />
 
         <StatsModal
@@ -359,10 +496,11 @@ function App() {
 
       <MinimizedModalControls
         minimizedModals={ui.minimizedModals}
-        showDraftModal={showDraftModal}
-        showPoliticsModal={showPoliticsModal}
+        showDraftModal={showDraftModal && (draftStep !== 'CONFIRM' || perms.can('confirmDraft'))}
+        showPoliticsModal={showPoliticsModal && (politicsStep !== 'SPEAKER' || perms.can('politics'))}
         showCombatModal={ui.showCombatModal}
         showStatusPhaseModal={showStatusPhaseModal}
+        scoringActive={!!objectiveScoring?.active}
         onRestore={ui.toggleMinimize}
       />
       <AppDialog dialog={dialog} onClose={close} />

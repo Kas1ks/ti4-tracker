@@ -1,10 +1,21 @@
 :root { color-scheme: dark; }
-body {
+html, body {
   margin: 0;
+  overflow-x: hidden;
+  max-width: 100vw;
+  touch-action: manipulation;
+  -ms-touch-action: manipulation;
+}
+body {
   font-family: 'Rajdhani', sans-serif;
   color: #f3f4f6;
   background-color: #0b0f19;
   -webkit-tap-highlight-color: transparent;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+#root {
+  min-height: 100%;
 }
 #bg-video {
   position: fixed;
@@ -17,6 +28,7 @@ body {
   opacity: 1;
   z-index: -100;
   object-fit: cover;
+  pointer-events: none;
 }
 .font-russo { font-family: 'Russo One', sans-serif; }
 .font-rajdhani { font-family: 'Rajdhani', sans-serif; }
@@ -36,3 +48,104 @@ body {
 ::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-track { background: #0b0f19; }
 ::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 4px; }
+
+@media (max-width: 640px) {
+  button, [role="button"], select, input {
+    touch-action: manipulation;
+  }
+  .fixed.inset-0 {
+    min-height: 100dvh;
+  }
+}
+
+.modal-overlay {
+  overscroll-behavior: none;
+  touch-action: none;
+}
+.modal-scroll {
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+}
+body[data-scroll-locked] {
+  touch-action: none;
+}
+
+/* Player mobile: pin UI to the browser's visible viewport */
+html.player-mobile-shell,
+html.player-mobile-shell body {
+  overflow: hidden;
+  overscroll-behavior: none;
+  height: 100%;
+  margin: 0;
+  padding: 0 !important;
+  /* Slightly larger base type on the player shell */
+  font-size: 17px;
+}
+@media (max-width: 767px) {
+  html.player-mobile-shell .player-app-frame {
+    position: fixed;
+    left: 0;
+    right: 0;
+    top: var(--app-top, 0px);
+    height: var(--app-height, 100%);
+    max-height: var(--app-height, 100%);
+    width: 100%;
+    max-width: none;
+    margin: 0;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    box-sizing: border-box;
+  }
+
+  /* Tab bar pinned to the visible viewport bottom; spacer reserves that space in-flow. */
+  html.player-mobile-shell {
+    --player-tabbar-height: calc(3.85rem + env(safe-area-inset-bottom, 0px));
+  }
+  html.player-mobile-shell .player-tabbar {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: var(--app-bottom, 0px);
+    z-index: 50;
+    width: 100%;
+    border-top: 1px solid #1e293b;
+    background: #020617;
+  }
+  html.player-mobile-shell .player-tabbar-safe {
+    height: env(safe-area-inset-bottom, 0px);
+    background: #020617;
+  }
+  html.player-mobile-shell .player-tabbar-spacer {
+    flex-shrink: 0;
+    height: var(--player-tabbar-height);
+    pointer-events: none;
+  }
+  html.player-mobile-shell .player-console-scroll {
+    padding-bottom: 0.75rem;
+    -webkit-overflow-scrolling: touch;
+    touch-action: pan-y;
+    overscroll-behavior: contain;
+  }
+
+  /* Stacked tab panels: drop inactive compositing layers immediately on mobile. */
+  html.player-mobile-shell .player-console-panel.is-active {
+    z-index: 1;
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+  }
+  html.player-mobile-shell .player-console-panel.is-inactive {
+    z-index: 0;
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    overflow: hidden;
+    content-visibility: hidden;
+  }
+  html.player-mobile-shell .player-console-panel.is-inactive * {
+    animation: none !important;
+    transition: none !important;
+  }
+}

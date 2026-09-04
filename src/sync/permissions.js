@@ -88,7 +88,21 @@ export function authorizeAction({ role, seatPlayerId, action, state }) {
     }
 
     case 'TOGGLE_COMPLETION': {
+      // Players score only through the status-phase scoring window.
+      return { ok: false, error: 'use-scoring-window' };
+    }
+
+    case 'SELECT_SCORING_PUBLIC':
+    case 'TOGGLE_SCORING_SECRET':
+    case 'CONFIRM_OBJECTIVE_SCORING':
+    case 'PASS_OBJECTIVE_SCORING': {
       if (action.playerId !== seatPlayerId) return { ok: false, error: 'not-your-objective' };
+      if (!state.statusPhase?.scoring?.active) return { ok: false, error: 'scoring-closed' };
+      const scoring = state.statusPhase.scoring;
+      const currentId = scoring.orderIds?.[scoring.currentIdx];
+      if (currentId !== seatPlayerId) return { ok: false, error: 'not-your-scoring-turn' };
+      const response = scoring.responses?.[seatPlayerId];
+      if (!response || response.status !== 'pending') return { ok: false, error: 'scoring-locked' };
       return { ok: true };
     }
 

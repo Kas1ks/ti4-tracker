@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, useState } from 'react';
+import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
 
 const VARIANT_STYLES = {
   info: {
@@ -44,6 +45,7 @@ export function AppDialog({ dialog, onClose }) {
   const panelRef = useRef(null);
   const previouslyFocused = useRef(null);
   const [values, setValues] = useState({});
+  useBodyScrollLock(!!dialog);
 
   useEffect(() => {
     if (!dialog) return undefined;
@@ -124,7 +126,7 @@ export function AppDialog({ dialog, onClose }) {
 
   return (
     <div
-      className="fixed inset-0 z-[100] bg-black/85 backdrop-blur-md flex items-center justify-center p-4"
+      className="fixed inset-0 z-[100] bg-black/85 backdrop-blur-md flex items-center justify-center p-4 modal-overlay"
       role="presentation"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) cancel();
@@ -136,7 +138,7 @@ export function AppDialog({ dialog, onClose }) {
         aria-modal="true"
         aria-labelledby={titleId}
         aria-describedby={dialog.message ? descId : undefined}
-        className={`bg-slate-900 border ${variant.border} ${variant.glow} p-6 md:p-8 rounded-3xl max-w-md w-full space-y-5`}
+        className={`bg-slate-900 border ${variant.border} ${variant.glow} p-6 md:p-8 rounded-3xl max-w-md w-full space-y-5 max-h-[90vh] overflow-y-auto modal-scroll`}
       >
         <div className="flex items-start gap-4">
           <div

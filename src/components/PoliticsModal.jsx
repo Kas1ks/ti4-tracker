@@ -1,6 +1,7 @@
 import { ALL_FACTIONS } from '../data/gameData';
 import { isAgendaFullyVoted } from '../utils/game';
 import { useEscapeKey } from '../hooks/useEscapeKey';
+import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
 import { ROLES } from '../sync/permissions';
 
 export function PoliticsModal({
@@ -33,14 +34,18 @@ export function PoliticsModal({
   perms,
   readOnly = false,
 }) {
-  useEscapeKey(onClose, show && !minimized);
-
-  if (!show) return null;
-
   const role = perms?.role || ROLES.ADMIN;
   const seatId = perms?.seatPlayerId;
   const isAdmin = role === ROLES.ADMIN;
   const canAdmin = isAdmin && !readOnly;
+  /** Speaker handoff after voting is host-only. */
+  const openForClient = politicsStep !== 'SPEAKER' || isAdmin;
+  const visible = show && !minimized && openForClient;
+  useEscapeKey(onClose, visible);
+  useBodyScrollLock(visible);
+
+  if (!show || !openForClient) return null;
+
   // Solo / admin can edit any; player only own seat.
   const canEditPlayer = (playerId) => {
     if (readOnly) return false;
@@ -91,12 +96,12 @@ export function PoliticsModal({
   const orderedForVote = voteOrder.length ? voteOrder : activePlayers;
 
   return (
-    <div className={`fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 ${minimized ? 'hidden' : ''}`} role="presentation">
+    <div className={`fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 max-md:items-end max-md:p-2 modal-overlay ${minimized ? 'hidden' : ''}`} role="presentation">
       <div
         role="dialog"
         aria-modal="true"
         aria-labelledby="politics-modal-title"
-        className="bg-slate-900 border border-purple-800 rounded-2xl max-w-4xl w-full p-6 max-h-[90vh] overflow-y-auto shadow-2xl shadow-purple-500/10"
+        className="bg-slate-900 border border-purple-800 rounded-2xl max-w-4xl w-full p-6 max-h-[90vh] overflow-y-auto shadow-2xl shadow-purple-500/10 max-md:p-4 max-md:max-h-[min(92vh,100dvh)] modal-scroll"
       >
         <div className="flex justify-between items-center mb-4 pb-3 border-b border-slate-800">
           <h2 id="politics-modal-title" className="font-orbitron text-lg font-bold text-purple-400 uppercase flex items-center gap-2">
@@ -315,7 +320,7 @@ export function PoliticsModal({
                     return (
                       <div
                         key={p.id}
-                        className={`p-4 bg-slate-950 border rounded-xl flex items-center justify-between gap-4 transition ${
+                        className={`p-4 bg-slate-950 border rounded-xl flex items-center justify-between gap-4 transition max-md:flex-col max-md:items-stretch max-md:gap-3 ${
                           isLocked
                             ? 'border-purple-700/50 opacity-60'
                             : isCurrent
@@ -323,7 +328,7 @@ export function PoliticsModal({
                               : 'border-slate-800 opacity-70'
                         }`}
                       >
-                        <div className="flex items-center gap-3 flex-shrink-0">
+                        <div className="flex items-center gap-3 flex-shrink-0 max-md:min-w-0">
                           <img src={faction?.iconUrl} alt={faction?.name} className="w-9 h-9 object-contain" />
                           <div>
                             <div className="font-bold text-lg text-white flex items-center gap-2">
@@ -336,18 +341,18 @@ export function PoliticsModal({
                               <div className="text-[10px] text-purple-400 font-bold uppercase">Спикер</div>
                             )}
                           </div>
-                          <div className="text-center w-20">
+                          <div className="text-center w-20 max-md:ml-auto">
                             <div className="text-xs text-slate-400">Доступно</div>
-                            <div className="font-orbitron font-black text-3xl text-amber-400">{availableInfluence}</div>
+                            <div className="font-orbitron font-black text-3xl text-amber-400 max-md:text-2xl">{availableInfluence}</div>
                           </div>
                         </div>
 
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 max-md:w-full">
                           <select
                             value={vote.choice}
                             onChange={e => setAgendaVotes(p.id, { ...vote, choice: e.target.value })}
                             disabled={!canVoteNow}
-                            className="bg-slate-800 border border-slate-700 rounded-md px-2 py-2 text-xs text-white focus:outline-none focus:border-purple-400 w-32 disabled:opacity-50"
+                            className="bg-slate-800 border border-slate-700 rounded-md px-2 py-2 text-xs text-white focus:outline-none focus:border-purple-400 w-32 disabled:opacity-50 max-md:flex-1 max-md:min-h-[44px]"
                           >
                             <option value="abstain">Воздержаться</option>
                             {currentAgenda.type === 'FOR_AGAINST' && (
@@ -392,7 +397,7 @@ export function PoliticsModal({
             )}
 
             {canAdmin && (
-              <div className="pt-4 border-t border-slate-800 grid grid-cols-3 gap-3">
+              <div className="pt-4 border-t border-slate-800 grid grid-cols-3 gap-3 max-md:grid-cols-1">
                 <button
                   type="button"
                   onClick={() => setPoliticsStep('SPEAKER')}
@@ -422,23 +427,23 @@ export function PoliticsModal({
           <div className="space-y-4">
             <h3 className="font-orbitron font-bold text-lg text-amber-400 text-center">Передача жетона Спикера</h3>
             <p className="text-sm text-slate-400 text-center">
-              Текущий Спикер (<span className="font-bold text-white">{currentSpeaker?.name || 'Неизвестно'}</span>) выбирает следующего Спикера.
+              Хост выбирает следующего Спикера
+              {currentSpeaker ? <> (сейчас: <span className="font-bold text-white">{currentSpeaker.name}</span>)</> : null}.
             </p>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 pt-2">
               {activePlayers.map(player => {
                 const faction = ALL_FACTIONS.find(f => f.id === player.factionId);
-                const canPick = canAdmin || (seatId != null && seatId === speakerId);
                 return (
                   <button
                     key={player.id}
                     type="button"
-                    disabled={!canPick}
+                    disabled={!canAdmin}
                     onClick={() => {
-                      if (!canPick) return;
+                      if (!canAdmin) return;
                       onFinish(player.id);
                     }}
                     className={`p-4 bg-slate-950 border border-slate-800 rounded-xl text-center space-y-2 transition ${
-                      canPick ? 'hover:bg-slate-800 hover:border-purple-500' : 'opacity-50 cursor-not-allowed'
+                      canAdmin ? 'hover:bg-slate-800 hover:border-purple-500' : 'opacity-50 cursor-not-allowed'
                     }`}
                   >
                     <img src={faction?.iconUrl} alt={faction?.name} className="w-16 h-16 mx-auto object-contain" />

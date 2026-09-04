@@ -25,6 +25,14 @@ export const EMPTY_STATUS_CHECKS = Object.freeze({
   returnStrategyCards: false,
 });
 
+/** Per-status-phase objective scoring window (1 public + 1 secret per player). */
+export const EMPTY_OBJECTIVE_SCORING = Object.freeze({
+  active: false,
+  responses: {},
+  orderIds: [],
+  currentIdx: 0,
+});
+
 export const freshStage1Deck = () =>
   shuffleArray(BASE_OBJECTIVES.filter(obj => obj.stage === 1));
 
@@ -93,7 +101,11 @@ export function createEmptyGameState() {
       influenceLocked: {},
       voteReversed: false,
     },
-    statusPhase: { show: false, checks: { ...EMPTY_STATUS_CHECKS } },
+    statusPhase: {
+      show: false,
+      checks: { ...EMPTY_STATUS_CHECKS },
+      scoring: { active: false, responses: {}, orderIds: [], currentIdx: 0 },
+    },
     updatedAt: null,
   };
 }
@@ -151,8 +163,33 @@ function toFlat(raw) {
     voteReversed: politics.voteReversed,
     showStatusPhase: statusPhase.show,
     statusPhaseChecks: statusPhase.checks,
+    objectiveScoring: statusPhase.scoring,
     timestamp: raw.timestamp,
     updatedAt: raw.updatedAt,
+  };
+}
+
+function normalizeObjectiveScoring(value) {
+  const raw = asRecord(value);
+  const responses = {};
+  Object.entries(asRecord(raw.responses)).forEach(([playerId, entry]) => {
+    const r = asRecord(entry);
+    const status = r.status === 'done' || r.status === 'passed' ? r.status : 'pending';
+    responses[playerId] = {
+      status,
+      publicId: typeof r.publicId === 'string' ? r.publicId : null,
+      secret: !!r.secret,
+    };
+  });
+  const orderIds = asArray(raw.orderIds)
+    .map(id => (typeof id === 'number' ? id : Number(id)))
+    .filter(id => Number.isFinite(id));
+  const currentIdx = Math.max(0, asNumber(raw.currentIdx, 0));
+  return {
+    active: !!raw.active,
+    responses,
+    orderIds,
+    currentIdx: orderIds.length ? Math.min(currentIdx, orderIds.length - 1) : 0,
   };
 }
 
@@ -246,6 +283,7 @@ export function normalizeGameState(raw) {
     statusPhase: {
       show: !!flat.showStatusPhase,
       checks: { ...EMPTY_STATUS_CHECKS, ...asRecord(flat.statusPhaseChecks) },
+      scoring: normalizeObjectiveScoring(flat.objectiveScoring),
     },
     updatedAt: flat.updatedAt ?? flat.timestamp ?? null,
   };

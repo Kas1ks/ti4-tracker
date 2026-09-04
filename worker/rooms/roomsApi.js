@@ -3,6 +3,7 @@ import {
   memoryCreateRoom,
   memoryGetRoom,
   memoryJoin,
+  memoryReleaseSeat,
   memoryPublicView,
   memorySubscribe,
 } from './memoryRooms.js';
@@ -67,7 +68,7 @@ export async function handleRoomsApi(request, env) {
     }, 201);
   }
 
-  const roomMatch = pathname.match(/^\/api\/rooms\/([^/]+)(?:\/(snapshot|actions|events|join))?$/);
+  const roomMatch = pathname.match(/^\/api\/rooms\/([^/]+)(?:\/(snapshot|actions|events|join|release-seat))?$/);
   if (!roomMatch) return null;
 
   const roomId = decodeURIComponent(roomMatch[1]).trim().toUpperCase();
@@ -89,6 +90,19 @@ export async function handleRoomsApi(request, env) {
     if (method === 'POST' && sub === 'join') {
       const body = await readJsonBody(request);
       const res = await stub.fetch(new Request('https://room/join', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body || {}),
+      }));
+      return new Response(await res.text(), {
+        status: res.status,
+        headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' },
+      });
+    }
+
+    if (method === 'POST' && sub === 'release-seat') {
+      const body = await readJsonBody(request);
+      const res = await stub.fetch(new Request('https://room/release-seat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body || {}),
@@ -134,7 +148,9 @@ export async function handleRoomsApi(request, env) {
     const result = memoryJoin(roomId, body || {});
     if (!result.ok) {
       const status = result.error === 'not-found' ? 404
-        : result.error === 'seat-taken' ? 409
+        : (result.error === 'seat-taken'
+          || result.error === 'seat-secret-required'
+          || result.error === 'bad-seat-secret') ? 409
           : 400;
       return json({ error: result.error }, status);
     }
@@ -142,6 +158,23 @@ export async function handleRoomsApi(request, env) {
       ...publicRoomView(result.room),
       sessionToken: result.sessionToken,
       role: result.role,
+      seatPlayerId: result.seatPlayerId,
+      seatSecret: result.seatSecret,
+      reclaimed: !!result.reclaimed,
+    });
+  }
+
+  if (method === 'POST' && sub === 'release-seat') {
+    const body = await readJsonBody(request);
+    const result = memoryReleaseSeat(roomId, body || {});
+    if (!result.ok) {
+      const status = result.error === 'not-found' ? 404
+        : (result.error === 'unauthorized' || result.error === 'forbidden') ? 403
+          : 400;
+      return json({ error: result.error }, status);
+    }
+    return json({
+      ...publicRoomView(result.room),
       seatPlayerId: result.seatPlayerId,
     });
   }
