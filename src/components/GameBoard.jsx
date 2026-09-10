@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import { ALL_FACTIONS } from '../data/gameData';
 import { formatTime } from '../utils/game';
@@ -26,6 +27,7 @@ export function GameBoard({
   handleAddSecret,
   eliminatePlayer,
   releaseSeat,
+  setSpeaker,
   claimedSeats = [],
   isGameActive,
   perms,
@@ -33,10 +35,31 @@ export function GameBoard({
   const canAdminBoard = !perms || perms.can('secrets');
   const canEliminate = !perms || perms.can('eliminate');
   const canReleaseSeat = typeof releaseSeat === 'function';
+  const canSetSpeaker = typeof setSpeaker === 'function';
   const canScoreAny = !perms || perms.can('scoreAny');
   const canScoreSelf = !perms || perms.can('scoreSelf');
   const seatId = perms?.seatPlayerId;
   const scoringActive = !!scoring?.active;
+  const [playerActionsId, setPlayerActionsId] = useState(null);
+  const playerActionsRef = useRef(null);
+
+  useEffect(() => {
+    if (playerActionsId == null) return undefined;
+    const onPointerDown = (event) => {
+      if (playerActionsRef.current && !playerActionsRef.current.contains(event.target)) {
+        setPlayerActionsId(null);
+      }
+    };
+    const onKeyDown = (event) => {
+      if (event.key === 'Escape') setPlayerActionsId(null);
+    };
+    document.addEventListener('pointerdown', onPointerDown);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [playerActionsId]);
 
   const canToggleFor = (playerId) => {
     // During the status-phase scoring window, use ObjectiveScoringModal only.
@@ -153,6 +176,12 @@ export function GameBoard({
 
                                                 const isBlack = p.color === '#000000' || p.color === '#090d16' || p.color === '#030712';
                                                 const playerColor = p.color || '#3b82f6';
+                                                const seatClaimed = claimedSeats.some(id => String(id) === String(p.id));
+                                                const showEliminate = !p.eliminated && isGameActive && canEliminate;
+                                                const showRelease = canReleaseSeat && seatClaimed;
+                                                const showSetSpeaker = canSetSpeaker && !p.eliminated && p.id !== speakerId;
+                                                const hasPlayerActions = showEliminate || showRelease || showSetSpeaker;
+                                                const actionsOpen = playerActionsId === p.id;
 
                                                 return (
                                                     <motion.div
@@ -187,38 +216,84 @@ export function GameBoard({
                                                                 <img src={faction?.iconUrl} alt={faction?.name} className="w-full h-full object-contain filter drop-shadow" />
                                                             </div>
                                                             <div className="min-w-0 flex-1">
-                                                                <div className="flex items-center gap-1.5 min-w-0">
-                                                                    <div className="font-extrabold text-base md:text-lg text-white truncate leading-tight flex items-center gap-1.5 min-w-0">
-                                                                        <span className="truncate">{p.name}</span>
-                                                                        {isLeader && !p.eliminated && (
-                                                                            <span title="Лидер партии" className="text-amber-400 text-sm filter drop-shadow flex-shrink-0">
-                                                                                👑
-                                                                            </span>)}
-                                                                        {p.id === speakerId && !p.eliminated && (
-                                                                            <span title="Спикер" className="text-[10px] font-orbitron font-bold uppercase bg-purple-950 text-purple-300 border border-purple-700 px-2 py-0.5 rounded-md flex-shrink-0">
-                                                                                Speaker
+                                                                <div
+                                                                    className="min-w-0"
+                                                                    ref={actionsOpen ? playerActionsRef : undefined}
+                                                                >
+                                                                    <div className="flex items-center gap-1.5 min-w-0">
+                                                                        <div
+                                                                            className={`font-extrabold text-base md:text-lg text-white truncate leading-tight flex items-center gap-1.5 min-w-0 ${hasPlayerActions ? 'cursor-pointer select-none' : ''}`}
+                                                                            onClick={hasPlayerActions ? () => setPlayerActionsId(actionsOpen ? null : p.id) : undefined}
+                                                                            onKeyDown={hasPlayerActions ? (event) => {
+                                                                                if (event.key === 'Enter' || event.key === ' ') {
+                                                                                    event.preventDefault();
+                                                                                    setPlayerActionsId(actionsOpen ? null : p.id);
+                                                                                }
+                                                                            } : undefined}
+                                                                            role={hasPlayerActions ? 'button' : undefined}
+                                                                            tabIndex={hasPlayerActions ? 0 : undefined}
+                                                                            title={hasPlayerActions ? 'Действия с игроком' : undefined}
+                                                                        >
+                                                                            <span className={`truncate ${hasPlayerActions ? 'hover:text-slate-200 underline-offset-2 hover:underline decoration-slate-600' : ''}`}>
+                                                                                {p.name}
                                                                             </span>
-                                                                        )}
+                                                                            {isLeader && !p.eliminated && (
+                                                                                <span title="Лидер партии" className="text-amber-400 text-sm filter drop-shadow flex-shrink-0">
+                                                                                    👑
+                                                                                </span>
+                                                                            )}
+                                                                            {p.id === speakerId && !p.eliminated && (
+                                                                                <span title="Спикер" className="text-[10px] font-orbitron font-bold uppercase bg-purple-950 text-purple-300 border border-purple-700 px-2 py-0.5 rounded-md flex-shrink-0">
+                                                                                    Speaker
+                                                                                </span>
+                                                                            )}
+                                                                        </div>
                                                                     </div>
-                                                                    {!p.eliminated && isGameActive && canEliminate && (
-                                                                        <button
-                                                                            type="button"
-                                                                            onClick={() => eliminatePlayer(p.id)}
-                                                                            className="flex-shrink-0 text-slate-600 hover:text-red-500 text-xs p-1.5 rounded-lg hover:bg-red-950/40 transition"
-                                                                            title={`Устранить игрока ${p.name}`}
-                                                                        >
-                                                                            <i className="fa-solid fa-skull" />
-                                                                        </button>
-                                                                    )}
-                                                                    {canReleaseSeat && claimedSeats.some(id => String(id) === String(p.id)) && (
-                                                                        <button
-                                                                            type="button"
-                                                                            onClick={() => releaseSeat(p.id)}
-                                                                            className="flex-shrink-0 text-slate-600 hover:text-amber-400 text-xs p-1.5 rounded-lg hover:bg-amber-950/30 transition"
-                                                                            title={`Освободить место ${p.name} (сбросить устройство и код)`}
-                                                                        >
-                                                                            <i className="fa-solid fa-link-slash" />
-                                                                        </button>
+                                                                    {hasPlayerActions && actionsOpen && (
+                                                                        <div className="mt-1.5 flex flex-wrap items-center gap-1">
+                                                                            {showSetSpeaker && (
+                                                                                <button
+                                                                                    type="button"
+                                                                                    onClick={() => {
+                                                                                        setPlayerActionsId(null);
+                                                                                        setSpeaker(p.id);
+                                                                                    }}
+                                                                                    className="text-slate-400 hover:text-purple-300 text-[11px] px-2 py-1 rounded-lg border border-slate-700/80 bg-slate-950/70 hover:bg-purple-950/40 transition inline-flex items-center gap-1.5"
+                                                                                    title={`Назначить спикером: ${p.name}`}
+                                                                                >
+                                                                                    <i className="fa-solid fa-gavel" />
+                                                                                    <span className="font-semibold">Спикер</span>
+                                                                                </button>
+                                                                            )}
+                                                                            {showEliminate && (
+                                                                                <button
+                                                                                    type="button"
+                                                                                    onClick={() => {
+                                                                                        setPlayerActionsId(null);
+                                                                                        eliminatePlayer(p.id);
+                                                                                    }}
+                                                                                    className="text-slate-400 hover:text-red-400 text-[11px] px-2 py-1 rounded-lg border border-slate-700/80 bg-slate-950/70 hover:bg-red-950/40 transition inline-flex items-center gap-1.5"
+                                                                                    title={`Устранить игрока ${p.name}`}
+                                                                                >
+                                                                                    <i className="fa-solid fa-skull" />
+                                                                                    <span className="font-semibold">Устранить</span>
+                                                                                </button>
+                                                                            )}
+                                                                            {showRelease && (
+                                                                                <button
+                                                                                    type="button"
+                                                                                    onClick={() => {
+                                                                                        setPlayerActionsId(null);
+                                                                                        releaseSeat(p.id);
+                                                                                    }}
+                                                                                    className="text-slate-400 hover:text-amber-400 text-[11px] px-2 py-1 rounded-lg border border-slate-700/80 bg-slate-950/70 hover:bg-amber-950/30 transition inline-flex items-center gap-1.5"
+                                                                                    title={`Освободить место ${p.name} (сбросить устройство и код)`}
+                                                                                >
+                                                                                    <i className="fa-solid fa-link-slash" />
+                                                                                    <span className="font-semibold">С места</span>
+                                                                                </button>
+                                                                            )}
+                                                                        </div>
                                                                     )}
                                                                 </div>
                                                                 <div className="text-xs md:text-sm text-slate-300 font-semibold truncate mt-0.5">{faction?.name}</div>

@@ -89,7 +89,22 @@ export function memoryApplyAction(roomId, action, auth) {
       state: result.room.state,
       action: result.action,
       claimedSeats: publicRoomView(result.room).claimedSeats,
+      roomEnded: !!result.roomEnded,
+      seatRemoved: !!result.seatRemoved,
+      seatPlayerId: result.seatPlayerId ?? null,
+      revokedSessionToken: result.revokedSessionToken || null,
     });
+    if (result.seatRemoved && result.revokedSessionToken) {
+      notify(key, {
+        type: 'seats',
+        claimedSeats: publicRoomView(result.room).claimedSeats,
+        reclaimed: true,
+        released: true,
+        seatRemoved: true,
+        seatPlayerId: result.seatPlayerId,
+        revokedSessionToken: result.revokedSessionToken,
+      });
+    }
   }
   return result;
 }

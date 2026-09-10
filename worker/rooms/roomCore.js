@@ -240,16 +240,81 @@ export function applyRoomAction(room, action, auth = {}) {
     };
   }
 
+  let nextRoom = {
+    ...room,
+    seq: room.seq + 1,
+    state: nextState,
+    updatedAt: new Date().toISOString(),
+  };
+
+  // Ending the party: wipe seats so every guest must return to the hub.
+  if (stamped.type === 'RESET_GAME') {
+    const sessions = {};
+    for (const [token, session] of Object.entries(room.sessions || {})) {
+      if (session?.role === ROLES.ADMIN) sessions[token] = session;
+    }
+    nextRoom = {
+      ...nextRoom,
+      sessions,
+      seatClaims: {},
+      seatSecrets: {},
+    };
+    return {
+      ok: true,
+      room: nextRoom,
+      action: stamped,
+      noop: false,
+      roomEnded: true,
+    };
+  }
+
+  // Host deleted a seat: drop that player's session/claim so they leave the lobby.
+  if (stamped.type === 'REMOVE_PLAYER') {
+    let claimKey = null;
+    let claimToken = null;
+    for (const [key, token] of Object.entries(room.seatClaims || {})) {
+      if (String(key) === String(stamped.playerId)) {
+        claimKey = key;
+        claimToken = token;
+        break;
+      }
+    }
+
+    const sessions = { ...(nextRoom.sessions || {}) };
+    if (claimToken && sessions[claimToken]) {
+      delete sessions[claimToken];
+    }
+    const seatClaims = { ...(nextRoom.seatClaims || {}) };
+    const seatSecrets = { ...(nextRoom.seatSecrets || {}) };
+    if (claimKey != null) {
+      delete seatClaims[claimKey];
+      delete seatSecrets[claimKey];
+    }
+
+    nextRoom = {
+      ...nextRoom,
+      sessions,
+      seatClaims,
+      seatSecrets,
+    };
+
+    return {
+      ok: true,
+      room: nextRoom,
+      action: stamped,
+      noop: false,
+      seatRemoved: true,
+      seatPlayerId: stamped.playerId,
+      revokedSessionToken: claimToken,
+    };
+  }
+
   return {
     ok: true,
-    room: {
-      ...room,
-      seq: room.seq + 1,
-      state: nextState,
-      updatedAt: new Date().toISOString(),
-    },
+    room: nextRoom,
     action: stamped,
     noop: false,
+    roomEnded: false,
   };
 }
 

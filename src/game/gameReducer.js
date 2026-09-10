@@ -2,16 +2,19 @@ import { STRATEGY_CARDS } from '../data/gameData';
 import {
   EMPTY_STATUS_CHECKS,
   EMPTY_OBJECTIVE_SCORING,
+  EMPTY_STRATEGY_RESOLUTION,
   createEmptyGameState,
   normalizeGameState,
 } from './gameState';
 import {
   activePlayer,
   activePlayers,
+  areAllStrategiesPlayed,
   canStartRound,
   currentAgenda,
   currentDraftPlayerId,
   isDraftInProgress,
+  isStrategyCardPlayed,
   nextSpeakerAfter,
   playersNotPassed,
   turnOrder,
@@ -90,7 +93,11 @@ function bankActivePlayerTime(state, at) {
 /** End of round: agenda phase if one is pending, otherwise the status checklist. */
 function endRound(state, at = Date.now()) {
   let next = bankActivePlayerTime(state, at);
-  next = withRound(next, { turnTime: 0, turnStartedAt: null });
+  next = withRound(next, {
+    turnTime: 0,
+    turnStartedAt: null,
+    strategyResolution: { ...EMPTY_STRATEGY_RESOLUTION },
+  });
   if (next.meta.isAgendaPhasePending) {
     return withPolitics(next, { showModal: true });
   }
@@ -122,6 +129,7 @@ function startNewRound(state) {
       turnTime: 0,
       turnStartedAt: null,
       strategyActionTaken: false,
+      strategyResolution: { ...EMPTY_STRATEGY_RESOLUTION },
     }),
     clearedDraft,
   );
@@ -147,11 +155,13 @@ function startRound(state, at = Date.now()) {
     turnTime: 0,
     turnStartedAt: at,
     strategyActionTaken: false,
+    strategyResolution: { ...EMPTY_STRATEGY_RESOLUTION },
   });
 }
 
 /** Advance to the next player who has not passed; end the round if nobody is left. */
 function nextTurn(state, at = Date.now()) {
+  if (state.round?.strategyResolution?.active) return state;
   const order = turnOrder(state);
   if (order.length === 0) return state;
   if (playersNotPassed(state).length === 0) return endRound(state, at);
@@ -172,10 +182,18 @@ function nextTurn(state, at = Date.now()) {
     turnTime: 0,
     turnStartedAt: at,
     strategyActionTaken: false,
+    strategyResolution: { ...EMPTY_STRATEGY_RESOLUTION },
   });
 }
 
 function passTurn(state, playerId, at = Date.now()) {
+  if (state.round?.strategyResolution?.active) return state;
+  const player = state.players.find(p => p.id === playerId);
+  if (!player || player.eliminated) return state;
+  if (state.round.passed?.[playerId]) return state;
+  if (activePlayer(state)?.id !== playerId) return state;
+  if (!areAllStrategiesPlayed(player)) return state;
+
   const passed = { ...state.round.passed, [playerId]: true };
   const next = withRound(state, { passed });
   return playersNotPassed(next).length === 0 ? endRound(next, at) : nextTurn(next, at);
@@ -187,6 +205,19 @@ function eliminatePlayer(state, playerId, at = Date.now()) {
   let next = patchPlayer(state, playerId, () => ({ eliminated: true }));
   next = withRound(next, { passed: { ...next.round.passed, [playerId]: true } });
 
+  const resolution = next.round?.strategyResolution;
+  if (resolution?.active && resolution.responses?.[playerId] != null) {
+    const { [playerId]: _removed, ...rest } = resolution.responses;
+    const responses = rest;
+    next = withRound(next, {
+      strategyResolution: { ...resolution, responses },
+    });
+    if (Object.keys(responses).length === 0
+      || Object.values(responses).every(s => s === 'played' || s === 'passed')) {
+      next = commitStrategyPlay(next);
+    }
+  }
+
   if (next.meta.speakerId === playerId) {
     next = withMeta(next, { speakerId: nextSpeakerAfter(next, playerId) });
   }
@@ -194,6 +225,89 @@ function eliminatePlayer(state, playerId, at = Date.now()) {
   const wasActive = activePlayer(state)?.id === playerId;
   if (next.round.active && playersNotPassed(next).length === 0) return endRound(next, at);
   return wasActive ? nextTurn(next, at) : next;
+}
+
+function strategyResolutionOf(state) {
+  return state.round?.strategyResolution || EMPTY_STRATEGY_RESOLUTION;
+}
+
+function startStrategyResolution(state, cardId) {
+  const player = activePlayer(state);
+  if (!player?.cards?.length) return state;
+  if (state.round.strategyActionTaken) return state;
+  if (strategyResolutionOf(state).active) return state;
+
+  const already = new Set(
+    Array.isArray(player.playedCardIds) ? player.playedCardIds : [],
+  );
+  if (player.strategyPlayed && already.size === 0) return state;
+
+  let resolvedCardId = cardId;
+  if (resolvedCardId == null) {
+    const nextCard = [...player.cards]
+      .filter(c => !already.has(c.id))
+      .sort((a, b) => a.id - b.id)[0];
+    resolvedCardId = nextCard?.id;
+  }
+  if (resolvedCardId == null || already.has(resolvedCardId)) return state;
+  if (!player.cards.some(c => c.id === resolvedCardId)) return state;
+
+  const responses = {};
+  activePlayers(state).forEach(p => {
+    responses[p.id] = 'pending';
+  });
+
+  return withRound(state, {
+    strategyActionTaken: true,
+    strategyResolution: {
+      active: true,
+      cardId: resolvedCardId,
+      playerId: player.id,
+      responses,
+    },
+  });
+}
+
+function commitStrategyPlay(state) {
+  const resolution = strategyResolutionOf(state);
+  if (!resolution.active) return state;
+
+  const player = state.players.find(p => p.id === resolution.playerId);
+  const cardId = resolution.cardId;
+  const cleared = withRound(state, {
+    strategyResolution: { ...EMPTY_STRATEGY_RESOLUTION },
+    strategyActionTaken: true,
+  });
+
+  if (!player || cardId == null) return cleared;
+  if (!player.cards?.some(c => c.id === cardId)) return cleared;
+
+  const already = new Set(
+    Array.isArray(player.playedCardIds) ? player.playedCardIds : [],
+  );
+  if (already.has(cardId)) return cleared;
+
+  const playedCardIds = [...already, cardId];
+  const strategyPlayed = player.cards.every(c => playedCardIds.includes(c.id));
+  return patchPlayer(cleared, player.id, () => ({ playedCardIds, strategyPlayed }));
+}
+
+function resolveStrategyResponse(state, playerId, choice) {
+  const resolution = strategyResolutionOf(state);
+  if (!resolution.active) return state;
+  if (choice !== 'played' && choice !== 'passed') return state;
+
+  const current = resolution.responses?.[playerId];
+  if (current == null || current !== 'pending') return state;
+
+  const responses = { ...resolution.responses, [playerId]: choice };
+  let next = withRound(state, {
+    strategyResolution: { ...resolution, responses },
+  });
+
+  const allDone = Object.values(responses).every(s => s === 'played' || s === 'passed');
+  if (allDone) next = commitStrategyPlay(next);
+  return next;
 }
 
 function openDraft(state) {
@@ -209,13 +323,8 @@ function openDraft(state) {
     speakerIndex = 0;
   }
 
-  const draftOrder = [...eligible.slice(speakerIndex), ...eligible.slice(0, speakerIndex)];
-  const cardsPerPlayer = state.players.length <= 4 ? 2 : 1;
-
-  const queue = [];
-  for (let pick = 0; pick < cardsPerPlayer; pick += 1) {
-    draftOrder.forEach(player => queue.push(player.id));
-  }
+  const draftOrder = draftOrderFromSpeaker(eligible, speakerIndex);
+  const queue = buildFullDraftQueue(draftOrder, state.players.length);
 
   return withDraft(withMeta(state, { speakerId }), {
     queue,
@@ -225,6 +334,74 @@ function openDraft(state) {
     step: 'DRAFT',
     showModal: true,
   });
+}
+
+/** Clockwise seat order starting from the speaker. */
+function draftOrderFromSpeaker(eligible, speakerIndex) {
+  return [...eligible.slice(speakerIndex), ...eligible.slice(0, speakerIndex)];
+}
+
+function buildFullDraftQueue(draftOrder, seatCount) {
+  const cardsPerPlayer = seatCount <= 4 ? 2 : 1;
+  const queue = [];
+  for (let pick = 0; pick < cardsPerPlayer; pick += 1) {
+    draftOrder.forEach(player => queue.push(player.id));
+  }
+  return queue;
+}
+
+/**
+ * After a mid-draft speaker change: keep completed picks, rebuild who still
+ * needs to pick using the new speaker-clockwise order.
+ */
+function realignDraftQueueToSpeaker(state) {
+  if (!isDraftInProgress(state) || state.draft.step === 'CONFIRM') return state;
+
+  const eligible = activePlayers(state);
+  if (eligible.length === 0) return state;
+
+  let speakerIndex = eligible.findIndex(p => p.id === state.meta.speakerId);
+  if (speakerIndex === -1) speakerIndex = 0;
+  const draftOrder = draftOrderFromSpeaker(eligible, speakerIndex);
+  const cardsPerPlayer = state.players.length <= 4 ? 2 : 1;
+
+  const assignedCount = new Map(eligible.map(p => [p.id, 0]));
+  Object.values(state.draft.assignments || {}).forEach((rawId) => {
+    const playerId = Number(rawId);
+    if (!assignedCount.has(playerId)) return;
+    assignedCount.set(playerId, assignedCount.get(playerId) + 1);
+  });
+
+  const remaining = [];
+  for (let pick = 0; pick < cardsPerPlayer; pick += 1) {
+    draftOrder.forEach((player) => {
+      const have = assignedCount.get(player.id) || 0;
+      if (have < pick + 1) remaining.push(player.id);
+    });
+  }
+
+  const completed = (state.draft.pickOrder || [])
+    .map((cardId) => {
+      const raw = state.draft.assignments[cardId] ?? state.draft.assignments[String(cardId)];
+      return raw == null ? null : Number(raw);
+    })
+    .filter(id => Number.isFinite(id));
+
+  return withDraft(state, {
+    queue: [...completed, ...remaining],
+    currentQueueIndex: completed.length,
+    step: remaining.length === 0 ? 'CONFIRM' : 'DRAFT',
+  });
+}
+
+function setSpeaker(state, playerId) {
+  if (playerId == null) return state;
+  const target = state.players.find(p => p.id === playerId);
+  if (!target || target.eliminated) return state;
+  if (state.meta.speakerId === playerId) return state;
+
+  const next = withMeta(state, { speakerId: playerId });
+  return realignDraftQueueToSpeaker(next);
 }
 
 function pickCard(state, cardId) {
@@ -547,8 +724,19 @@ export function gameReducer(state, action) {
       };
     }
 
-    case 'REMOVE_PLAYER':
-      return { ...state, players: state.players.filter(p => p.id !== action.playerId) };
+    case 'REMOVE_PLAYER': {
+      // Mid-game seat removal must go through ELIMINATE_PLAYER so turn/speaker
+      // /resolution state stays consistent.
+      if (state.isGameActive) return state;
+      const next = {
+        ...state,
+        players: state.players.filter(p => p.id !== action.playerId),
+      };
+      if (next.meta.speakerId === action.playerId) {
+        return withMeta(next, { speakerId: next.players[0]?.id ?? null });
+      }
+      return next;
+    }
 
     case 'UPDATE_PLAYER':
       return patchPlayer(state, action.playerId, () => action.patch);
@@ -559,7 +747,7 @@ export function gameReducer(state, action) {
       });
 
     case 'SET_SPEAKER':
-      return withMeta(state, { speakerId: action.playerId });
+      return setSpeaker(state, action.playerId);
 
     case 'TOGGLE_POLITICS_ACTIVE':
       return withMeta(state, { isPoliticsActive: !state.meta.isPoliticsActive });
@@ -641,34 +829,11 @@ export function gameReducer(state, action) {
     case 'START_ROUND':
       return startRound(state, actionAt(action));
 
-    case 'PLAY_STRATEGY': {
-      const player = activePlayer(state);
-      if (!player?.cards?.length) return state;
-      // One strategic action per turn (second card waits for the next turn).
-      if (state.round.strategyActionTaken) return state;
+    case 'PLAY_STRATEGY':
+      return startStrategyResolution(state, action.cardId);
 
-      const already = new Set(
-        Array.isArray(player.playedCardIds) ? player.playedCardIds : [],
-      );
-      if (player.strategyPlayed && already.size === 0) return state;
-
-      let cardId = action.cardId;
-      if (cardId == null) {
-        const nextCard = [...player.cards]
-          .filter(c => !already.has(c.id))
-          .sort((a, b) => a.id - b.id)[0];
-        cardId = nextCard?.id;
-      }
-      if (cardId == null || already.has(cardId)) return state;
-      if (!player.cards.some(c => c.id === cardId)) return state;
-
-      const playedCardIds = [...already, cardId];
-      const strategyPlayed = player.cards.every(c => playedCardIds.includes(c.id));
-      return withRound(
-        patchPlayer(state, player.id, () => ({ playedCardIds, strategyPlayed })),
-        { strategyActionTaken: true },
-      );
-    }
+    case 'RESOLVE_STRATEGY':
+      return resolveStrategyResponse(state, action.playerId, action.choice);
 
     case 'TICK': {
       // Legacy solo tick: display-only turnTime. totalTime is banked on turn change.

@@ -38,6 +38,26 @@ const dispatch = (state, action) => {
 
 const play = (state, actions) => actions.reduce(dispatch, state);
 
+/** Answer every pending seat so PLAY_STRATEGY commits the card. */
+const resolveAllStrategy = (state, choice = 'played') => {
+  const responses = state.round?.strategyResolution?.responses || {};
+  return Object.keys(responses).reduce((next, id) => {
+    const playerId = Number(id);
+    if (next.round?.strategyResolution?.responses?.[playerId] !== 'pending'
+      && next.round?.strategyResolution?.responses?.[id] !== 'pending') {
+      return next;
+    }
+    return dispatch(next, { type: 'RESOLVE_STRATEGY', playerId, choice });
+  }, state);
+};
+
+const playStrategyFully = (state, cardId, choice = 'played') => {
+  const started = dispatch(state, cardId == null
+    ? { type: 'PLAY_STRATEGY' }
+    : { type: 'PLAY_STRATEGY', cardId });
+  return resolveAllStrategy(started, choice);
+};
+
 describe('unknown actions', () => {
   it('leaves the state untouched', () => {
     const state = gameWith([player(1, 'A')]);
@@ -57,6 +77,17 @@ describe('setup', () => {
 
     state = dispatch(state, { type: 'REMOVE_PLAYER', playerId: 1 });
     expect(state.players.map(p => p.id)).toEqual([2]);
+  });
+
+  it('repairs speakerId when the speaker seat is removed in setup', () => {
+    let state = normalizeGameState({
+      isGameActive: false,
+      players: [player(1, 'A'), player(2, 'B')],
+      speakerId: 1,
+    });
+    state = dispatch(state, { type: 'REMOVE_PLAYER', playerId: 1 });
+    expect(state.players.map(p => p.id)).toEqual([2]);
+    expect(state.meta.speakerId).toBe(2);
   });
 
   it('refuses a ninth player', () => {
@@ -250,6 +281,64 @@ describe('strategy card draft', () => {
     }
     expect(state.draft.strategyCardBonuses[1]).toBe(2);
   });
+
+  it('realigns the remaining draft queue when the speaker changes mid-draft', () => {
+    let state = dispatch(
+      gameWith(fourPlayers, { meta: { ...createEmptyGameState().meta, speakerId: 1 } }),
+      { type: 'OPEN_DRAFT' },
+    );
+    expect(state.draft.queue).toEqual([1, 2, 3, 4, 1, 2, 3, 4]);
+    state = dispatch(state, { type: 'PICK_CARD', cardId: 1 });
+    state = dispatch(state, { type: 'PICK_CARD', cardId: 2 });
+    expect(state.draft.currentQueueIndex).toBe(2);
+
+    state = dispatch(state, { type: 'SET_SPEAKER', playerId: 3 });
+    expect(state.meta.speakerId).toBe(3);
+    // Completed picks kept; remaining follow new speaker order.
+    expect(state.draft.queue).toEqual([1, 2, 3, 4, 3, 4, 1, 2]);
+    expect(state.draft.currentQueueIndex).toBe(2);
+    expect(currentDraftPlayerId(state)).toBe(3);
+  });
+});
+
+describe('agenda voting order', () => {
+  it('builds clockwise voting order with speaker last', () => {
+    const state = normalizeGameState({
+      isGameActive: true,
+      players: [
+        player(1, 'A'),
+        player(2, 'B'),
+        player(3, 'C'),
+        player(4, 'D'),
+      ],
+      speakerId: 2,
+      politicsStep: 'VOTE',
+      agendas: [{ type: 'FOR_AGAINST', votes: {}, locked: {} }],
+    });
+    expect(votingOrder(state).map(p => p.id)).toEqual([3, 4, 1, 2]);
+
+    const reversed = gameReducer(state, { type: 'TOGGLE_VOTE_REVERSED' });
+    expect(votingOrder(reversed).map(p => p.id)).toEqual([1, 4, 3, 2]);
+  });
+
+  it('updates voting order when the speaker changes', () => {
+    let state = normalizeGameState({
+      isGameActive: true,
+      players: [
+        player(1, 'A'),
+        player(2, 'B'),
+        player(3, 'C'),
+        player(4, 'D'),
+      ],
+      speakerId: 2,
+      politicsStep: 'VOTE',
+      agendas: [{ type: 'FOR_AGAINST', votes: {}, locked: {} }],
+    });
+    expect(votingOrder(state).map(p => p.id)).toEqual([3, 4, 1, 2]);
+
+    state = dispatch(state, { type: 'SET_SPEAKER', playerId: 4 });
+    expect(votingOrder(state).map(p => p.id)).toEqual([1, 2, 3, 4]);
+  });
 });
 
 describe('round and turn order', () => {
@@ -285,9 +374,14 @@ describe('round and turn order', () => {
     expect(turnOrder(state)).toHaveLength(1);
   });
 
-  it('marks only the active player strategy as played', () => {
+  it('marks only the active player strategy as played after all seats resolve', () => {
     let state = dispatch(drafted(), { type: 'START_ROUND' });
     state = dispatch(state, { type: 'PLAY_STRATEGY' });
+    expect(state.round.strategyResolution.active).toBe(true);
+    expect(state.players.find(p => p.id === 2).playedCardIds || []).toEqual([]);
+
+    state = resolveAllStrategy(state);
+    expect(state.round.strategyResolution.active).toBe(false);
     expect(state.players.find(p => p.id === 2).strategyPlayed).toBe(true);
     expect(state.players.find(p => p.id === 2).playedCardIds).toEqual([1]);
     expect(state.players.find(p => p.id === 3).strategyPlayed).toBe(false);
@@ -301,7 +395,7 @@ describe('round and turn order', () => {
     state = dispatch(state, { type: 'START_ROUND' });
     expect(activePlayer(state).id).toBe(1);
 
-    state = dispatch(state, { type: 'PLAY_STRATEGY', cardId: 4 });
+    state = playStrategyFully(state, 4);
     expect(state.players.find(p => p.id === 1).playedCardIds).toEqual([4]);
     expect(state.players.find(p => p.id === 1).strategyPlayed).toBe(false);
     expect(state.round.strategyActionTaken).toBe(true);
@@ -315,28 +409,23 @@ describe('round and turn order', () => {
     expect(activePlayer(state).id).toBe(1);
     expect(state.round.strategyActionTaken).toBe(false);
 
-    state = dispatch(state, { type: 'PLAY_STRATEGY', cardId: 1 });
+    state = playStrategyFully(state, 1);
     expect(state.players.find(p => p.id === 1).playedCardIds).toEqual([4, 1]);
     expect(state.players.find(p => p.id === 1).strategyPlayed).toBe(true);
   });
 
-  it('builds clockwise voting order with speaker last', () => {
-    const state = normalizeGameState({
-      isGameActive: true,
-      players: [
-        player(1, 'A'),
-        player(2, 'B'),
-        player(3, 'C'),
-        player(4, 'D'),
-      ],
-      speakerId: 2,
-      politicsStep: 'VOTE',
-      agendas: [{ type: 'FOR_AGAINST', votes: {}, locked: {} }],
-    });
-    expect(votingOrder(state).map(p => p.id)).toEqual([3, 4, 1, 2]);
+  it('blocks ending the turn while strategy resolution is open', () => {
+    let state = dispatch(drafted(), { type: 'START_ROUND' });
+    state = dispatch(state, { type: 'PLAY_STRATEGY' });
+    expect(state.round.strategyResolution.active).toBe(true);
 
-    const reversed = gameReducer(state, { type: 'TOGGLE_VOTE_REVERSED' });
-    expect(votingOrder(reversed).map(p => p.id)).toEqual([1, 4, 3, 2]);
+    const blocked = dispatch(state, { type: 'NEXT_TURN' });
+    expect(blocked.round.activeTurnIdx).toBe(state.round.activeTurnIdx);
+    expect(blocked.round.strategyResolution.active).toBe(true);
+
+    state = resolveAllStrategy(state);
+    state = dispatch(state, { type: 'NEXT_TURN' });
+    expect(activePlayer(state).id).toBe(3);
   });
 
   it('banks wall-clock elapsed into totalTime on NEXT_TURN', () => {
@@ -372,6 +461,7 @@ describe('round and turn order', () => {
 
   it('skips players who already passed', () => {
     let state = dispatch(drafted(), { type: 'START_ROUND' });
+    state = playStrategyFully(state);
     state = dispatch(state, { type: 'PASS_TURN', playerId: 2 });
     expect(activePlayer(state).id).toBe(3);
 
@@ -384,14 +474,26 @@ describe('round and turn order', () => {
 
   it('opens the status phase when the last player passes', () => {
     let state = dispatch(drafted(), { type: 'START_ROUND' });
-    state = play(state, [
-      { type: 'PASS_TURN', playerId: 2 },
-      { type: 'PASS_TURN', playerId: 3 },
-    ]);
+    state = playStrategyFully(state);
+    state = dispatch(state, { type: 'PASS_TURN', playerId: 2 });
+    state = playStrategyFully(state);
+    state = dispatch(state, { type: 'PASS_TURN', playerId: 3 });
     expect(state.statusPhase.show).toBe(false);
 
+    state = playStrategyFully(state);
     state = dispatch(state, { type: 'PASS_TURN', playerId: 1 });
     expect(state.statusPhase.show).toBe(true);
+  });
+
+  it('ignores PASS_TURN off-turn or before strategies are played', () => {
+    let state = dispatch(drafted(), { type: 'START_ROUND' });
+    expect(activePlayer(state).id).toBe(2);
+    expect(dispatch(state, { type: 'PASS_TURN', playerId: 3 })).toBe(state);
+    expect(dispatch(state, { type: 'PASS_TURN', playerId: 2 })).toBe(state);
+
+    state = playStrategyFully(state);
+    state = dispatch(state, { type: 'PASS_TURN', playerId: 2 });
+    expect(state.round.passed[2]).toBe(true);
   });
 
   it('opens the agenda phase instead when one is pending', () => {
@@ -438,12 +540,16 @@ describe('eliminating a player', () => {
 
   it('ends the round when the last active player is eliminated', () => {
     let state = running();
-    state = play(state, [
-      { type: 'PASS_TURN', playerId: 1 },
-      { type: 'PASS_TURN', playerId: 2 },
-    ]);
+    state = dispatch(state, { type: 'ELIMINATE_PLAYER', playerId: 1 });
+    state = dispatch(state, { type: 'ELIMINATE_PLAYER', playerId: 2 });
     state = dispatch(state, { type: 'ELIMINATE_PLAYER', playerId: 3 });
     expect(state.statusPhase.show).toBe(true);
+  });
+
+  it('ignores REMOVE_PLAYER once the game has started', () => {
+    const state = running();
+    expect(dispatch(state, { type: 'REMOVE_PLAYER', playerId: 2 })).toBe(state);
+    expect(state.players).toHaveLength(3);
   });
 
   it('ignores an unknown player', () => {

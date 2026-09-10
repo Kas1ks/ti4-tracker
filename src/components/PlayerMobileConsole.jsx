@@ -32,6 +32,8 @@ export function PlayerMobileConsole({
   strategyCards = [],
   allStrategiesPlayed,
   strategyActionTaken = false,
+  strategyResolutionActive = false,
+  resolvingCardId = null,
   turnTime,
   onPlayStrategy,
   onNextTurn,
@@ -49,6 +51,7 @@ export function PlayerMobileConsole({
   roundActive,
   canPlay,
   canNextTurn,
+  onOpenProduction,
 }) {
   const [tab, setTab] = useState('turn');
   const [tableSortMode, setTableSortMode] = useState('initiative');
@@ -98,6 +101,8 @@ export function PlayerMobileConsole({
             turnTime={turnTime}
             strategyCards={strategyCards}
             strategyActionTaken={strategyActionTaken}
+            strategyResolutionActive={strategyResolutionActive}
+            resolvingCardId={resolvingCardId}
             allStrategiesPlayed={allStrategiesPlayed}
             roundActive={roundActive}
             onPlayStrategy={onPlayStrategy}
@@ -105,6 +110,7 @@ export function PlayerMobileConsole({
             onPassTurn={onPassTurn}
             canPlay={canPlay && isMyTurn}
             canNextTurn={canNextTurn && isMyTurn}
+            onOpenProduction={onOpenProduction}
           />
         </div>
 
@@ -199,6 +205,8 @@ function TurnTab({
   turnTime,
   strategyCards,
   strategyActionTaken,
+  strategyResolutionActive = false,
+  resolvingCardId = null,
   allStrategiesPlayed,
   roundActive,
   onPlayStrategy,
@@ -206,6 +214,7 @@ function TurnTab({
   onPassTurn,
   canPlay,
   canNextTurn,
+  onOpenProduction,
 }) {
   const activeFaction = activePlayer
     ? ALL_FACTIONS.find(f => f.id === activePlayer.factionId)
@@ -310,8 +319,9 @@ function TurnTab({
           </div>
           {strategyCards.map(card => {
             const livePlayed = isStrategyCardPlayed(activePlayer || me, card.id);
-            const blockedThisTurn = !livePlayed && strategyActionTaken;
-            const disabled = !canPlay || livePlayed || blockedThisTurn;
+            const resolving = strategyResolutionActive && resolvingCardId === card.id;
+            const blockedThisTurn = !livePlayed && strategyActionTaken && !resolving;
+            const disabled = !canPlay || livePlayed || blockedThisTurn || resolving;
             return (
               <div
                 key={card.id}
@@ -335,14 +345,16 @@ function TurnTab({
                   className={`px-3 py-2.5 rounded-xl text-xs font-bold border min-h-[44px] flex-shrink-0 ${
                     livePlayed
                       ? 'bg-emerald-950 border-emerald-500 text-emerald-300'
-                      : blockedThisTurn
-                        ? 'bg-slate-950 text-slate-500 border-slate-700'
-                        : canPlay
-                          ? 'bg-amber-500 text-black border-amber-400'
-                          : 'bg-slate-950 text-slate-600 border-slate-800'
+                      : resolving
+                        ? 'bg-amber-950 border-amber-500 text-amber-300'
+                        : blockedThisTurn
+                          ? 'bg-slate-950 text-slate-500 border-slate-700'
+                          : canPlay
+                            ? 'bg-amber-500 text-black border-amber-400'
+                            : 'bg-slate-950 text-slate-600 border-slate-800'
                   }`}
                 >
-                  {livePlayed ? '✓' : blockedThisTurn ? 'Позже' : 'Сыграть'}
+                  {livePlayed ? '✓' : resolving ? '…' : blockedThisTurn ? 'Позже' : 'Сыграть'}
                 </button>
               </div>
             );
@@ -352,7 +364,7 @@ function TurnTab({
 
       {isMyTurn && (
         <div className="grid grid-cols-2 gap-2 pt-1">
-          {canNextTurn && (
+          {canNextTurn ? (
             <button
               type="button"
               onClick={onNextTurn}
@@ -360,15 +372,30 @@ function TurnTab({
             >
               Завершить ход <i className="fa-solid fa-forward ml-1" />
             </button>
-          )}
+          ) : strategyResolutionActive ? (
+            <button
+              type="button"
+              disabled
+              title="Дождитесь окончания розыгрыша карты стратегии"
+              className="col-span-2 bg-slate-900 text-slate-500 border border-slate-700 font-orbitron font-black py-3.5 rounded-2xl text-sm uppercase min-h-[52px] cursor-not-allowed opacity-70"
+            >
+              Завершить ход <i className="fa-solid fa-forward ml-1" />
+            </button>
+          ) : null}
           {canPlay && (
             <button
               type="button"
               onClick={() => onPassTurn(me.id)}
-              disabled={!allStrategiesPlayed}
-              title={!allStrategiesPlayed ? 'Сначала сыграйте все карты стратегии' : ''}
+              disabled={!allStrategiesPlayed || strategyResolutionActive}
+              title={
+                strategyResolutionActive
+                  ? 'Дождитесь окончания розыгрыша карты стратегии'
+                  : !allStrategiesPlayed
+                    ? 'Сначала сыграйте все карты стратегии'
+                    : ''
+              }
               className={`col-span-2 font-bold py-3.5 rounded-2xl text-sm border min-h-[48px] ${
-                allStrategiesPlayed
+                allStrategiesPlayed && !strategyResolutionActive
                   ? 'bg-red-950 text-red-300 border-red-800'
                   : 'bg-slate-900 text-slate-600 border-slate-800 opacity-60'
               }`}
@@ -383,6 +410,17 @@ function TurnTab({
         <div className="text-center text-xs text-slate-500 py-4 px-2">
           Когда снова будет ваш ход, здесь появятся карты и действия.
         </div>
+      )}
+
+      {typeof onOpenProduction === 'function' && (
+        <button
+          type="button"
+          onClick={onOpenProduction}
+          className="w-full flex items-center justify-center gap-2 rounded-2xl border border-cyan-700/70 bg-cyan-950/80 px-3 py-3 text-sm font-bold text-cyan-300 min-h-[48px]"
+        >
+          <i className="fa-solid fa-industry" aria-hidden="true" />
+          Калькулятор производства
+        </button>
       )}
     </div>
   );

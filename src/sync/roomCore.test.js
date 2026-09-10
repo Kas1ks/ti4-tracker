@@ -118,4 +118,38 @@ describe('roomCore', () => {
     expect(again.reclaimed).toBe(false);
     expect(again.seatSecret).not.toBe(joined.seatSecret);
   });
+
+  it('ends the party for everyone and clears seat claims on RESET_GAME', () => {
+    let room = createRoomRecord(normalizeGameState({
+      isGameActive: true,
+      players: [player(1, 'A'), player(2, 'B')],
+    }));
+    const joined = joinRoom(room, { role: ROLES.PLAYER, seatPlayerId: 1 });
+    room = joined.room;
+
+    const ended = applyRoomAction(room, { type: 'RESET_GAME' }, { hostKey: room.hostKey });
+    expect(ended.ok).toBe(true);
+    expect(ended.roomEnded).toBe(true);
+    expect(ended.room.state.isGameActive).toBe(false);
+    expect(ended.room.seatClaims).toEqual({});
+    expect(ended.room.seatSecrets).toEqual({});
+    expect(ended.room.sessions[joined.sessionToken]).toBeUndefined();
+    expect(Object.values(ended.room.sessions).every(s => s.role === ROLES.ADMIN)).toBe(true);
+  });
+
+  it('kicks the seated player when the host removes that seat', () => {
+    let room = createRoomRecord(normalizeGameState({
+      players: [player(1, 'A'), player(2, 'B')],
+    }));
+    const joined = joinRoom(room, { role: ROLES.PLAYER, seatPlayerId: 1 });
+    room = joined.room;
+
+    const removed = applyRoomAction(room, { type: 'REMOVE_PLAYER', playerId: 1 }, { hostKey: room.hostKey });
+    expect(removed.ok).toBe(true);
+    expect(removed.seatRemoved).toBe(true);
+    expect(removed.revokedSessionToken).toBe(joined.sessionToken);
+    expect(removed.room.state.players.find(p => p.id === 1)).toBeUndefined();
+    expect(removed.room.seatClaims[1]).toBeUndefined();
+    expect(removed.room.sessions[joined.sessionToken]).toBeUndefined();
+  });
 });

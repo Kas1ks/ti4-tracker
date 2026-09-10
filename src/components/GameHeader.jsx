@@ -25,6 +25,8 @@ export function GameHeader({
   strategyCards,
   allStrategiesPlayed,
   strategyActionTaken,
+  strategyResolutionActive = false,
+  resolvingCardId = null,
   onPlayStrategy,
   turnTime,
   onNextTurn,
@@ -250,13 +252,15 @@ export function GameHeader({
             strategyCards={strategyCards}
             allStrategiesPlayed={allStrategiesPlayed}
             strategyActionTaken={strategyActionTaken}
+            strategyResolutionActive={strategyResolutionActive}
+            resolvingCardId={resolvingCardId}
             onPlayStrategy={onPlayStrategy}
             turnTime={turnTime}
             onNextTurn={onNextTurn}
             onPassTurn={onPassTurn}
             onOpenCombat={onOpenCombat}
             canPlay={canPlayTurn && seatIsActive}
-            canNextTurn={canNextTurn && seatIsActive}
+            canNextTurn={canNextTurn && seatIsActive && !strategyResolutionActive}
             canCombat={canCombat}
           />
         </div>

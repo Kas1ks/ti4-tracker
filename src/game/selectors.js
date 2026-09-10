@@ -30,6 +30,23 @@ export function isObjectiveScoringActive(state) {
   return !!objectiveScoring(state).active;
 }
 
+export function strategyResolution(state) {
+  return state.round?.strategyResolution || {
+    active: false,
+    cardId: null,
+    playerId: null,
+    responses: {},
+  };
+}
+
+export function isStrategyResolutionActive(state) {
+  return !!strategyResolution(state).active;
+}
+
+export function strategyResolutionResponseFor(state, playerId) {
+  return strategyResolution(state).responses?.[playerId] ?? null;
+}
+
 export function scoringResponseFor(state, playerId) {
   return objectiveScoring(state).responses?.[playerId] || null;
 }

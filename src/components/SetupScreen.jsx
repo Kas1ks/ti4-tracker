@@ -6,11 +6,12 @@ export function SetupScreen({
   targetScore, setTargetScore, usePok, setUsePok, useTe, setUseTe,
   players, updatePlayer, addPlayer, removePlayer, availableFactions,
   isFactionTaken, isColorTaken, handleStartGame,
-  room, roomStatus, roomError, onLeaveRoom,
+  room, roomStatus, roomError, claimedSeats = [], onLeaveRoom,
   isSolo = false,
 }) {
   const roleLabel = room?.role ? (ROLE_LABELS[room.role] || room.role) : null;
   const inLiveRoom = roomStatus === 'live' && room?.roomId;
+  const connectedCount = players.filter(p => claimedSeats.some(id => String(id) === String(p.id))).length;
 
   return (
     <div className="max-w-5xl mx-auto space-y-8">
@@ -21,6 +22,11 @@ export function SetupScreen({
             <div className="font-orbitron font-black text-3xl text-emerald-300 tracking-widest">{room.roomId}</div>
             {roleLabel && (
               <div className="text-xs text-slate-500 mt-1">Вы: {roleLabel}</div>
+            )}
+            {players.length > 0 && (
+              <div className="text-xs font-bold text-emerald-400/90 mt-2">
+                Подключено к местам: {connectedCount}/{players.length}
+              </div>
             )}
           </div>
           <button
@@ -104,19 +110,26 @@ export function SetupScreen({
       </div>
 
       <div className="bg-slate-900 border border-slate-800 p-6 rounded-3xl space-y-5">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
           <h2 className="font-orbitron font-bold text-lg text-cyan-400 uppercase flex items-center gap-2">
             <i className="fa-solid fa-users" /> Игроки и Фракции ({players.length})
           </h2>
-          {players.length < 8 && (
-            <button
-              type="button"
-              onClick={addPlayer}
-              className="bg-slate-800 hover:bg-slate-700 text-cyan-400 border border-slate-700 font-bold px-4 py-2 rounded-xl text-xs md:text-sm transition flex items-center gap-2"
-            >
-              <i className="fa-solid fa-user-plus" /> Добавить игрока
-            </button>
-          )}
+          <div className="flex items-center gap-3">
+            {inLiveRoom && players.length > 0 && (
+              <span className="text-xs font-bold text-slate-500 uppercase tracking-wide">
+                Онлайн: <span className="text-emerald-400">{connectedCount}</span>/{players.length}
+              </span>
+            )}
+            {players.length < 8 && (
+              <button
+                type="button"
+                onClick={addPlayer}
+                className="bg-slate-800 hover:bg-slate-700 text-cyan-400 border border-slate-700 font-bold px-4 py-2 rounded-xl text-xs md:text-sm transition flex items-center gap-2"
+              >
+                <i className="fa-solid fa-user-plus" /> Добавить игрока
+              </button>
+            )}
+          </div>
         </div>
 
         {players.length === 0 ? (
@@ -127,9 +140,17 @@ export function SetupScreen({
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {players.map((p, idx) => {
               const faction = ALL_FACTIONS.find(f => f.id === p.factionId);
+              const isConnected = claimedSeats.some(id => String(id) === String(p.id));
 
               return (
-                <div key={p.id} className="bg-slate-950 p-4 rounded-2xl border border-slate-800 space-y-3 relative">
+                <div
+                  key={p.id}
+                  className={`bg-slate-950 p-4 rounded-2xl border space-y-3 relative ${
+                    isConnected
+                      ? 'border-emerald-500/50 ring-1 ring-emerald-500/20'
+                      : 'border-slate-800'
+                  }`}
+                >
                   <div className="flex items-center justify-between gap-3">
                     <span className="font-orbitron font-bold text-sm text-slate-500">#{idx + 1}</span>
                     <input
@@ -138,6 +159,28 @@ export function SetupScreen({
                       onChange={(e) => updatePlayer(p.id, { name: e.target.value })}
                       className="bg-slate-900 border border-slate-800 px-4 py-1.5 rounded-xl font-bold text-base text-white focus:outline-none focus:border-cyan-400 flex-grow"
                     />
+                    {inLiveRoom && (
+                      <span
+                        className={`flex-shrink-0 text-[10px] font-bold uppercase tracking-wide px-2 py-1 rounded-lg border ${
+                          isConnected
+                            ? 'bg-emerald-950/60 border-emerald-600/60 text-emerald-300'
+                            : 'bg-slate-900 border-slate-700 text-slate-500'
+                        }`}
+                        title={isConnected ? 'Игрок подключился к этому месту' : 'Место ещё свободно'}
+                      >
+                        {isConnected ? (
+                          <>
+                            <i className="fa-solid fa-wifi mr-1" />
+                            В сети
+                          </>
+                        ) : (
+                          <>
+                            <i className="fa-solid fa-hourglass-half mr-1" />
+                            Ждёт
+                          </>
+                        )}
+                      </span>
+                    )}
                     <button
                       type="button"
                       onClick={() => removePlayer(p.id)}

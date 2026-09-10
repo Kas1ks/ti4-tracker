@@ -1,4 +1,10 @@
-import { activePlayer, currentDraftPlayerId, currentVoterId } from '../game/selectors.js';
+import {
+  activePlayer,
+  areAllStrategiesPlayed,
+  currentDraftPlayerId,
+  currentVoterId,
+  isStrategyCardPlayed,
+} from '../game/selectors.js';
 
 export const ROLES = Object.freeze({
   ADMIN: 'admin',
@@ -54,18 +60,42 @@ export function authorizeAction({ role, seatPlayerId, action, state }) {
       if (activePlayer(state)?.id !== seatPlayerId) {
         return { ok: false, error: 'not-your-turn' };
       }
-      if (state.round.strategyActionTaken) {
+      if (state.round.strategyActionTaken || state.round?.strategyResolution?.active) {
         return { ok: false, error: 'already-played-strategy' };
       }
       return { ok: true };
     }
 
+    case 'RESOLVE_STRATEGY': {
+      if (action.playerId !== seatPlayerId) return { ok: false, error: 'not-your-resolve' };
+      if (!state.round?.strategyResolution?.active) {
+        return { ok: false, error: 'resolution-closed' };
+      }
+      const status = state.round.strategyResolution.responses?.[seatPlayerId];
+      if (status == null || status !== 'pending') {
+        return { ok: false, error: 'already-resolved' };
+      }
+      if (action.choice !== 'played' && action.choice !== 'passed') {
+        return { ok: false, error: 'invalid-choice' };
+      }
+      return { ok: true };
+    }
+
     case 'SET_SPEAKER': {
-      if (activePlayer(state)?.id === seatPlayerId) return { ok: true };
+      // Agenda handoff: current speaker may assign the next speaker.
       if (state.politics?.showModal && state.meta.speakerId === seatPlayerId) {
         return { ok: true };
       }
-      return { ok: false, error: 'not-your-turn' };
+      // Politics strategy card: active seat may pick a new speaker before playing it.
+      const ap = activePlayer(state);
+      if (ap?.id === seatPlayerId
+        && !state.round?.strategyActionTaken
+        && !state.round?.strategyResolution?.active
+        && (ap.cards || []).some(c => c.id === 3)
+        && !isStrategyCardPlayed(ap, 3)) {
+        return { ok: true };
+      }
+      return { ok: false, error: 'forbidden' };
     }
 
     case 'FINISH_AGENDA_PHASE': {
@@ -77,12 +107,25 @@ export function authorizeAction({ role, seatPlayerId, action, state }) {
 
     case 'PASS_TURN': {
       if (action.playerId !== seatPlayerId) return { ok: false, error: 'not-your-turn' };
+      if (activePlayer(state)?.id !== seatPlayerId) {
+        return { ok: false, error: 'not-your-turn' };
+      }
+      if (state.round?.strategyResolution?.active) {
+        return { ok: false, error: 'strategy-resolving' };
+      }
+      const seat = state.players.find(p => p.id === seatPlayerId);
+      if (!areAllStrategiesPlayed(seat)) {
+        return { ok: false, error: 'strategy-required' };
+      }
       return { ok: true };
     }
 
     case 'NEXT_TURN': {
       if (activePlayer(state)?.id !== seatPlayerId) {
         return { ok: false, error: 'not-your-turn' };
+      }
+      if (state.round?.strategyResolution?.active) {
+        return { ok: false, error: 'strategy-resolving' };
       }
       return { ok: true };
     }

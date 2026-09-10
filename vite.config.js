@@ -1,9 +1,60 @@
-import { existsSync, readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { existsSync, readFileSync, cpSync, createReadStream, statSync } from 'node:fs';
+import { resolve, join, extname } from 'node:path';
 import { Readable } from 'node:stream';
 import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
 import { handleApi } from './worker/api.js';
+
+const FIGURINES_DIR = resolve(process.cwd(), 'ti4_figurines_8_colors');
+const FIGURINES_URL = '/figurines';
+
+const MIME = {
+  '.webp': 'image/webp',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.svg': 'image/svg+xml',
+};
+
+function figurinesStaticPlugin() {
+  return {
+    name: 'ti4-figurines-static',
+    configureServer(server) {
+      server.middlewares.use((req, res, next) => {
+        if (!req.url?.startsWith(`${FIGURINES_URL}/`)) {
+          next();
+          return;
+        }
+        try {
+          const rel = decodeURIComponent(req.url.slice(FIGURINES_URL.length + 1).split('?')[0]);
+          if (!rel || rel.includes('..')) {
+            res.statusCode = 400;
+            res.end('bad path');
+            return;
+          }
+          const file = join(FIGURINES_DIR, rel);
+          if (!existsSync(file) || !statSync(file).isFile()) {
+            res.statusCode = 404;
+            res.end('not found');
+            return;
+          }
+          res.setHeader('Content-Type', MIME[extname(file).toLowerCase()] || 'application/octet-stream');
+          res.setHeader('Cache-Control', 'public, max-age=86400');
+          createReadStream(file).pipe(res);
+        } catch (err) {
+          console.error('[figurines]', err);
+          res.statusCode = 500;
+          res.end('error');
+        }
+      });
+    },
+    closeBundle() {
+      if (!existsSync(FIGURINES_DIR)) return;
+      const out = resolve(process.cwd(), 'dist/figurines');
+      cpSync(FIGURINES_DIR, out, { recursive: true });
+    },
+  };
+}
 
 function readCloudSecrets() {
   const file = resolve(process.cwd(), 'cloud.local.json');
@@ -104,5 +155,11 @@ function cloudApiPlugin(mode) {
 }
 
 export default defineConfig(({ mode }) => ({
-  plugins: [react(), cloudApiPlugin(mode)],
+  plugins: [react(), cloudApiPlugin(mode), figurinesStaticPlugin()],
+  server: {
+    watch: {
+      // Large binary packs — watching them can throw EBUSY on Windows.
+      ignored: ['**/ti4_figurines_8_colors/**'],
+    },
+  },
 }));

@@ -25,6 +25,9 @@ import { DraftModal } from './components/DraftModal';
 import { PoliticsModal } from './components/PoliticsModal';
 import { CombatModal } from './components/CombatModal';
 import { SpeakerSelectionModal } from './components/SpeakerSelectionModal';
+import { StrategyResolutionModal } from './components/StrategyResolutionModal';
+import { StrategyResolutionBanner } from './components/StrategyResolutionBanner';
+import { ProductionCalculatorModal } from './components/ProductionCalculatorModal';
 import { ROLES } from './sync/permissions';
 
 function App() {
@@ -61,7 +64,7 @@ function App() {
   const { isGameActive, players } = game;
   const { targetScore, roundNumber, usePok, useTe, speakerId, isPoliticsActive } = game.meta;
   const { active: objectives, completions } = game.objectives;
-  const { active: roundActive, passed, turnStartedAt, strategyActionTaken } = game.round;
+  const { active: roundActive, passed, turnStartedAt, strategyActionTaken, strategyResolution } = game.round;
   const {
     queue: draftQueue, assignments: draftAssignments, currentQueueIndex,
     step: draftStep, pickOrder: draftPickOrder, showModal: showDraftModal,
@@ -117,9 +120,19 @@ function App() {
     }
   }, [objectiveScoring?.active]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const resetGameState = () => {
+  useEffect(() => {
+    if (strategyResolution?.active) {
+      ui.ensureExpanded('strategyResolution');
+    }
+  }, [strategyResolution?.active]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const resolveStrategy = (playerId, choice) => {
+    dispatch({ type: 'RESOLVE_STRATEGY', playerId, choice });
+  };
+
+  const resetGameState = async () => {
     setSoloSetup(false);
-    resetLocalGame();
+    await resetLocalGame();
     ui.closeEndGameUi();
   };
 
@@ -205,6 +218,8 @@ function App() {
         strategyCards={strategyCards}
         allStrategiesPlayed={allStrategiesPlayed}
         strategyActionTaken={!!strategyActionTaken}
+        strategyResolutionActive={!!strategyResolution?.active}
+        resolvingCardId={strategyResolution?.cardId ?? null}
         onPlayStrategy={dialogs.playStrategyCard}
         turnTime={turnTime}
         onNextTurn={() => dispatch({ type: 'NEXT_TURN' })}
@@ -263,6 +278,7 @@ function App() {
             room={room}
             roomStatus={roomStatus}
             roomError={roomError}
+            claimedSeats={room?.claimedSeats || []}
             onLeaveRoom={handleLeaveRoom}
             isSolo={soloSetup && !hasRoomSession}
           />
@@ -281,6 +297,8 @@ function App() {
                 strategyCards={strategyCards}
                 allStrategiesPlayed={allStrategiesPlayed}
                 strategyActionTaken={!!strategyActionTaken}
+                strategyResolutionActive={!!strategyResolution?.active}
+                resolvingCardId={strategyResolution?.cardId ?? null}
                 turnTime={turnTime}
                 onPlayStrategy={dialogs.playStrategyCard}
                 onNextTurn={() => dispatch({ type: 'NEXT_TURN' })}
@@ -297,7 +315,12 @@ function App() {
                 onPassScoring={(playerId) => dispatch({ type: 'PASS_OBJECTIVE_SCORING', playerId })}
                 roundActive={roundActive}
                 canPlay={!!mySeatPlayer && (!perms?.seatPlayerId || activePlayer?.id === perms.seatPlayerId)}
-                canNextTurn={!!mySeatPlayer && (!perms?.seatPlayerId || activePlayer?.id === perms.seatPlayerId)}
+                canNextTurn={
+                  !!mySeatPlayer
+                  && (!perms?.seatPlayerId || activePlayer?.id === perms.seatPlayerId)
+                  && !strategyResolution?.active
+                }
+                onOpenProduction={() => ui.setShowProductionCalculator(true)}
               />
             )}
             <div className={isPlayerClient ? 'hidden md:block' : undefined}>
@@ -323,6 +346,11 @@ function App() {
                 speakerId={speakerId}
                 handleAddSecret={dialogs.handleAddSecret}
                 eliminatePlayer={dialogs.eliminatePlayer}
+                setSpeaker={
+                  perms?.role === ROLES.ADMIN
+                    ? (playerId) => dispatch({ type: 'SET_SPEAKER', playerId })
+                    : undefined
+                }
                 releaseSeat={
                   perms?.isLive && perms?.role === ROLES.ADMIN
                     ? async (playerId) => {
@@ -488,11 +516,52 @@ function App() {
           }
         />
 
+        <StrategyResolutionModal
+          show={!!strategyResolution?.active && !isPlayerClient}
+          minimized={!!ui.minimizedModals.strategyResolution}
+          resolution={strategyResolution}
+          players={players}
+          canResolveAny={perms.can('phases') || perms.role === ROLES.ADMIN}
+          onResolve={resolveStrategy}
+          onMinimize={() => ui.toggleMinimize('strategyResolution')}
+          onClose={() => ui.ensureMinimized('strategyResolution')}
+        />
+
+        {isPlayerClient && perms?.seatPlayerId != null && (
+          <StrategyResolutionBanner
+            show={!!strategyResolution?.active}
+            cardId={strategyResolution?.cardId}
+            myStatus={strategyResolution?.responses?.[perms.seatPlayerId]}
+            onResolve={(choice) => resolveStrategy(perms.seatPlayerId, choice)}
+          />
+        )}
+
+        <ProductionCalculatorModal
+          show={!!ui.showProductionCalculator}
+          playerColor={mySeatPlayer?.color || activePlayer?.color}
+          playerName={mySeatPlayer?.name || activePlayer?.name}
+          onClose={() => ui.setShowProductionCalculator(false)}
+        />
+
         <GameSummaryModal
           show={ui.showGameSummaryModal}
           onClose={() => { ui.setShowGameSummaryModal(false); resetGameState(); }}
         />
       </main>
+
+      {isGameActive && (
+        <button
+          type="button"
+          onClick={() => ui.setShowProductionCalculator(true)}
+          className={`fixed z-40 items-center gap-2 rounded-xl border border-cyan-700 bg-slate-900/95 px-3 py-2.5 text-xs font-bold text-cyan-300 shadow-lg hover:bg-slate-800 transition left-4 bottom-4 ${
+            isPlayerClient ? 'hidden md:flex' : 'flex'
+          }`}
+          title="Калькулятор производства"
+        >
+          <i className="fa-solid fa-industry" aria-hidden="true" />
+          <span>Производство</span>
+        </button>
+      )}
 
       <MinimizedModalControls
         minimizedModals={ui.minimizedModals}
@@ -501,6 +570,7 @@ function App() {
         showCombatModal={ui.showCombatModal}
         showStatusPhaseModal={showStatusPhaseModal}
         scoringActive={!!objectiveScoring?.active}
+        strategyResolutionActive={!!strategyResolution?.active && !isPlayerClient}
         onRestore={ui.toggleMinimize}
       />
       <AppDialog dialog={dialog} onClose={close} />

@@ -33,8 +33,9 @@ export function EndGameModal({ showEndGameModal, setShowEndGameModal, players, g
                                                 const topPlayer = sorted[0];
                                                 const winner = topPlayer && getPlayerScore(topPlayer.id) > 0 ? topPlayer : null;
 
-                                                await saveGameToCloud(winner); 
+                                                await saveGameToCloud(winner);
                                                 setShowEndGameModal(false);
+                                                await resetGameState();
                                                 setShowGameSummaryModal(true);
                                             }}
                                             className="w-full bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-black font-orbitron font-extrabold py-3.5 px-4 rounded-2xl text-xs md:text-sm shadow-lg transition transform active:scale-95 uppercase flex items-center justify-center gap-2"
@@ -43,9 +44,10 @@ export function EndGameModal({ showEndGameModal, setShowEndGameModal, players, g
                                         </button>
 
                                         <button
-                                            onClick={() => {
+                                            onClick={async () => {
                                                 localStorage.removeItem('ti4_gameSummary'); // Чистим, если вышли без сохранения
-                                                resetGameState();
+                                                setShowEndGameModal(false);
+                                                await resetGameState();
                                             }}
                                             className="w-full bg-slate-800 hover:bg-red-950/60 hover:border-red-800/80 text-slate-300 hover:text-red-300 font-bold py-3.5 px-4 rounded-2xl text-xs md:text-sm border border-slate-700 transition flex items-center justify-center gap-2"
                                         >

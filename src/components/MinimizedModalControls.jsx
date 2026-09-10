@@ -5,12 +5,20 @@ export function MinimizedModalControls({
   showCombatModal,
   showStatusPhaseModal,
   scoringActive = false,
+  strategyResolutionActive = false,
   onRestore,
 }) {
   const controls = [
     { id: 'draft', show: showDraftModal, label: 'Драфт карт', icon: 'fa-layer-group', className: 'bg-slate-800 border border-amber-700 text-amber-400' },
     { id: 'politics', show: showPoliticsModal, label: 'Политика', icon: 'fa-gavel', className: 'bg-slate-800 border border-purple-700 text-purple-400' },
     { id: 'combat', show: showCombatModal, label: 'Бой', icon: 'fa-crosshairs', className: 'bg-slate-800 border border-red-700 text-red-400' },
+    {
+      id: 'strategyResolution',
+      show: strategyResolutionActive,
+      label: 'Розыгрыш стратегии',
+      icon: 'fa-clone',
+      className: 'bg-slate-800 border border-amber-500 text-amber-300',
+    },
     {
       id: 'objectiveScoring',
       show: scoringActive,

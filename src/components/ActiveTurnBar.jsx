@@ -7,6 +7,8 @@ export function ActiveTurnBar({
   strategyCards = [],
   allStrategiesPlayed,
   strategyActionTaken = false,
+  strategyResolutionActive = false,
+  resolvingCardId = null,
   onPlayStrategy,
   turnTime,
   onNextTurn,
@@ -57,8 +59,9 @@ export function ActiveTurnBar({
         <div className="flex flex-wrap items-center gap-2 max-md:w-full max-md:grid max-md:grid-cols-1">
           {strategyCards.map((card) => {
             const played = isStrategyCardPlayed(activePlayer, card.id);
-            const blockedThisTurn = !played && strategyActionTaken;
-            const disabled = !canPlay || played || blockedThisTurn;
+            const resolving = strategyResolutionActive && resolvingCardId === card.id;
+            const blockedThisTurn = !played && strategyActionTaken && !resolving;
+            const disabled = !canPlay || played || blockedThisTurn || resolving;
             return (
               <div
                 key={card.id}
@@ -74,17 +77,25 @@ export function ActiveTurnBar({
                   type="button"
                   onClick={() => onPlayStrategy(card.id)}
                   disabled={disabled}
-                  title={blockedThisTurn ? 'Вторая карта — на следующем ходу' : undefined}
+                  title={
+                    resolving
+                      ? 'Идёт розыгрыш карты'
+                      : blockedThisTurn
+                        ? 'Вторая карта — на следующем ходу'
+                        : undefined
+                  }
                   className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition whitespace-nowrap max-md:min-h-[40px] max-md:py-2 ${played
                     ? 'bg-emerald-950 border-emerald-500 text-emerald-300'
-                    : blockedThisTurn
-                      ? 'bg-slate-900 text-slate-500 border-slate-700 cursor-not-allowed'
-                      : canPlay
-                        ? 'bg-amber-500 hover:bg-amber-400 text-black border-amber-400 shadow'
-                        : 'bg-slate-900 text-slate-600 border-slate-800 cursor-not-allowed opacity-60'
+                    : resolving
+                      ? 'bg-amber-950 border-amber-500 text-amber-300 cursor-wait'
+                      : blockedThisTurn
+                        ? 'bg-slate-900 text-slate-500 border-slate-700 cursor-not-allowed'
+                        : canPlay
+                          ? 'bg-amber-500 hover:bg-amber-400 text-black border-amber-400 shadow'
+                          : 'bg-slate-900 text-slate-600 border-slate-800 cursor-not-allowed opacity-60'
                     }`}
                 >
-                  {played ? '✓ Сыграна' : blockedThisTurn ? 'След. ход' : 'Сыграть'}
+                  {played ? '✓ Сыграна' : resolving ? 'Розыгрыш…' : blockedThisTurn ? 'След. ход' : 'Сыграть'}
                 </button>
               </div>
             );
@@ -105,7 +116,7 @@ export function ActiveTurnBar({
       </div>
 
       <div className="flex items-center gap-3 max-md:w-full max-md:grid max-md:grid-cols-2">
-        {canNextTurn && (
+        {canNextTurn ? (
           <button
             type="button"
             onClick={onNextTurn}
@@ -113,14 +124,29 @@ export function ActiveTurnBar({
           >
             Завершить ход <i className="fa-solid fa-forward" />
           </button>
-        )}
+        ) : strategyResolutionActive ? (
+          <button
+            type="button"
+            disabled
+            title="Дождитесь окончания розыгрыша карты стратегии"
+            className="bg-slate-900 text-slate-500 border border-slate-700 font-extrabold px-5 py-3 rounded-xl text-sm md:text-base flex items-center justify-center gap-2 font-orbitron uppercase max-md:col-span-2 max-md:min-h-[48px] cursor-not-allowed opacity-70"
+          >
+            Завершить ход <i className="fa-solid fa-forward" />
+          </button>
+        ) : null}
         {canPlay && (
           <button
             type="button"
             onClick={() => onPassTurn(activePlayer.id)}
-            disabled={!allStrategiesPlayed}
-            title={!allStrategiesPlayed ? 'Сначала сыграйте все карты стратегии!' : ''}
-            className={`font-bold px-4 py-3 rounded-xl text-sm border transition max-md:min-h-[48px] ${allStrategiesPlayed
+            disabled={!allStrategiesPlayed || strategyResolutionActive}
+            title={
+              strategyResolutionActive
+                ? 'Дождитесь окончания розыгрыша карты стратегии'
+                : !allStrategiesPlayed
+                  ? 'Сначала сыграйте все карты стратегии!'
+                  : ''
+            }
+            className={`font-bold px-4 py-3 rounded-xl text-sm border transition max-md:min-h-[48px] ${allStrategiesPlayed && !strategyResolutionActive
               ? 'bg-red-950 hover:bg-red-900 text-red-300 border-red-800 cursor-pointer'
               : 'bg-slate-900 text-slate-600 border-slate-800 cursor-not-allowed opacity-60'
               }`}

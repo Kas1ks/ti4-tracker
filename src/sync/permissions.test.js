@@ -171,6 +171,103 @@ describe('authorizeAction', () => {
       state,
     }).ok).toBe(true);
   });
+
+  it('blocks PASS_TURN off-turn or before strategies are played', () => {
+    let state = normalizeGameState({
+      isGameActive: true,
+      players: [
+        { ...player(1, 'A'), cards: [{ id: 1, name: 'Leadership' }] },
+        { ...player(2, 'B'), cards: [{ id: 2, name: 'Diplomacy' }] },
+      ],
+      speakerId: 1,
+    });
+    state = {
+      ...state,
+      round: {
+        ...state.round,
+        active: true,
+        turnOrderIds: [1, 2],
+        activeTurnIdx: 0,
+        passed: {},
+      },
+    };
+
+    expect(authorizeAction({
+      role: ROLES.PLAYER,
+      seatPlayerId: 2,
+      action: { type: 'PASS_TURN', playerId: 2 },
+      state,
+    }).error).toBe('not-your-turn');
+
+    expect(authorizeAction({
+      role: ROLES.PLAYER,
+      seatPlayerId: 1,
+      action: { type: 'PASS_TURN', playerId: 1 },
+      state,
+    }).error).toBe('strategy-required');
+
+    state = {
+      ...state,
+      players: state.players.map(p => (
+        p.id === 1 ? { ...p, playedCardIds: [1], strategyPlayed: true } : p
+      )),
+    };
+    expect(authorizeAction({
+      role: ROLES.PLAYER,
+      seatPlayerId: 1,
+      action: { type: 'PASS_TURN', playerId: 1 },
+      state,
+    }).ok).toBe(true);
+  });
+
+  it('limits SET_SPEAKER for players to politics handoff or Politics card', () => {
+    let state = normalizeGameState({
+      isGameActive: true,
+      players: [
+        { ...player(1, 'A'), cards: [{ id: 1, name: 'Leadership' }] },
+        { ...player(2, 'B'), cards: [{ id: 3, name: 'Politics' }] },
+      ],
+      speakerId: 1,
+    });
+    state = {
+      ...state,
+      round: {
+        ...state.round,
+        active: true,
+        turnOrderIds: [1, 2],
+        activeTurnIdx: 0,
+        passed: {},
+      },
+    };
+
+    expect(authorizeAction({
+      role: ROLES.PLAYER,
+      seatPlayerId: 1,
+      action: { type: 'SET_SPEAKER', playerId: 2 },
+      state,
+    }).error).toBe('forbidden');
+
+    state = { ...state, round: { ...state.round, activeTurnIdx: 1 } };
+    expect(authorizeAction({
+      role: ROLES.PLAYER,
+      seatPlayerId: 2,
+      action: { type: 'SET_SPEAKER', playerId: 1 },
+      state,
+    }).ok).toBe(true);
+
+    state = {
+      ...state,
+      politics: { ...state.politics, showModal: true },
+      round: { ...state.round, activeTurnIdx: 0 },
+      meta: { ...state.meta, speakerId: 1 },
+    };
+    expect(authorizeAction({
+      role: ROLES.PLAYER,
+      seatPlayerId: 1,
+      action: { type: 'SET_SPEAKER', playerId: 2 },
+      state,
+    }).ok).toBe(true);
+  });
 });
 
 describe('can (UI capabilities)', () => {

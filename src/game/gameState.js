@@ -33,6 +33,14 @@ export const EMPTY_OBJECTIVE_SCORING = Object.freeze({
   currentIdx: 0,
 });
 
+/** Primary strategy play: all seats must answer played/passed before the card commits. */
+export const EMPTY_STRATEGY_RESOLUTION = Object.freeze({
+  active: false,
+  cardId: null,
+  playerId: null,
+  responses: {},
+});
+
 export const freshStage1Deck = () =>
   shuffleArray(BASE_OBJECTIVES.filter(obj => obj.stage === 1));
 
@@ -83,6 +91,7 @@ export function createEmptyGameState() {
       turnTime: 0,
       turnStartedAt: null,
       strategyActionTaken: false,
+      strategyResolution: { ...EMPTY_STRATEGY_RESOLUTION },
     },
     draft: {
       queue: [],
@@ -148,6 +157,7 @@ function toFlat(raw) {
     turnTime: round.turnTime,
     turnStartedAt: round.turnStartedAt,
     strategyActionTaken: round.strategyActionTaken,
+    strategyResolution: round.strategyResolution,
     draftQueue: draft.queue,
     draftAssignments: draft.assignments,
     currentQueueIndex: draft.currentQueueIndex,
@@ -190,6 +200,25 @@ function normalizeObjectiveScoring(value) {
     responses,
     orderIds,
     currentIdx: orderIds.length ? Math.min(currentIdx, orderIds.length - 1) : 0,
+  };
+}
+
+function normalizeStrategyResolution(value) {
+  const raw = asRecord(value);
+  if (!raw.active) return { ...EMPTY_STRATEGY_RESOLUTION };
+  const responses = {};
+  Object.entries(asRecord(raw.responses)).forEach(([playerId, status]) => {
+    const key = typeof playerId === 'number' ? playerId : Number(playerId);
+    if (!Number.isFinite(key)) return;
+    responses[key] = status === 'played' || status === 'passed' ? status : 'pending';
+  });
+  const cardId = Number(raw.cardId);
+  const playerId = Number(raw.playerId);
+  return {
+    active: true,
+    cardId: Number.isFinite(cardId) ? cardId : null,
+    playerId: Number.isFinite(playerId) ? playerId : null,
+    responses,
   };
 }
 
@@ -261,6 +290,7 @@ export function normalizeGameState(raw) {
       turnTime: asNumber(flat.turnTime, 0),
       turnStartedAt: Number.isFinite(flat.turnStartedAt) ? flat.turnStartedAt : null,
       strategyActionTaken: !!flat.strategyActionTaken,
+      strategyResolution: normalizeStrategyResolution(flat.strategyResolution),
     },
     draft: {
       queue: draftQueue,

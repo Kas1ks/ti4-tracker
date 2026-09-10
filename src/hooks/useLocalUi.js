@@ -6,6 +6,7 @@ export function useLocalUi() {
   const [showGameSummaryModal, setShowGameSummaryModal] = useState(false);
   const [showCombatModal, setShowCombatModal] = useState(false);
   const [showSpeakerSelectionModal, setShowSpeakerSelectionModal] = useState(false);
+  const [showProductionCalculator, setShowProductionCalculator] = useState(false);
   const [minimizedModals, setMinimizedModals] = useState({});
   const [combatOpponentId, setCombatOpponentId] = useState(null);
   const [combatHits, setCombatHits] = useState({ attacker: 0, defender: 0 });
@@ -47,6 +48,7 @@ export function useLocalUi() {
     showGameSummaryModal, setShowGameSummaryModal,
     showCombatModal, setShowCombatModal,
     showSpeakerSelectionModal, setShowSpeakerSelectionModal,
+    showProductionCalculator, setShowProductionCalculator,
     minimizedModals, toggleMinimize, ensureMinimized, ensureExpanded,
     combatOpponentId, setCombatOpponentId,
     combatHits, setCombatHits,

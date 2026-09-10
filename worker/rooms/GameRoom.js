@@ -169,7 +169,22 @@ export class GameRoom {
           state: result.room.state,
           action: result.action,
           claimedSeats: publicRoomView(result.room).claimedSeats,
+          roomEnded: !!result.roomEnded,
+          seatRemoved: !!result.seatRemoved,
+          seatPlayerId: result.seatPlayerId ?? null,
+          revokedSessionToken: result.revokedSessionToken || null,
         });
+        if (result.seatRemoved && result.revokedSessionToken) {
+          this.broadcast({
+            type: 'seats',
+            claimedSeats: publicRoomView(result.room).claimedSeats,
+            reclaimed: true,
+            released: true,
+            seatRemoved: true,
+            seatPlayerId: result.seatPlayerId,
+            revokedSessionToken: result.revokedSessionToken,
+          });
+        }
       }
 
       return Response.json({

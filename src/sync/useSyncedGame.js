@@ -116,10 +116,13 @@ export function useSyncedGame() {
           && msg.revokedSessionToken
           && current.sessionToken === msg.revokedSessionToken;
         if (kicked) {
+          clearGameState();
           ejectStaleSession(
-            msg.released
-              ? 'Хост освободил ваше место. Войдите снова, когда будете готовы.'
-              : 'Место занято с другого устройства. Войдите снова со своим кодом места.',
+            msg.seatRemoved
+              ? 'Хост удалил ваше место.'
+              : msg.released
+                ? 'Хост освободил ваше место. Войдите снова, когда будете готовы.'
+                : 'Место занято с другого устройства. Войдите снова со своим кодом места.',
           );
           return;
         }
@@ -135,6 +138,31 @@ export function useSyncedGame() {
           if (msg.seq < seqRef.current) return;
           seqRef.current = msg.seq;
         }
+
+        const current = roomRef.current;
+        const endedByHost = msg.type === 'state'
+          && (msg.roomEnded || msg.action?.type === 'RESET_GAME');
+        if (endedByHost && current && current.role !== ROLES.ADMIN) {
+          clearGameState();
+          ejectStaleSession('Партия завершена хостом.');
+          return;
+        }
+
+        const seatGone = msg.type === 'state'
+          && current?.role === ROLES.PLAYER
+          && current.seatPlayerId != null
+          && !msg.state.players.some(p => String(p.id) === String(current.seatPlayerId));
+        if (seatGone
+          || (msg.revokedSessionToken && current?.sessionToken === msg.revokedSessionToken)) {
+          clearGameState();
+          ejectStaleSession(
+            msg.seatRemoved || seatGone
+              ? 'Хост удалил ваше место.'
+              : 'Сессия места устарела. Войдите снова.',
+          );
+          return;
+        }
+
         setGame({ type: '__REPLACE__', state: msg.state });
         setRoom(prev => (prev ? {
           ...prev,
@@ -180,7 +208,7 @@ export function useSyncedGame() {
     // Soft client gate (server still enforces)
     if (current.role === ROLES.PLAYER) {
       const soft = [
-        'PICK_CARD', 'UNDO_PICK', 'PLAY_STRATEGY', 'PASS_TURN', 'NEXT_TURN',
+        'PICK_CARD', 'UNDO_PICK', 'PLAY_STRATEGY', 'RESOLVE_STRATEGY', 'PASS_TURN', 'NEXT_TURN',
         'SELECT_SCORING_PUBLIC', 'TOGGLE_SCORING_SECRET',
         'CONFIRM_OBJECTIVE_SCORING', 'PASS_OBJECTIVE_SCORING',
         'SET_SPEAKER',
@@ -312,8 +340,22 @@ export function useSyncedGame() {
     seqRef.current = 0;
   }, []);
 
-  const resetLocalGame = useCallback(() => {
+  /** End the live party for everyone, then return this client to the hub. */
+  const resetLocalGame = useCallback(async () => {
+    const current = roomRef.current;
     clearGameState();
+
+    if (current?.roomId && (current.role === ROLES.ADMIN || current.hostKey)) {
+      try {
+        await postRoomAction(current.roomId, { type: 'RESET_GAME' }, {
+          sessionToken: current.sessionToken,
+          hostKey: current.hostKey,
+        });
+      } catch (err) {
+        console.error('[room] end party failed', err);
+      }
+    }
+
     setGame({ type: 'RESET_GAME' });
     leaveRoom();
   }, [leaveRoom]);
