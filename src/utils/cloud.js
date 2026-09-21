@@ -9,17 +9,27 @@ async function api(path, options = {}) {
     },
   });
 
+  const contentType = response.headers.get('content-type') || '';
   let data = null;
-  try {
-    data = await response.json();
-  } catch {
-    data = null;
+  if (contentType.includes('application/json')) {
+    try {
+      data = await response.json();
+    } catch {
+      data = null;
+    }
   }
 
   if (!response.ok) {
     const err = new Error(data?.error || `api-${response.status}`);
     err.status = response.status;
     err.data = data;
+    throw err;
+  }
+
+  if (!contentType.includes('application/json')) {
+    const err = new Error('api-html-fallback');
+    err.status = 502;
+    err.data = { error: 'html-fallback' };
     throw err;
   }
 

@@ -40,7 +40,10 @@ function pinMatches(env, pin) {
  */
 export async function handleApi(request, env) {
   const url = new URL(request.url);
-  const { pathname } = url;
+  let { pathname } = url;
+  if (pathname.length > 1 && pathname.endsWith('/')) {
+    pathname = pathname.slice(0, -1);
+  }
   const method = request.method.toUpperCase();
 
   if (method === 'OPTIONS') {

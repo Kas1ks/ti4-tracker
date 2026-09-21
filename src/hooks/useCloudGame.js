@@ -120,11 +120,15 @@ export function useCloudGame({ game, dispatch, getPlayerScore, uiAlert, uiConfir
       });
       return true;
     } catch (err) {
-      await uiAlert(cloudErrorMessage(err, 'Ошибка при сохранении в облако'), {
-        title: 'Ошибка',
-        variant: 'danger',
-      });
-      return false;
+      // Local summary is already written — still allow exit so the host is not stuck.
+      await uiAlert(
+        `${cloudErrorMessage(err, 'Не удалось сохранить в облако')}\n\nИтоги партии сохранены на этом устройстве. Можно выйти.`,
+        {
+          title: 'Облако недоступно',
+          variant: 'danger',
+        },
+      );
+      return true;
     }
   };
 
