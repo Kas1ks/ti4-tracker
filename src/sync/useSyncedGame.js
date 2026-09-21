@@ -297,11 +297,11 @@ export function useSyncedGame() {
       });
   }, [applyAuthoritativeState]);
 
-  const startHostRoom = useCallback(async () => {
+  const startHostRoom = useCallback(async (createSecret) => {
     setRoomStatus('connecting');
     setRoomError(null);
     try {
-      const created = await createRoom(game);
+      const created = await createRoom(game, { createSecret });
       seqRef.current = created.seq || 0;
       const next = {
         roomId: created.roomId,

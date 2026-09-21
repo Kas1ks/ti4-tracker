@@ -14,8 +14,8 @@ Open the URL Vite prints (usually http://localhost:5173).
 ### Local cloud (optional)
 
 1. Copy `.env.example` → `.env.local`
-2. Fill `JSONBIN_BIN_ID`, `JSONBIN_MASTER_KEY`, `ADMIN_PIN` (no `VITE_` prefix)
-3. Or use `cloud.local.json`: `{ "binId", "masterKey", "adminPin" }`
+2. Fill `JSONBIN_BIN_ID`, `JSONBIN_MASTER_KEY`, `ADMIN_PIN`, `ROOM_CREATE_SECRET` (no `VITE_` prefix)
+3. Or use `cloud.local.json`: `{ "binId", "masterKey", "adminPin", "roomCreateSecret" }`
 
 Cloud buttons are on by default. Set `VITE_CLOUD_ENABLED=false` only if you want to hide them.
 
@@ -29,7 +29,8 @@ Vite serves `/api/*` via a local middleware that keeps secrets on the Node side.
   - `JSONBIN_BIN_ID`
   - `JSONBIN_MASTER_KEY`
   - `ADMIN_PIN`
-- Remove old `VITE_JSONBIN_*` / `VITE_ADMIN_PIN` from **build** env — they must not appear in `dist/`
+  - `ROOM_CREATE_SECRET` — required to **create** live rooms (join stays public)
+- Remove old `VITE_JSONBIN_*` / `VITE_ADMIN_PIN` / `VITE_ROOM_CREATE_SECRET` from **build** env — they must not appear in `dist/`
 - Optional: `VITE_CLOUD_ENABLED=false` only if you want to hide cloud UI
 - Do not use `public/_redirects` with `/* /index.html 200` — Workers treats that as an infinite loop
 
@@ -37,8 +38,8 @@ Vite serves `/api/*` via a local middleware that keeps secrets on the Node side.
 
 | Method | Path | Notes |
 |--------|------|-------|
-| GET | `/api/health` | Diagnostics (`rooms: memory \| durable-object`, bin flags) |
-| POST | `/api/rooms` | Create live room → `{ roomId, hostKey, state, seq }` |
+| GET | `/api/health` | Diagnostics (`rooms: memory \| durable-object`, bin / create-secret flags) |
+| POST | `/api/rooms` | Create live room; body `{ state, createSecret }` → `{ roomId, hostKey, state, seq }` |
 | GET | `/api/rooms/:id/snapshot` | Current room state |
 | POST | `/api/rooms/:id/actions` | Body `{ action }` — server applies the game reducer |
 | GET | `/api/rooms/:id/events` | SSE stream of state updates |
@@ -52,9 +53,9 @@ Vite serves `/api/*` via a local middleware that keeps secrets on the Node side.
 ### Live rooms (Phase 6 MVP)
 
 - **Solo** still works on one device via `localStorage`.
-- On the setup screen: **Создать комнату** → share the 6-character code; others **Войти**.
+- **Create party** asks for `ROOM_CREATE_SECRET` (host only). Guests use **Join by code** — no secret.
 - Game actions sync through the server reducer; `TICK` (turn timer) stays local.
-- `npm run dev`: rooms are **in-memory** on the Vite process (two tabs work; restart clears rooms).
+- `npm run dev`: rooms are **in-memory** on the Vite process (two tabs work; restart clears rooms). Set `ROOM_CREATE_SECRET` in `.env.local` / `.dev.vars`.
 - Production: one Cloudflare **Durable Object** per room (`GAME_ROOMS` in `wrangler.toml`). First deploy applies migration `v1-game-rooms`.
 - Room TTL: each join/action refreshes `lastActivityAt` / `expiresAt` (**48h** idle). After host `RESET_GAME`, grace is **2h**, then the DO alarm wipes storage. Stale memory rooms are dropped on access in dev.
 

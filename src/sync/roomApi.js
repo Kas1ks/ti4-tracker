@@ -9,11 +9,14 @@ async function readError(res) {
   }
 }
 
-export async function createRoom(state) {
+export async function createRoom(state, { createSecret } = {}) {
   const res = await fetch('/api/rooms', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ state: state ?? null }),
+    body: JSON.stringify({
+      state: state ?? null,
+      createSecret: createSecret ?? '',
+    }),
   });
   if (!res.ok) throw new Error(await readError(res));
   return res.json();

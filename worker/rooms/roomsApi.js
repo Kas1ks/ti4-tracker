@@ -8,6 +8,7 @@ import {
   memorySubscribe,
 } from './memoryRooms.js';
 import { makeRoomId, publicRoomView, adminSessionFromRoom } from './roomCore.js';
+import { assertRoomCreateAllowed } from './roomCreateAuth.js';
 
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -46,6 +47,8 @@ export async function handleRoomsApi(request, env) {
 
   if (method === 'POST' && pathname === '/api/rooms') {
     const body = await readJsonBody(request);
+    const gate = assertRoomCreateAllowed(env, body?.createSecret);
+    if (!gate.ok) return json({ error: gate.error }, gate.status);
 
     if (hasDurableRooms(env)) {
       const roomId = makeRoomId();

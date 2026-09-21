@@ -8,6 +8,7 @@ import {
   resolveMasterKey,
 } from './jsonbin.js';
 import { handleRoomsApi } from './rooms/roomsApi.js';
+import { resolveRoomCreateSecret } from './rooms/roomCreateAuth.js';
 
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -61,6 +62,7 @@ export async function handleApi(request, env) {
       hasBinId: Boolean(resolveBinId(env)),
       hasMasterKey: Boolean(resolveMasterKey(env)),
       hasAdminPin: Boolean(resolveAdminPin(env)),
+      hasRoomCreateSecret: Boolean(resolveRoomCreateSecret(env)),
     });
   }
 

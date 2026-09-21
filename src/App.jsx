@@ -281,8 +281,23 @@ function App() {
 
   const handleCreateRoom = async () => {
     setSoloSetup(false);
+    const createSecret = await uiPrompt(
+      'Введите секрет создания партии (ROOM_CREATE_SECRET). Другие игроки могут только входить по коду.',
+      {
+        title: 'Создать партию',
+        inputType: 'password',
+        placeholder: 'Секрет хоста',
+        confirmLabel: 'Создать',
+        variant: 'info',
+      },
+    );
+    if (createSecret === null) return;
+    if (!String(createSecret).trim()) {
+      await uiAlert('Секрет не может быть пустым.', { title: 'Ошибка', variant: 'danger' });
+      return;
+    }
     try {
-      const created = await startHostRoom();
+      const created = await startHostRoom(String(createSecret));
       try {
         await navigator.clipboard.writeText(created.roomId);
       } catch {
@@ -293,7 +308,13 @@ function App() {
         variant: 'success',
       });
     } catch (err) {
-      await uiAlert(`Не удалось создать комнату: ${err.message || err}`, {
+      const code = String(err.message || err);
+      const message = code === 'forbidden'
+        ? 'Неверный секрет создания партии.'
+        : code === 'create-secret-not-configured'
+          ? 'На сервере не задан ROOM_CREATE_SECRET. Добавьте его в Worker Secrets / .dev.vars.'
+          : `Не удалось создать комнату: ${code}`;
+      await uiAlert(message, {
         title: 'Ошибка',
         variant: 'danger',
       });

@@ -67,6 +67,7 @@ function readCloudSecrets() {
       JSONBIN_BIN_ID: parsed.binId || parsed.JSONBIN_BIN_ID || '',
       JSONBIN_MASTER_KEY: parsed.masterKey || parsed.JSONBIN_MASTER_KEY || '',
       ADMIN_PIN: parsed.adminPin || parsed.ADMIN_PIN || '',
+      ROOM_CREATE_SECRET: parsed.roomCreateSecret || parsed.ROOM_CREATE_SECRET || '',
     };
   } catch {
     return {};
@@ -88,6 +89,11 @@ function resolveServerEnv(mode) {
       env.VITE_JSONBIN_MASTER_KEY ||
       '',
     ADMIN_PIN: fileSecrets.ADMIN_PIN || env.ADMIN_PIN || env.VITE_ADMIN_PIN || '',
+    ROOM_CREATE_SECRET:
+      fileSecrets.ROOM_CREATE_SECRET ||
+      env.ROOM_CREATE_SECRET ||
+      env.VITE_ROOM_CREATE_SECRET ||
+      '',
   };
 }
 
