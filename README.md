@@ -40,6 +40,7 @@ Vite serves `/api/*` via a local middleware that keeps secrets on the Node side.
 |--------|------|-------|
 | GET | `/api/health` | Diagnostics (`rooms: memory \| durable-object`, bin / create-secret flags) |
 | POST | `/api/rooms` | Create live room; body `{ state, createSecret }` → `{ roomId, hostKey, state, seq }` |
+| POST | `/api/host-unlock` | Verify host secret (solo / local); body `{ createSecret }` → `{ ok: true }` |
 | GET | `/api/rooms/:id/snapshot` | Current room state |
 | POST | `/api/rooms/:id/actions` | Body `{ action }` — server applies the game reducer |
 | GET | `/api/rooms/:id/events` | SSE stream of state updates |
@@ -53,7 +54,7 @@ Vite serves `/api/*` via a local middleware that keeps secrets on the Node side.
 ### Live rooms (Phase 6 MVP)
 
 - **Solo** still works on one device via `localStorage`.
-- **Create party** asks for `ROOM_CREATE_SECRET` (host only). Guests use **Join by code** — no secret.
+- **Create party** and **solo / load save** ask for `ROOM_CREATE_SECRET` (host only). Guests use **Join by code** — no secret.
 - Game actions sync through the server reducer; `TICK` (turn timer) stays local.
 - `npm run dev`: rooms are **in-memory** on the Vite process (two tabs work; restart clears rooms). Set `ROOM_CREATE_SECRET` in `.env.local` / `.dev.vars`.
 - Production: one Cloudflare **Durable Object** per room (`GAME_ROOMS` in `wrangler.toml`). First deploy applies migration `v1-game-rooms`.

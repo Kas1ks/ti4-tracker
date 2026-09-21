@@ -1,5 +1,5 @@
 /**
- * Host-only gate for POST /api/rooms.
+ * Host-only gate for creating rooms and unlocking solo/local host actions.
  * Set ROOM_CREATE_SECRET (Worker secret / .dev.vars). Never put a VITE_ copy in the client build.
  */
 

@@ -8,7 +8,7 @@ import {
   resolveMasterKey,
 } from './jsonbin.js';
 import { handleRoomsApi } from './rooms/roomsApi.js';
-import { resolveRoomCreateSecret } from './rooms/roomCreateAuth.js';
+import { assertRoomCreateAllowed, resolveRoomCreateSecret } from './rooms/roomCreateAuth.js';
 
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -63,6 +63,11 @@ export async function handleApi(request, env) {
       hasMasterKey: Boolean(resolveMasterKey(env)),
       hasAdminPin: Boolean(resolveAdminPin(env)),
       hasRoomCreateSecret: Boolean(resolveRoomCreateSecret(env)),
+      // Names only (no values) — helps confirm the secret is bound to this Worker.
+      roomCreateSecretKeys: {
+        ROOM_CREATE_SECRET: Boolean(env?.ROOM_CREATE_SECRET),
+        VITE_ROOM_CREATE_SECRET: Boolean(env?.VITE_ROOM_CREATE_SECRET),
+      },
     });
   }
 
@@ -75,6 +80,14 @@ export async function handleApi(request, env) {
       console.error('[rooms]', err);
       return json({ error: 'room-error', message: String(err?.message || err) }, 500);
     }
+  }
+
+  // Same secret as room create — unlock solo / local host actions.
+  if (method === 'POST' && pathname === '/api/host-unlock') {
+    const body = await readJsonBody(request);
+    const gate = assertRoomCreateAllowed(env, body?.createSecret);
+    if (!gate.ok) return json({ error: gate.error }, gate.status);
+    return json({ ok: true });
   }
 
   if (!isJsonBinConfigured(env)) {

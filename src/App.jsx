@@ -1,6 +1,7 @@
 import { lazy, useEffect, useState } from 'react';
 import * as select from './game/selectors';
 import { useSyncedGame } from './sync/useSyncedGame';
+import { verifyHostSecret } from './sync/roomApi';
 import { useElapsedSeconds } from './hooks/useTurnTimer';
 import { useYourTurnAlert } from './hooks/useYourTurnAlert';
 import { useVisualViewportShell } from './hooks/useVisualViewportShell';
@@ -279,25 +280,53 @@ function App() {
     ui.closeEndGameUi();
   };
 
-  const handleCreateRoom = async () => {
-    setSoloSetup(false);
+  const hostSecretErrorMessage = (code) => {
+    if (code === 'forbidden') return 'Неверный секрет хоста.';
+    if (code === 'create-secret-not-configured') {
+      return 'На сервере не задан ROOM_CREATE_SECRET. Добавьте его в Worker Secrets (не Pages) / .dev.vars.';
+    }
+    return null;
+  };
+
+  /** Prompt + server check for ROOM_CREATE_SECRET. Returns secret or null if cancelled/failed. */
+  const unlockAsHost = async ({ title, message }) => {
     const createSecret = await uiPrompt(
-      'Введите секрет создания партии (ROOM_CREATE_SECRET). Другие игроки могут только входить по коду.',
+      message,
       {
-        title: 'Создать партию',
+        title,
         inputType: 'password',
         placeholder: 'Секрет хоста',
-        confirmLabel: 'Создать',
+        confirmLabel: 'Продолжить',
         variant: 'info',
       },
     );
-    if (createSecret === null) return;
+    if (createSecret === null) return null;
     if (!String(createSecret).trim()) {
       await uiAlert('Секрет не может быть пустым.', { title: 'Ошибка', variant: 'danger' });
-      return;
+      return null;
     }
     try {
-      const created = await startHostRoom(String(createSecret));
+      await verifyHostSecret(String(createSecret));
+      return String(createSecret);
+    } catch (err) {
+      const code = String(err.message || err);
+      await uiAlert(hostSecretErrorMessage(code) || `Не удалось проверить секрет: ${code}`, {
+        title: 'Ошибка',
+        variant: 'danger',
+      });
+      return null;
+    }
+  };
+
+  const handleCreateRoom = async () => {
+    setSoloSetup(false);
+    const createSecret = await unlockAsHost({
+      title: 'Создать партию',
+      message: 'Введите секрет хоста (ROOM_CREATE_SECRET). Другие игроки могут только входить по коду.',
+    });
+    if (!createSecret) return;
+    try {
+      const created = await startHostRoom(createSecret);
       try {
         await navigator.clipboard.writeText(created.roomId);
       } catch {
@@ -309,16 +338,29 @@ function App() {
       });
     } catch (err) {
       const code = String(err.message || err);
-      const message = code === 'forbidden'
-        ? 'Неверный секрет создания партии.'
-        : code === 'create-secret-not-configured'
-          ? 'На сервере не задан ROOM_CREATE_SECRET. Добавьте его в Worker Secrets / .dev.vars.'
-          : `Не удалось создать комнату: ${code}`;
-      await uiAlert(message, {
-        title: 'Ошибка',
-        variant: 'danger',
-      });
+      await uiAlert(
+        hostSecretErrorMessage(code) || `Не удалось создать комнату: ${code}`,
+        { title: 'Ошибка', variant: 'danger' },
+      );
     }
+  };
+
+  const handlePlaySolo = async () => {
+    const createSecret = await unlockAsHost({
+      title: 'Играть без комнаты',
+      message: 'Введите секрет хоста (ROOM_CREATE_SECRET), чтобы запустить партию на этом устройстве.',
+    });
+    if (!createSecret) return;
+    setSoloSetup(true);
+  };
+
+  const handleImportGameToken = async (saveId) => {
+    const createSecret = await unlockAsHost({
+      title: 'Загрузить партию',
+      message: 'Введите секрет хоста (ROOM_CREATE_SECRET), чтобы загрузить сохранённую партию.',
+    });
+    if (!createSecret) return;
+    return cloud.importGameToken(saveId);
   };
 
   const handleJoinRoom = async (code, joinOpts = {}) => {
@@ -417,8 +459,8 @@ function App() {
             roomError={roomError}
             onCreateRoom={handleCreateRoom}
             onJoinRoom={handleJoinRoom}
-            onPlaySolo={() => setSoloSetup(true)}
-            importGameToken={cloud.importGameToken}
+            onPlaySolo={handlePlaySolo}
+            importGameToken={handleImportGameToken}
             uiPrompt={uiPrompt}
           />
         )}

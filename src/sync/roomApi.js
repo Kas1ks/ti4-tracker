@@ -22,6 +22,17 @@ export async function createRoom(state, { createSecret } = {}) {
   return res.json();
 }
 
+/** Check host secret without creating a room (solo / local unlock). */
+export async function verifyHostSecret(createSecret) {
+  const res = await fetch('/api/host-unlock', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ createSecret: createSecret ?? '' }),
+  });
+  if (!res.ok) throw new Error(await readError(res));
+  return res.json();
+}
+
 export async function fetchRoomSnapshot(roomId) {
   const res = await fetch(`/api/rooms/${encodeURIComponent(roomId)}/snapshot`);
   if (!res.ok) throw new Error(await readError(res));
