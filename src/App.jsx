@@ -112,6 +112,7 @@ function App() {
   const isPlayerClient = perms?.role === ROLES.PLAYER;
   const showImperialClaimModal = !!imperialClaim?.active && (
     roomStatus === 'solo'
+    || perms?.role === ROLES.ADMIN
     || (perms?.seatPlayerId != null && perms.seatPlayerId === imperialClaim.playerId)
   );
   const startingTechDraft = game.startingTechDraft;
@@ -649,7 +650,7 @@ function App() {
             objectives={objectives}
             completions={completions}
             seatPlayerId={perms?.seatPlayerId ?? null}
-            canScoreAny={perms.can('scoreAny') && roomStatus === 'solo'}
+            canScoreAny={perms.can('scoreAny')}
             onSelectPublic={(playerId, objectiveId) => dispatch({ type: 'SELECT_IMPERIAL_PUBLIC', playerId, objectiveId })}
             onToggleMecatol={(playerId) => dispatch({ type: 'TOGGLE_IMPERIAL_MECATOL', playerId })}
             onToggleSecret={(playerId) => dispatch({ type: 'TOGGLE_IMPERIAL_SECRET', playerId })}
