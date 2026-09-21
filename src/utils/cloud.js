@@ -23,6 +23,7 @@ async function api(path, options = {}) {
     const err = new Error(data?.error || `api-${response.status}`);
     err.status = response.status;
     err.data = data;
+    err.url = response.url || path;
     throw err;
   }
 
@@ -30,6 +31,7 @@ async function api(path, options = {}) {
     const err = new Error('api-html-fallback');
     err.status = 502;
     err.data = { error: 'html-fallback' };
+    err.url = response.url || path;
     throw err;
   }
 
@@ -50,7 +52,8 @@ export async function fetchCloudStats() {
 
 export async function postGameRecord(record) {
   ensureCloud();
-  await api('/api/games', {
+  // Prefer /api/stats (same collection as the history GET). /api/game remains a Worker alias.
+  await api('/api/stats', {
     method: 'POST',
     body: JSON.stringify(record),
   });

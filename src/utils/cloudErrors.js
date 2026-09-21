@@ -9,7 +9,9 @@ export function cloudErrorMessage(err, fallback) {
     if (typeof fallback === 'string' && /загруз/i.test(fallback)) {
       return 'Сохранение с таким кодом не найдено!';
     }
-    return `${fallback} (404 — проверьте деплой Worker и секрет JSONBin).`;
+    const where = err?.data?.pathname || err?.url || '';
+    const suffix = where ? ` (${where})` : '';
+    return `${fallback} (404${suffix}). Сделайте npm run deploy и обновите страницу без кэша.`;
   }
   if (err?.status === 502 || apiError === 'upstream-error' || apiError === 'html-fallback') {
     return 'Сервер не смог сохранить данные в облако. Проверьте деплой Worker и секреты JSONBIN_BIN_ID / JSONBIN_MASTER_KEY.';

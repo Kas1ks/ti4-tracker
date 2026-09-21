@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { isCloudConfigured } from '../config';
 import { ALL_FACTIONS } from '../data/gameData';
 import { stampGameState } from '../game/gameState';
@@ -17,6 +17,8 @@ export function useCloudGame({ game, dispatch, getPlayerScore, uiAlert, uiConfir
   const [showStatsModal, setShowStatsModal] = useState(false);
   const [globalHistory, setGlobalHistory] = useState([]);
   const [isStatsLoading, setIsStatsLoading] = useState(false);
+  const gameRef = useRef(game);
+  gameRef.current = game;
 
   const openStatsModal = async () => {
     setShowStatsModal(true);
@@ -79,8 +81,11 @@ export function useCloudGame({ game, dispatch, getPlayerScore, uiAlert, uiConfir
   };
 
   const saveGameToCloud = async (winnerPlayer) => {
-    const { players, meta } = game;
-    const { targetScore, roundNumber } = meta;
+    const current = gameRef.current;
+    const players = Array.isArray(current?.players) ? current.players : [];
+    const meta = current?.meta || {};
+    const targetScore = meta.targetScore;
+    const roundNumber = meta.roundNumber || 0;
 
     const gameRecord = {
       id: Date.now(),

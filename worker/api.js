@@ -109,8 +109,12 @@ export async function handleApi(request, env) {
       return json({ history });
     }
 
-    if (method === 'POST' && pathname === '/api/game') {
-      const record = await readJsonBody(request);
+    // Append finished game to history (canonical). /api/game kept as alias.
+    if (method === 'POST' && (pathname === '/api/stats' || pathname === '/api/game')) {
+      const body = await readJsonBody(request);
+      const record = body?.record && typeof body.record === 'object' && !Array.isArray(body.record)
+        ? body.record
+        : body;
       if (!record || typeof record !== 'object' || Array.isArray(record)) {
         return json({ error: 'invalid-body' }, 400);
       }
@@ -168,9 +172,9 @@ export async function handleApi(request, env) {
       return json({ ok: true, history: updated });
     }
 
-    return json({ error: 'not-found' }, 404);
+    return json({ error: 'not-found', method, pathname }, 404);
   } catch (err) {
     console.error('[api]', err);
-    return json({ error: 'upstream-error' }, 502);
+    return json({ error: 'upstream-error', message: String(err?.message || err) }, 502);
   }
 }

@@ -45,7 +45,8 @@ Vite serves `/api/*` via a local middleware that keeps secrets on the Node side.
 | POST | `/api/rooms/:id/actions` | Body `{ action }` — server applies the game reducer |
 | GET | `/api/rooms/:id/events` | SSE stream of state updates |
 | GET | `/api/stats` | Game history |
-| POST | `/api/game` | Append finished game |
+| POST | `/api/stats` | Append finished game record (alias: `POST /api/game`) |
+| POST | `/api/game` | Append finished game → `{ ok: true }` |
 | POST | `/api/saves` | Save in-progress game → `{ code }` |
 | GET | `/api/saves/:code` | Load save |
 | DELETE | `/api/stats/:id` | Body `{ "pin" }` |
