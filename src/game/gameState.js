@@ -592,10 +592,18 @@ export function saveGameState(state) {
 export function clearGameState() {
   try {
     localStorage.removeItem(GAME_STATE_KEY);
-    localStorage.removeItem('ti4_gameSummary');
     localStorage.removeItem('ti4_snapshots');
   } catch {
     /* storage unavailable */
   }
   dropLegacyKeys();
+}
+
+/** Finished-game summary kept until the host leaves the results screen. */
+export function clearGameSummary() {
+  try {
+    localStorage.removeItem('ti4_gameSummary');
+  } catch {
+    /* storage unavailable */
+  }
 }

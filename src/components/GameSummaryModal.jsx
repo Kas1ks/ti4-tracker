@@ -1,3 +1,4 @@
+import { clearGameSummary } from '../game/gameState';
 import { formatTime } from '../utils/game';
 import { useEscapeKey } from '../hooks/useEscapeKey';
 import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
@@ -12,11 +13,17 @@ function readGameSummary() {
 }
 
 export function GameSummaryModal({ show, onClose }) {
-  useEscapeKey(onClose, show);
-  useBodyScrollLock(!!show);
-  if (!show) return null;
-  const summary = readGameSummary();
-  if (!summary) return null;
+  const summary = show ? readGameSummary() : null;
+
+  const handleClose = () => {
+    clearGameSummary();
+    onClose();
+  };
+
+  useEscapeKey(handleClose, !!(show && summary));
+  useBodyScrollLock(!!(show && summary));
+
+  if (!show || !summary) return null;
 
   return (
     <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 modal-overlay" role="presentation">
@@ -30,7 +37,7 @@ export function GameSummaryModal({ show, onClose }) {
           <h2 id="game-summary-title" className="font-orbitron text-lg font-bold text-amber-400 uppercase flex items-center gap-2">
             <i className="fa-solid fa-trophy" aria-hidden="true" /> Итоги Партии
           </h2>
-          <button type="button" onClick={onClose} className="text-slate-500 hover:text-slate-300 transition" aria-label="Закрыть итоги партии">
+          <button type="button" onClick={handleClose} className="text-slate-500 hover:text-slate-300 transition" aria-label="Закрыть итоги партии">
             <i className="fa-solid fa-xmark text-lg" aria-hidden="true" />
           </button>
         </div>
@@ -65,7 +72,7 @@ export function GameSummaryModal({ show, onClose }) {
             </table>
           </div>
           <div className="flex justify-center pt-2">
-            <button type="button" onClick={onClose} className="bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold px-6 py-2 rounded-xl text-xs transition">
+            <button type="button" onClick={handleClose} className="bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold px-6 py-2 rounded-xl text-xs transition">
               В главное меню
             </button>
           </div>

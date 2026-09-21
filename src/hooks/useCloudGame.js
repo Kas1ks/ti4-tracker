@@ -109,7 +109,7 @@ export function useCloudGame({ game, dispatch, getPlayerScore, uiAlert, uiConfir
         title: 'Локальное сохранение',
         variant: 'info',
       });
-      return;
+      return true;
     }
 
     try {
@@ -118,11 +118,13 @@ export function useCloudGame({ game, dispatch, getPlayerScore, uiAlert, uiConfir
         title: 'Сохранено',
         variant: 'success',
       });
+      return true;
     } catch (err) {
       await uiAlert(cloudErrorMessage(err, 'Ошибка при сохранении в облако'), {
         title: 'Ошибка',
         variant: 'danger',
       });
+      return false;
     }
   };
 

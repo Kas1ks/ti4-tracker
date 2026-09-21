@@ -200,12 +200,14 @@ describe('persistence', () => {
     expect(state.players).toEqual([]);
   });
 
-  it('clears the document and the finished-game record', () => {
+  it('clears the document but keeps the finished-game summary', () => {
     saveGameState(stampGameState(createEmptyGameState()));
-    localStorage.setItem('ti4_gameSummary', '{}');
+    localStorage.setItem('ti4_gameSummary', '{"winner":"A"}');
     localStorage.setItem('ti4_round', '3');
 
     clearGameState();
-    expect(localStorage.size).toBe(0);
+    expect(localStorage.getItem(GAME_STATE_KEY)).toBeNull();
+    expect(localStorage.getItem('ti4_round')).toBeNull();
+    expect(localStorage.getItem('ti4_gameSummary')).toBe('{"winner":"A"}');
   });
 });

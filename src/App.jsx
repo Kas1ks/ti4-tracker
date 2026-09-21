@@ -930,7 +930,7 @@ function App() {
         <LazyWhen active={ui.showGameSummaryModal}>
           <GameSummaryModal
             show={ui.showGameSummaryModal}
-            onClose={() => { ui.setShowGameSummaryModal(false); resetGameState(); }}
+            onClose={() => { ui.setShowGameSummaryModal(false); }}
           />
         </LazyWhen>      </main>
 
