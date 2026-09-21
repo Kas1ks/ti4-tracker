@@ -235,6 +235,9 @@ export function canStartRound(state) {
 /** Host may end the action phase only after every seat in turn order has passed. */
 export function canEndRound(state) {
   if (!state.round?.active) return false;
+  // Status checklist (and scoring window) must finish before another end-round.
+  if (state.statusPhase?.show) return false;
+  if (state.statusPhase?.scoring?.active) return false;
   const order = turnOrder(state);
   if (order.length === 0) return false;
   return playersNotPassed(state).length === 0;

@@ -232,13 +232,18 @@ function App() {
   const playerMobileShell = isPlayerClient && isGameActive;
   useVisualViewportShell(playerMobileShell);
 
-  // During objective scoring: tuck status, open scoring modal.
+  // During objective scoring: tuck status checklist, open scoring modal.
+  // When scoring finishes: restore the status checklist.
   useEffect(() => {
     if (objectiveScoring?.active) {
       ui.ensureMinimized('statusPhase');
       ui.ensureExpanded('objectiveScoring');
+      return;
     }
-  }, [objectiveScoring?.active]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (showStatusPhaseModal) {
+      ui.ensureExpanded('statusPhase');
+    }
+  }, [objectiveScoring?.active, showStatusPhaseModal]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (strategyResolution?.active) {
@@ -417,6 +422,11 @@ function App() {
         onStartRound={() => dispatch({ type: 'START_ROUND' })}
         onEndRound={() => dispatch({ type: 'END_ROUND' })}
         canEndRound={canEndRound}
+        endRoundDisabledTitle={
+          showStatusPhaseModal || objectiveScoring?.active
+            ? 'Сначала завершите фазу статуса'
+            : 'Сначала все игроки должны спасовать'
+        }
         onExport={cloud.exportGameToken}
         onOpenEndGame={() => ui.setShowEndGameModal(true)}
         onOpenStats={cloud.openStatsModal}

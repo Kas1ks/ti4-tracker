@@ -646,6 +646,7 @@ function finishScoringIfComplete(state) {
   const scoring = scoringOf(state);
   if (!scoring.active || !allScoringResolved(scoring.responses)) return state;
   return withStatusPhase(state, {
+    show: true,
     scoring: { ...scoring, active: false },
     checks: { ...state.statusPhase.checks, scoreObjectives: true },
   });
@@ -1450,6 +1451,7 @@ export function gameReducer(state, action) {
       return eliminatePlayer(state, action.playerId, actionAt(action));
 
     case 'END_ROUND':
+      if (state.statusPhase?.show || state.statusPhase?.scoring?.active) return state;
       if (playersNotPassed(state).length > 0) return state;
       return endRound(state, actionAt(action));
 

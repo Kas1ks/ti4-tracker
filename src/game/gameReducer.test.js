@@ -702,8 +702,15 @@ describe('status phase', () => {
 
     state = dispatch(state, { type: 'PASS_OBJECTIVE_SCORING', playerId: 2 });
     expect(state.statusPhase.scoring.active).toBe(false);
+    expect(state.statusPhase.show).toBe(true);
     expect(state.statusPhase.checks.scoreObjectives).toBe(true);
     expect(state.players.find(p => p.id === 1).secrets).toBe(1);
+  });
+
+  it('blocks END_ROUND while the status checklist is open', () => {
+    const open = atStatusPhase();
+    expect(open.statusPhase.show).toBe(true);
+    expect(dispatch(open, { type: 'END_ROUND' })).toBe(open);
   });
 
   it('blocks scoring out of initiative order', () => {
