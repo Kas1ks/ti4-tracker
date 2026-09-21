@@ -1,4 +1,5 @@
 import { BASE_OBJECTIVES, DEFAULT_OBJECTIVES } from '../data/gameData';
+import { EXPEDITION_SLICE_IDS, emptyExpeditionSlices } from '../data/expedition';
 import { shuffleArray } from '../utils/game';
 
 export const GAME_STATE_VERSION = 1;
@@ -39,6 +40,55 @@ export const EMPTY_STRATEGY_RESOLUTION = Object.freeze({
   cardId: null,
   playerId: null,
   responses: {},
+});
+
+/** Imperial (card 8) primary: Mecatol VP or secret, plus one public — applied on confirm. */
+export const EMPTY_IMPERIAL_CLAIM = Object.freeze({
+  active: false,
+  playerId: null,
+  publicId: null,
+  mecatol: false,
+  secret: false,
+});
+
+/** Technology (card 7): concurrent research while strategyResolution poll is active. */
+export const EMPTY_TECH_RESEARCH = Object.freeze({
+  active: false,
+  concurrent: false,
+  playerId: null,
+  mode: 'primary',
+  picks: Object.freeze([]),
+  ignorePrereq: 0,
+  queueIds: Object.freeze([]),
+  primaryPlayerId: null,
+  byPlayer: Object.freeze({}),
+});
+
+/** Thunder's Edge expedition (TE only). */
+export const EMPTY_EXPEDITION = Object.freeze({
+  slices: Object.freeze({
+    resources: null,
+    actionCards: null,
+    influence: null,
+    secret: null,
+    techPlanet: null,
+    tradeGoods: null,
+  }),
+  completed: false,
+  controllerId: null,
+  placedById: null,
+  awaitingControlPick: false,
+});
+
+/**
+ * Post-start starting-tech draft (Argent / Winnu / Keleres / TE choice+research).
+ * needed: seats require draft after START_GAME; active: host opened the poll.
+ * responses[id]: { status: waiting|picking|confirmed, picks: string[] }
+ */
+export const EMPTY_STARTING_TECH_DRAFT = Object.freeze({
+  needed: false,
+  active: false,
+  responses: Object.freeze({}),
 });
 
 export const freshStage1Deck = () =>
@@ -91,7 +141,10 @@ export function createEmptyGameState() {
       turnTime: 0,
       turnStartedAt: null,
       strategyActionTaken: false,
+      expeditionClaimedThisTurn: false,
       strategyResolution: { ...EMPTY_STRATEGY_RESOLUTION },
+      imperialClaim: { ...EMPTY_IMPERIAL_CLAIM },
+      techResearch: { ...EMPTY_TECH_RESEARCH, picks: [], queueIds: [], byPlayer: {} },
     },
     draft: {
       queue: [],
@@ -114,6 +167,17 @@ export function createEmptyGameState() {
       show: false,
       checks: { ...EMPTY_STATUS_CHECKS },
       scoring: { active: false, responses: {}, orderIds: [], currentIdx: 0 },
+    },
+    expedition: {
+      slices: emptyExpeditionSlices(),
+      completed: false,
+      controllerId: null,
+      placedById: null,
+      awaitingControlPick: false,
+    },
+    startingTechDraft: { ...EMPTY_STARTING_TECH_DRAFT, responses: {} },
+    log: {
+      events: [],
     },
     updatedAt: null,
   };
@@ -157,7 +221,10 @@ function toFlat(raw) {
     turnTime: round.turnTime,
     turnStartedAt: round.turnStartedAt,
     strategyActionTaken: round.strategyActionTaken,
+    expeditionClaimedThisTurn: !!round.expeditionClaimedThisTurn,
     strategyResolution: round.strategyResolution,
+    imperialClaim: round.imperialClaim,
+    techResearch: round.techResearch,
     draftQueue: draft.queue,
     draftAssignments: draft.assignments,
     currentQueueIndex: draft.currentQueueIndex,
@@ -174,8 +241,31 @@ function toFlat(raw) {
     showStatusPhase: statusPhase.show,
     statusPhaseChecks: statusPhase.checks,
     objectiveScoring: statusPhase.scoring,
+    expedition: raw.expedition,
+    startingTechDraft: raw.startingTechDraft,
+    gameEvents: asRecord(raw.log).events ?? raw.gameEvents,
     timestamp: raw.timestamp,
     updatedAt: raw.updatedAt,
+  };
+}
+
+function normalizeStartingTechDraft(value) {
+  const raw = asRecord(value);
+  const responses = {};
+  Object.entries(asRecord(raw.responses)).forEach(([playerId, entry]) => {
+    const r = asRecord(entry);
+    const status = r.status === 'confirmed' || r.status === 'picking'
+      ? r.status
+      : 'waiting';
+    responses[playerId] = {
+      status,
+      picks: asArray(r.picks).filter(id => typeof id === 'string'),
+    };
+  });
+  return {
+    needed: !!raw.needed,
+    active: !!raw.active,
+    responses,
   };
 }
 
@@ -222,6 +312,55 @@ function normalizeStrategyResolution(value) {
   };
 }
 
+function normalizeImperialClaim(value) {
+  const raw = asRecord(value);
+  if (!raw.active) return { ...EMPTY_IMPERIAL_CLAIM };
+  const playerId = Number(raw.playerId);
+  return {
+    active: true,
+    playerId: Number.isFinite(playerId) ? playerId : null,
+    publicId: typeof raw.publicId === 'string' ? raw.publicId : null,
+    mecatol: !!raw.mecatol,
+    secret: !!raw.secret && !raw.mecatol,
+  };
+}
+
+function normalizeTechResearch(value) {
+  const raw = asRecord(value);
+  if (!raw.active) {
+    return { ...EMPTY_TECH_RESEARCH, picks: [], queueIds: [], byPlayer: {} };
+  }
+  const playerId = Number(raw.playerId);
+  const primaryPlayerId = Number(raw.primaryPlayerId);
+  const picks = asArray(raw.picks).filter(id => typeof id === 'string');
+  const queueIds = asArray(raw.queueIds)
+    .map(id => Number(id))
+    .filter(id => Number.isFinite(id));
+  const ignorePrereq = Number(raw.ignorePrereq) > 0 ? 1 : 0;
+  const byPlayerRaw = asRecord(raw.byPlayer);
+  const byPlayer = {};
+  Object.keys(byPlayerRaw).forEach((key) => {
+    const id = Number(key);
+    if (!Number.isFinite(id)) return;
+    const entry = asRecord(byPlayerRaw[key]);
+    byPlayer[id] = {
+      picks: asArray(entry.picks).filter(t => typeof t === 'string'),
+      ignorePrereq: Number(entry.ignorePrereq) > 0 ? 1 : 0,
+    };
+  });
+  return {
+    active: true,
+    concurrent: !!raw.concurrent || Object.keys(byPlayer).length > 0,
+    playerId: Number.isFinite(playerId) ? playerId : null,
+    mode: raw.mode === 'secondary' ? 'secondary' : 'primary',
+    picks,
+    ignorePrereq,
+    queueIds,
+    primaryPlayerId: Number.isFinite(primaryPlayerId) ? primaryPlayerId : null,
+    byPlayer,
+  };
+}
+
 /** Drop objectives that no longer exist in game data, keep custom ones. */
 function normalizeObjectives(value) {
   const saved = asArray(value, null);
@@ -253,7 +392,56 @@ function normalizePlayer(player) {
   const strategyPlayed = cards.length > 0
     ? cards.every(c => playedCardIds.includes(c.id))
     : !!player.strategyPlayed;
-  return { ...player, cards, playedCardIds, strategyPlayed };
+  const techIds = asArray(player.techIds).filter(id => typeof id === 'string');
+  const startingTechIds = asArray(player.startingTechIds).filter(id => typeof id === 'string');
+  return {
+    ...player,
+    cards,
+    playedCardIds,
+    strategyPlayed,
+    breakthrough: !!player.breakthrough,
+    techIds,
+    startingTechIds,
+  };
+}
+
+function normalizeExpedition(value) {
+  const raw = asRecord(value);
+  const source = asRecord(raw.slices);
+  const slices = emptyExpeditionSlices();
+  EXPEDITION_SLICE_IDS.forEach(id => {
+    const rawId = source[id];
+    if (rawId == null || rawId === '') {
+      slices[id] = null;
+      return;
+    }
+    const n = Number(rawId);
+    slices[id] = Number.isFinite(n) ? n : null;
+  });
+  const controllerId = raw.controllerId == null || raw.controllerId === ''
+    ? NaN
+    : Number(raw.controllerId);
+  const placedById = raw.placedById == null || raw.placedById === ''
+    ? NaN
+    : Number(raw.placedById);
+  return {
+    slices,
+    completed: !!raw.completed,
+    controllerId: Number.isFinite(controllerId) ? controllerId : null,
+    placedById: Number.isFinite(placedById) ? placedById : null,
+    awaitingControlPick: !!raw.awaitingControlPick,
+  };
+}
+
+function normalizeGameEvents(value) {
+  return asArray(value)
+    .filter(entry => entry && typeof entry === 'object' && typeof entry.type === 'string')
+    .map(entry => ({
+      ...entry,
+      type: String(entry.type),
+      at: Number.isFinite(entry.at) ? entry.at : Date.now(),
+    }))
+    .slice(-200);
 }
 
 /** Accepts a nested doc, a legacy flat snapshot, or junk, and returns a valid doc. */
@@ -290,7 +478,10 @@ export function normalizeGameState(raw) {
       turnTime: asNumber(flat.turnTime, 0),
       turnStartedAt: Number.isFinite(flat.turnStartedAt) ? flat.turnStartedAt : null,
       strategyActionTaken: !!flat.strategyActionTaken,
+      expeditionClaimedThisTurn: !!flat.expeditionClaimedThisTurn,
       strategyResolution: normalizeStrategyResolution(flat.strategyResolution),
+      imperialClaim: normalizeImperialClaim(flat.imperialClaim),
+      techResearch: normalizeTechResearch(flat.techResearch),
     },
     draft: {
       queue: draftQueue,
@@ -314,6 +505,11 @@ export function normalizeGameState(raw) {
       show: !!flat.showStatusPhase,
       checks: { ...EMPTY_STATUS_CHECKS, ...asRecord(flat.statusPhaseChecks) },
       scoring: normalizeObjectiveScoring(flat.objectiveScoring),
+    },
+    expedition: normalizeExpedition(flat.expedition),
+    startingTechDraft: normalizeStartingTechDraft(flat.startingTechDraft),
+    log: {
+      events: normalizeGameEvents(flat.gameEvents),
     },
     updatedAt: flat.updatedAt ?? flat.timestamp ?? null,
   };

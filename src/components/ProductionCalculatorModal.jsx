@@ -1,10 +1,12 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useEscapeKey } from '../hooks/useEscapeKey';
 import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
 import {
   PRODUCTION_UNITS,
+  countOwnedUnitUpgrades,
   productionTotals,
   unitBatchSize,
+  unitCostForPlayer,
   unitImageUrl,
   unitResourceCost,
   unitSlotCount,
@@ -14,19 +16,45 @@ const emptyCounts = () => Object.fromEntries(PRODUCTION_UNITS.map(u => [u.id, 0]
 
 /**
  * Local (unsynced) production calculator: add units, see count + resource cost.
+ * Applies Sarween Tools / AI Development Algorithm / Muaat War Sun II when techIds known.
  */
 export function ProductionCalculatorModal({
   show,
   playerColor,
   playerName,
+  factionId = null,
+  techIds = [],
   onClose,
 }) {
   const [counts, setCounts] = useState(emptyCounts);
+  const owned = useMemo(
+    () => (Array.isArray(techIds) ? techIds : []),
+    [techIds],
+  );
+  const hasSarween = owned.includes('sarween_tools');
+  const hasAiAlgo = owned.includes('ai_development_algorithm');
+  const unitUpgradeCount = useMemo(() => countOwnedUnitUpgrades(owned), [owned]);
+  const [applyAiAlgorithm, setApplyAiAlgorithm] = useState(true);
 
   useEscapeKey(onClose, show);
   useBodyScrollLock(show);
 
-  const totals = useMemo(() => productionTotals(counts), [counts]);
+  useEffect(() => {
+    if (show) setApplyAiAlgorithm(true);
+  }, [show, hasAiAlgo]);
+
+  const costOpts = useMemo(
+    () => ({ factionId, techIds: owned }),
+    [factionId, owned],
+  );
+
+  const totals = useMemo(
+    () => productionTotals(counts, {
+      ...costOpts,
+      applyAiAlgorithm: hasAiAlgo && applyAiAlgorithm,
+    }),
+    [counts, costOpts, hasAiAlgo, applyAiAlgorithm],
+  );
 
   if (!show) return null;
 
@@ -85,12 +113,44 @@ export function ProductionCalculatorModal({
           </div>
         </div>
 
+        {(hasSarween || hasAiAlgo) && (
+          <div className="px-4 py-2.5 border-b border-slate-800 bg-slate-950/80 space-y-2">
+            {hasSarween && (
+              <div className="text-xs text-amber-300/90 font-semibold flex items-center gap-2">
+                <i className="fa-solid fa-wrench text-amber-400" aria-hidden="true" />
+                Sarween Tools: −1⚙ к суммарной стоимости
+              </div>
+            )}
+            {hasAiAlgo && (
+              <label className="flex items-start gap-2.5 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={applyAiAlgorithm}
+                  onChange={(e) => setApplyAiAlgorithm(e.target.checked)}
+                  className="mt-0.5 w-4 h-4 rounded border-slate-600 bg-slate-900 text-cyan-500 focus:ring-cyan-500/40"
+                />
+                <span className="text-xs text-rose-200/90 font-semibold leading-snug">
+                  AI Development Algorithm
+                  <span className="block text-slate-400 font-normal mt-0.5">
+                    −{unitUpgradeCount}⚙ (по 1 за каждый unit upgrade).
+                    Снимите галочку, если карта уже истощена.
+                  </span>
+                </span>
+              </label>
+            )}
+          </div>
+        )}
+
         <div className="flex-1 overflow-y-auto p-3 md:p-4 space-y-2">
           {PRODUCTION_UNITS.map((unit) => {
             const count = counts[unit.id] || 0;
             const slots = unitSlotCount(unit, count);
-            const lineCost = unitResourceCost(unit, count);
+            const unitCost = unitCostForPlayer(unit, costOpts);
+            const lineCost = unitResourceCost(unit, count, costOpts);
             const batch = unitBatchSize(unit);
+            const muaatWs = unit.id === 'warsun'
+              && factionId === 'muaat'
+              && owned.includes('prototype_war_sun_2');
             return (
               <div
                 key={unit.id}
@@ -106,8 +166,11 @@ export function ProductionCalculatorModal({
                   <div className="font-bold text-white text-sm md:text-base truncate">{unit.name}</div>
                   <div className="text-[11px] text-slate-500 font-semibold">
                     {batch > 1
-                      ? `+${batch} шт · ${unit.cost}⚙ / отряд`
-                      : `${unit.cost}⚙`}
+                      ? `+${batch} шт · ${unitCost}⚙ / отряд`
+                      : `${unitCost}⚙`}
+                    {muaatWs && (
+                      <span className="text-rose-300/90 ml-1.5">(Prototype II)</span>
+                    )}
                     {count > 0 && (
                       <span className="text-cyan-400/90 ml-2">
                         {slots} отр. · {lineCost}⚙
@@ -149,6 +212,11 @@ export function ProductionCalculatorModal({
           </div>
           <div className="text-right">
             <div className="text-[10px] uppercase font-bold tracking-wider text-slate-500">Ресурсы</div>
+            {totals.discount > 0 && (
+              <div className="text-[11px] text-slate-500 tabular-nums">
+                {totals.baseResources}⚙ − {totals.discount}⚙ скидка
+              </div>
+            )}
             <div className="font-orbitron font-black text-2xl text-cyan-300 tabular-nums">{totals.resources}⚙</div>
           </div>
         </div>

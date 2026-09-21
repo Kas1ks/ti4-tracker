@@ -60,7 +60,9 @@ export function authorizeAction({ role, seatPlayerId, action, state }) {
       if (activePlayer(state)?.id !== seatPlayerId) {
         return { ok: false, error: 'not-your-turn' };
       }
-      if (state.round.strategyActionTaken || state.round?.strategyResolution?.active) {
+      if (state.round.strategyActionTaken
+        || state.round?.strategyResolution?.active
+        || state.round?.imperialClaim?.active) {
         return { ok: false, error: 'already-played-strategy' };
       }
       return { ok: true };
@@ -113,6 +115,9 @@ export function authorizeAction({ role, seatPlayerId, action, state }) {
       if (state.round?.strategyResolution?.active) {
         return { ok: false, error: 'strategy-resolving' };
       }
+      if (state.round?.imperialClaim?.active) {
+        return { ok: false, error: 'imperial-claim' };
+      }
       const seat = state.players.find(p => p.id === seatPlayerId);
       if (!areAllStrategiesPlayed(seat)) {
         return { ok: false, error: 'strategy-required' };
@@ -126,6 +131,9 @@ export function authorizeAction({ role, seatPlayerId, action, state }) {
       }
       if (state.round?.strategyResolution?.active) {
         return { ok: false, error: 'strategy-resolving' };
+      }
+      if (state.round?.imperialClaim?.active) {
+        return { ok: false, error: 'imperial-claim' };
       }
       return { ok: true };
     }
@@ -149,6 +157,85 @@ export function authorizeAction({ role, seatPlayerId, action, state }) {
       return { ok: true };
     }
 
+    case 'SELECT_IMPERIAL_PUBLIC':
+    case 'TOGGLE_IMPERIAL_MECATOL':
+    case 'TOGGLE_IMPERIAL_SECRET':
+    case 'CONFIRM_IMPERIAL_CLAIM':
+    case 'PASS_IMPERIAL_CLAIM': {
+      if (action.playerId !== seatPlayerId) return { ok: false, error: 'not-your-imperial' };
+      const claim = state.round?.imperialClaim;
+      if (!claim?.active) return { ok: false, error: 'imperial-closed' };
+      if (claim.playerId !== seatPlayerId) return { ok: false, error: 'not-your-imperial' };
+      return { ok: true };
+    }
+
+    case 'RESEARCH_TECH':
+    case 'PASS_TECH_RESEARCH':
+    case 'SET_TECH_IGNORE_PREREQ': {
+      if (String(action.playerId) !== String(seatPlayerId)) {
+        return { ok: false, error: 'not-your-tech' };
+      }
+      if (action.type === 'RESEARCH_TECH' && action.force) {
+        return { ok: false, error: 'forbidden' };
+      }
+      const session = state.round?.techResearch;
+      if (!session?.active) return { ok: false, error: 'tech-closed' };
+      if (session.concurrent) {
+        const resolution = state.round?.strategyResolution;
+        if (!resolution?.active || resolution.cardId !== 7) {
+          return { ok: false, error: 'tech-closed' };
+        }
+        const status = resolution.responses?.[seatPlayerId]
+          ?? resolution.responses?.[action.playerId];
+        if (status !== 'pending') return { ok: false, error: 'tech-closed' };
+        return { ok: true };
+      }
+      if (String(session.playerId) !== String(seatPlayerId)) {
+        return { ok: false, error: 'not-your-tech' };
+      }
+      return { ok: true };
+    }
+
+    case 'TOGGLE_TECH': {
+      if (action.playerId !== seatPlayerId) return { ok: false, error: 'not-your-tech' };
+      return { ok: true };
+    }
+
+    case 'GRANT_TECH':
+    case 'REVOKE_TECH':
+      return { ok: false, error: 'forbidden' };
+
+    case 'CLAIM_EXPEDITION_SLICE': {
+      if (!state.meta?.useTe || !state.isGameActive) {
+        return { ok: false, error: 'expedition-closed' };
+      }
+      if (action.playerId !== seatPlayerId) return { ok: false, error: 'not-your-expedition' };
+      if (activePlayer(state)?.id !== seatPlayerId) {
+        return { ok: false, error: 'not-your-turn' };
+      }
+      if (state.round?.expeditionClaimedThisTurn) {
+        return { ok: false, error: 'expedition-already-claimed' };
+      }
+      if (state.expedition?.completed || state.expedition?.awaitingControlPick) {
+        return { ok: false, error: 'expedition-locked' };
+      }
+      return { ok: true };
+    }
+
+    case 'RESOLVE_THUNDERS_EDGE_CONTROL': {
+      if (!state.meta?.useTe || !state.isGameActive) {
+        return { ok: false, error: 'expedition-closed' };
+      }
+      if (action.playerId !== seatPlayerId) return { ok: false, error: 'not-your-expedition' };
+      if (!state.expedition?.awaitingControlPick) {
+        return { ok: false, error: 'control-pick-closed' };
+      }
+      if (state.expedition?.placedById !== seatPlayerId) {
+        return { ok: false, error: 'not-placer' };
+      }
+      return { ok: true };
+    }
+
     case 'SET_INFLUENCE':
     case 'LOCK_INFLUENCE': {
       if (action.playerId !== seatPlayerId) return { ok: false, error: 'not-your-influence' };
@@ -163,6 +250,21 @@ export function authorizeAction({ role, seatPlayerId, action, state }) {
       if (action.playerId !== seatPlayerId) return { ok: false, error: 'not-your-vote' };
       if (currentVoterId(state) !== seatPlayerId) {
         return { ok: false, error: 'not-your-vote-turn' };
+      }
+      return { ok: true };
+    }
+
+    case 'SET_STARTING_TECH_PICK':
+    case 'CONFIRM_STARTING_TECH': {
+      if (String(action.playerId) !== String(seatPlayerId)) {
+        return { ok: false, error: 'not-your-starting-tech' };
+      }
+      const draft = state.startingTechDraft;
+      if (!draft?.active) return { ok: false, error: 'starting-tech-closed' };
+      const response = draft.responses?.[seatPlayerId];
+      if (!response) return { ok: false, error: 'not-in-draft' };
+      if (response.status === 'confirmed') {
+        return { ok: false, error: 'already-confirmed' };
       }
       return { ok: true };
     }

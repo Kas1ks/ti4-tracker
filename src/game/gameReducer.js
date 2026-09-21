@@ -3,9 +3,26 @@ import {
   EMPTY_STATUS_CHECKS,
   EMPTY_OBJECTIVE_SCORING,
   EMPTY_STRATEGY_RESOLUTION,
+  EMPTY_IMPERIAL_CLAIM,
+  EMPTY_TECH_RESEARCH,
+  EMPTY_STARTING_TECH_DRAFT,
   createEmptyGameState,
   normalizeGameState,
 } from './gameState';
+import { EXPEDITION_SLICE_IDS, emptyExpeditionSlices } from '../data/expedition';
+import {
+  availableTechs,
+  canConfirmStartingTech,
+  canResearch,
+  isStartingTechWaveAReady,
+  maxResearchSlots,
+  playersNeedingStartingTechDraft,
+  resolveStartingTechIds,
+  sanitizeStartingTechPicks,
+  startingTechChoice,
+  researchSynergyOpts,
+  techById,
+} from '../data/technologies';
 import {
   activePlayer,
   activePlayers,
@@ -14,7 +31,6 @@ import {
   currentAgenda,
   currentDraftPlayerId,
   isDraftInProgress,
-  isStrategyCardPlayed,
   nextSpeakerAfter,
   playersNotPassed,
   turnOrder,
@@ -97,6 +113,8 @@ function endRound(state, at = Date.now()) {
     turnTime: 0,
     turnStartedAt: null,
     strategyResolution: { ...EMPTY_STRATEGY_RESOLUTION },
+    imperialClaim: { ...EMPTY_IMPERIAL_CLAIM },
+    techResearch: { ...EMPTY_TECH_RESEARCH, picks: [], queueIds: [], byPlayer: {} },
   });
   if (next.meta.isAgendaPhasePending) {
     return withPolitics(next, { showModal: true });
@@ -129,7 +147,10 @@ function startNewRound(state) {
       turnTime: 0,
       turnStartedAt: null,
       strategyActionTaken: false,
+      expeditionClaimedThisTurn: false,
       strategyResolution: { ...EMPTY_STRATEGY_RESOLUTION },
+      imperialClaim: { ...EMPTY_IMPERIAL_CLAIM },
+      techResearch: { ...EMPTY_TECH_RESEARCH, picks: [], queueIds: [], byPlayer: {} },
     }),
     clearedDraft,
   );
@@ -155,13 +176,18 @@ function startRound(state, at = Date.now()) {
     turnTime: 0,
     turnStartedAt: at,
     strategyActionTaken: false,
+    expeditionClaimedThisTurn: false,
     strategyResolution: { ...EMPTY_STRATEGY_RESOLUTION },
+    imperialClaim: { ...EMPTY_IMPERIAL_CLAIM },
+    techResearch: { ...EMPTY_TECH_RESEARCH, picks: [], queueIds: [], byPlayer: {} },
   });
 }
 
 /** Advance to the next player who has not passed; end the round if nobody is left. */
 function nextTurn(state, at = Date.now()) {
   if (state.round?.strategyResolution?.active) return state;
+  if (state.round?.imperialClaim?.active) return state;
+  if (state.round?.techResearch?.active) return state;
   const order = turnOrder(state);
   if (order.length === 0) return state;
   if (playersNotPassed(state).length === 0) return endRound(state, at);
@@ -182,12 +208,17 @@ function nextTurn(state, at = Date.now()) {
     turnTime: 0,
     turnStartedAt: at,
     strategyActionTaken: false,
+    expeditionClaimedThisTurn: false,
     strategyResolution: { ...EMPTY_STRATEGY_RESOLUTION },
+    imperialClaim: { ...EMPTY_IMPERIAL_CLAIM },
+    techResearch: { ...EMPTY_TECH_RESEARCH, picks: [], queueIds: [], byPlayer: {} },
   });
 }
 
 function passTurn(state, playerId, at = Date.now()) {
   if (state.round?.strategyResolution?.active) return state;
+  if (state.round?.imperialClaim?.active) return state;
+  if (state.round?.techResearch?.active) return state;
   const player = state.players.find(p => p.id === playerId);
   if (!player || player.eliminated) return state;
   if (state.round.passed?.[playerId]) return state;
@@ -222,6 +253,22 @@ function eliminatePlayer(state, playerId, at = Date.now()) {
     next = withMeta(next, { speakerId: nextSpeakerAfter(next, playerId) });
   }
 
+  const claim = imperialClaimOf(next);
+  if (claim.active && claim.playerId === playerId) {
+    next = clearImperialClaim(next);
+  }
+
+  const tech = techResearchOf(next);
+  if (tech.active) {
+    if (tech.concurrent) {
+      const byPlayer = { ...(tech.byPlayer || {}) };
+      delete byPlayer[playerId];
+      next = withRound(next, { techResearch: { ...tech, byPlayer } });
+    } else if (tech.playerId === playerId) {
+      next = clearTechResearch(next);
+    }
+  }
+
   const wasActive = activePlayer(state)?.id === playerId;
   if (next.round.active && playersNotPassed(next).length === 0) return endRound(next, at);
   return wasActive ? nextTurn(next, at) : next;
@@ -236,6 +283,8 @@ function startStrategyResolution(state, cardId) {
   if (!player?.cards?.length) return state;
   if (state.round.strategyActionTaken) return state;
   if (strategyResolutionOf(state).active) return state;
+  if (imperialClaimOf(state).active) return state;
+  if (techResearchOf(state).active) return state;
 
   const already = new Set(
     Array.isArray(player.playedCardIds) ? player.playedCardIds : [],
@@ -268,6 +317,63 @@ function startStrategyResolution(state, cardId) {
   });
 }
 
+/** Technology (7) opens concurrent tech + shared resolution; Imperial (8) primary UI first. */
+function beginStrategyPlay(state, cardId) {
+  const player = activePlayer(state);
+  if (!player?.cards?.length) return state;
+  if (state.round.strategyActionTaken) return state;
+  if (strategyResolutionOf(state).active) return state;
+  if (imperialClaimOf(state).active) return state;
+  if (techResearchOf(state).active) return state;
+
+  const already = new Set(
+    Array.isArray(player.playedCardIds) ? player.playedCardIds : [],
+  );
+  if (player.strategyPlayed && already.size === 0) return state;
+
+  let resolvedCardId = cardId;
+  if (resolvedCardId == null) {
+    const nextCard = [...player.cards]
+      .filter(c => !already.has(c.id))
+      .sort((a, b) => a.id - b.id)[0];
+    resolvedCardId = nextCard?.id;
+  }
+  if (resolvedCardId == null || already.has(resolvedCardId)) return state;
+  if (!player.cards.some(c => c.id === resolvedCardId)) return state;
+
+  if (resolvedCardId === 7) {
+    const withPoll = startStrategyResolution(state, 7);
+    if (!strategyResolutionOf(withPoll).active) return state;
+    return withRound(withPoll, {
+      techResearch: {
+        active: true,
+        concurrent: true,
+        playerId: null,
+        mode: 'primary',
+        picks: [],
+        ignorePrereq: 0,
+        queueIds: [],
+        primaryPlayerId: player.id,
+        byPlayer: {},
+      },
+    });
+  }
+
+  if (resolvedCardId === 8) {
+    return withRound(state, {
+      imperialClaim: {
+        active: true,
+        playerId: player.id,
+        publicId: null,
+        mecatol: false,
+        secret: false,
+      },
+    });
+  }
+
+  return startStrategyResolution(state, resolvedCardId);
+}
+
 function commitStrategyPlay(state) {
   const resolution = strategyResolutionOf(state);
   if (!resolution.active) return state;
@@ -280,16 +386,28 @@ function commitStrategyPlay(state) {
   });
 
   if (!player || cardId == null) return cleared;
-  if (!player.cards?.some(c => c.id === cardId)) return cleared;
+  return markStrategyCardPlayed(cleared, player.id, cardId);
+}
+
+/** Mark a strategy card played and clear tech session (Technology / commit helpers). */
+function markStrategyCardPlayed(state, playerId, cardId) {
+  const player = state.players.find(p => p.id === playerId);
+  let next = withRound(state, {
+    strategyResolution: { ...EMPTY_STRATEGY_RESOLUTION },
+    strategyActionTaken: true,
+    techResearch: { ...EMPTY_TECH_RESEARCH, picks: [], queueIds: [], byPlayer: {} },
+  });
+  if (!player || cardId == null) return next;
+  if (!player.cards?.some(c => c.id === cardId)) return next;
 
   const already = new Set(
     Array.isArray(player.playedCardIds) ? player.playedCardIds : [],
   );
-  if (already.has(cardId)) return cleared;
+  if (already.has(cardId)) return next;
 
   const playedCardIds = [...already, cardId];
   const strategyPlayed = player.cards.every(c => playedCardIds.includes(c.id));
-  return patchPlayer(cleared, player.id, () => ({ playedCardIds, strategyPlayed }));
+  return patchPlayer(next, player.id, () => ({ playedCardIds, strategyPlayed }));
 }
 
 function resolveStrategyResponse(state, playerId, choice) {
@@ -299,6 +417,10 @@ function resolveStrategyResponse(state, playerId, choice) {
 
   const current = resolution.responses?.[playerId];
   if (current == null || current !== 'pending') return state;
+
+  // Sequential (legacy) tech sessions block the shared poll; concurrent card-7 does not.
+  const tech = techResearchOf(state);
+  if (tech.active && !tech.concurrent) return state;
 
   const responses = { ...resolution.responses, [playerId]: choice };
   let next = withRound(state, {
@@ -679,6 +801,351 @@ function passObjectiveScoring(state, playerId) {
   );
 }
 
+function imperialClaimOf(state) {
+  return state.round?.imperialClaim || EMPTY_IMPERIAL_CLAIM;
+}
+
+function clearImperialClaim(state) {
+  return withRound(state, { imperialClaim: { ...EMPTY_IMPERIAL_CLAIM } });
+}
+
+/** Draft picks live only in claim until confirm — nothing to undo on pass. */
+function applyImperialClaim(state, claim) {
+  let next = state;
+  const playerId = claim.playerId;
+
+  if (claim.publicId) {
+    const key = `${playerId}_${claim.publicId}`;
+    if (!next.objectives.completions[key]) {
+      next = withObjectives(next, {
+        completions: { ...next.objectives.completions, [key]: true },
+      });
+    }
+  }
+
+  if (claim.mecatol) {
+    next = patchPlayer(next, playerId, p => ({
+      extra: (p.extra || 0) + 1,
+    }));
+  } else if (claim.secret) {
+    next = patchPlayer(next, playerId, p => ({
+      secrets: Math.min(3, (p.secrets || 0) + 1),
+    }));
+  }
+
+  return next;
+}
+
+function selectImperialPublic(state, playerId, objectiveId) {
+  const claim = imperialClaimOf(state);
+  if (!claim.active || claim.playerId !== playerId) return state;
+  if (!state.objectives.active.some(o => o.id === objectiveId)) return state;
+
+  const key = `${playerId}_${objectiveId}`;
+  if (state.objectives.completions[key]) return state;
+
+  const publicId = claim.publicId === objectiveId ? null : objectiveId;
+  return withRound(state, {
+    imperialClaim: { ...claim, publicId },
+  });
+}
+
+function toggleImperialMecatol(state, playerId) {
+  const claim = imperialClaimOf(state);
+  if (!claim.active || claim.playerId !== playerId) return state;
+
+  if (claim.mecatol) {
+    return withRound(state, {
+      imperialClaim: { ...claim, mecatol: false },
+    });
+  }
+
+  return withRound(state, {
+    imperialClaim: { ...claim, mecatol: true, secret: false },
+  });
+}
+
+function toggleImperialSecret(state, playerId) {
+  const claim = imperialClaimOf(state);
+  if (!claim.active || claim.playerId !== playerId) return state;
+  if (claim.mecatol) return state;
+
+  const player = state.players.find(p => p.id === playerId);
+  if (!player) return state;
+  if (!claim.secret && (player.secrets || 0) >= 3) return state;
+
+  return withRound(state, {
+    imperialClaim: { ...claim, secret: !claim.secret },
+  });
+}
+
+function confirmImperialClaim(state, playerId) {
+  const claim = imperialClaimOf(state);
+  if (!claim.active || claim.playerId !== playerId) return state;
+  const next = clearImperialClaim(applyImperialClaim(state, claim));
+  return startStrategyResolution(next, 8);
+}
+
+function passImperialClaim(state, playerId) {
+  const claim = imperialClaimOf(state);
+  if (!claim.active || claim.playerId !== playerId) return state;
+  return startStrategyResolution(clearImperialClaim(state), 8);
+}
+
+function techResearchOf(state) {
+  return state.round?.techResearch || { ...EMPTY_TECH_RESEARCH, picks: [], queueIds: [], byPlayer: {} };
+}
+
+function clearTechResearch(state) {
+  return withRound(state, {
+    techResearch: { ...EMPTY_TECH_RESEARCH, picks: [], queueIds: [], byPlayer: {} },
+  });
+}
+
+function techModeForPlayer(state, session, playerId) {
+  if (playerId === session.primaryPlayerId) return 'primary';
+  // Brilliant: when resolving Technology secondary, Jol-Nar may use primary instead.
+  const player = state.players.find(p => p.id === playerId);
+  if (player?.factionId === 'jolnar') return 'primary';
+  return 'secondary';
+}
+
+function techEntryForPlayer(session, playerId) {
+  const entry = session.byPlayer?.[playerId] || session.byPlayer?.[String(playerId)];
+  return {
+    picks: Array.isArray(entry?.picks) ? entry.picks : [],
+    ignorePrereq: entry?.ignorePrereq ? 1 : 0,
+  };
+}
+
+function resolutionStatus(resolution, playerId) {
+  const responses = resolution?.responses || {};
+  if (responses[playerId] != null) return responses[playerId];
+  if (responses[String(playerId)] != null) return responses[String(playerId)];
+  const n = Number(playerId);
+  if (Number.isFinite(n) && responses[n] != null) return responses[n];
+  return null;
+}
+
+function researchTech(state, playerId, techId, opts = {}) {
+  const session = techResearchOf(state);
+  if (!session.active || !session.concurrent) return state;
+
+  const resolution = strategyResolutionOf(state);
+  if (!resolution.active || resolution.cardId !== 7) return state;
+  if (resolutionStatus(resolution, playerId) !== 'pending') return state;
+
+  const mode = techModeForPlayer(state, session, playerId);
+  const maxSlots = maxResearchSlots(mode);
+  const entry = techEntryForPlayer(session, playerId);
+  if (entry.picks.length >= maxSlots) return state;
+
+  const player = state.players.find(p => p.id === playerId);
+  if (!player) return state;
+  const tech = techById(techId);
+  if (!tech) return state;
+
+  const catalog = availableTechs({
+    usePok: !!state.meta?.usePok,
+    useTe: !!state.meta?.useTe,
+    factionId: player.factionId,
+  });
+  if (!catalog.some(t => t.id === techId)) return state;
+
+  const owned = player.techIds || [];
+  const ignoreCount = opts.ignorePrereq != null
+    ? (opts.ignorePrereq ? 1 : 0)
+    : entry.ignorePrereq;
+  if (!opts.force && !canResearch(tech, owned, {
+    ...researchSynergyOpts(player, state),
+    ignoreCount,
+  })) {
+    return state;
+  }
+
+  let next = patchPlayer(state, playerId, p => ({
+    techIds: [...(p.techIds || []), techId],
+  }));
+  const picks = [...entry.picks, techId];
+  next = withRound(next, {
+    techResearch: {
+      ...session,
+      byPlayer: {
+        ...(session.byPlayer || {}),
+        [playerId]: { picks, ignorePrereq: 0 },
+      },
+    },
+  });
+
+  if (picks.length >= maxSlots) {
+    return resolveStrategyResponse(next, playerId, 'played');
+  }
+  return next;
+}
+
+function passTechResearch(state, playerId) {
+  const session = techResearchOf(state);
+  if (!session.active || !session.concurrent) return state;
+
+  const resolution = strategyResolutionOf(state);
+  if (!resolution.active || resolution.cardId !== 7) return state;
+  if (resolutionStatus(resolution, playerId) !== 'pending') return state;
+  const entry = techEntryForPlayer(session, playerId);
+  const choice = entry.picks.length > 0 ? 'played' : 'passed';
+  return resolveStrategyResponse(state, playerId, choice);
+}
+
+function setTechIgnorePrereq(state, playerId, enabled) {
+  const session = techResearchOf(state);
+  if (!session.active || !session.concurrent) return state;
+
+  const resolution = strategyResolutionOf(state);
+  if (!resolution.active || resolution.cardId !== 7) return state;
+  if (resolutionStatus(resolution, playerId) !== 'pending') return state;
+  const entry = techEntryForPlayer(session, playerId);
+  return withRound(state, {
+    techResearch: {
+      ...session,
+      byPlayer: {
+        ...(session.byPlayer || {}),
+        [playerId]: { ...entry, ignorePrereq: enabled ? 1 : 0 },
+      },
+    },
+  });
+}
+
+/** Host / manual grant outside strategy 7 — no prereq check. */
+function grantTech(state, playerId, techId) {
+  if (!techById(techId)) return state;
+  const player = state.players.find(p => p.id === playerId);
+  if (!player) return state;
+  if ((player.techIds || []).includes(techId)) return state;
+  return patchPlayer(state, playerId, p => ({
+    techIds: [...(p.techIds || []), techId],
+  }));
+}
+
+function revokeTech(state, playerId, techId) {
+  const player = state.players.find(p => p.id === playerId);
+  if (!player) return state;
+  if (!(player.techIds || []).includes(techId)) return state;
+  return patchPlayer(state, playerId, p => ({
+    techIds: (p.techIds || []).filter(id => id !== techId),
+  }));
+}
+
+function toggleTech(state, playerId, techId) {
+  if (!techById(techId)) return state;
+  const player = state.players.find(p => p.id === playerId);
+  if (!player) return state;
+  if ((player.techIds || []).includes(techId)) {
+    return revokeTech(state, playerId, techId);
+  }
+  return grantTech(state, playerId, techId);
+}
+
+const withExpedition = (state, expedition) => ({
+  ...state,
+  expedition: { ...state.expedition, ...expedition },
+});
+
+function expeditionOf(state) {
+  return state.expedition || {
+    slices: emptyExpeditionSlices(),
+    completed: false,
+    controllerId: null,
+    placedById: null,
+    awaitingControlPick: false,
+  };
+}
+
+function sliceCounts(slices) {
+  const counts = {};
+  Object.values(slices || {}).forEach(playerId => {
+    if (playerId == null) return;
+    counts[playerId] = (counts[playerId] || 0) + 1;
+  });
+  return counts;
+}
+
+function expeditionLeaders(slices) {
+  const counts = sliceCounts(slices);
+  let best = 0;
+  Object.values(counts).forEach(n => { if (n > best) best = n; });
+  if (best <= 0) return [];
+  return Object.entries(counts)
+    .filter(([, n]) => n === best)
+    .map(([id]) => Number(id))
+    .filter(id => Number.isFinite(id));
+}
+
+function claimedSliceCount(slices) {
+  return Object.values(slices || {}).filter(id => id != null).length;
+}
+
+function claimExpeditionSlice(state, playerId, sliceId) {
+  if (!state.meta?.useTe || !state.isGameActive) return state;
+  if (!state.round?.active) return state;
+  if (!EXPEDITION_SLICE_IDS.includes(sliceId)) return state;
+  if (activePlayer(state)?.id !== playerId) return state;
+  if (state.round?.passed?.[playerId]) return state;
+  if (state.round?.expeditionClaimedThisTurn) return state;
+
+  const expedition = expeditionOf(state);
+  if (expedition.completed || expedition.awaitingControlPick) return state;
+  if (expedition.slices?.[sliceId] != null) return state;
+
+  const player = state.players.find(p => p.id === playerId);
+  if (!player || player.eliminated) return state;
+
+  const slices = { ...expedition.slices, [sliceId]: playerId };
+  let next = withRound(withExpedition(state, { slices }), {
+    expeditionClaimedThisTurn: true,
+  });
+
+  if (!player.breakthrough) {
+    next = patchPlayer(next, playerId, () => ({ breakthrough: true }));
+  }
+
+  if (claimedSliceCount(slices) < EXPEDITION_SLICE_IDS.length) {
+    return next;
+  }
+
+  // Final slice: placer is the claimer; controller is sole leader or awaiting pick.
+  const leaders = expeditionLeaders(slices);
+  if (leaders.length === 1) {
+    return withExpedition(next, {
+      completed: true,
+      placedById: playerId,
+      controllerId: leaders[0],
+      awaitingControlPick: false,
+    });
+  }
+
+  return withExpedition(next, {
+    completed: false,
+    placedById: playerId,
+    controllerId: null,
+    awaitingControlPick: true,
+  });
+}
+
+function resolveThundersEdgeControl(state, pickerId, controllerId) {
+  if (!state.meta?.useTe || !state.isGameActive) return state;
+  const expedition = expeditionOf(state);
+  if (!expedition.awaitingControlPick) return state;
+  if (expedition.placedById !== pickerId) return state;
+
+  const leaders = expeditionLeaders(expedition.slices);
+  if (!leaders.includes(controllerId)) return state;
+
+  return withExpedition(state, {
+    completed: true,
+    controllerId,
+    awaitingControlPick: false,
+  });
+}
+
 function mapCurrentAgenda(state, fn) {
   return withPolitics(state, {
     agendas: state.politics.agendas.map((agenda, index) => (
@@ -695,6 +1162,37 @@ function nextAgenda(state) {
 
   // Step is kept as-is: influence is entered once and reused for later agendas.
   return withPolitics(state, { agendas, currentAgendaIndex: nextIndex });
+}
+
+function startingTechDraftOf(state) {
+  return state.startingTechDraft || { ...EMPTY_STARTING_TECH_DRAFT, responses: {} };
+}
+
+function withStartingTechDraft(state, draft) {
+  return { ...state, startingTechDraft: { ...startingTechDraftOf(state), ...draft } };
+}
+
+function applyStartingTechDraftIfComplete(state) {
+  const draft = startingTechDraftOf(state);
+  if (!draft.active) return state;
+  const needers = playersNeedingStartingTechDraft(state.players);
+  if (needers.length === 0) {
+    return withStartingTechDraft(state, { ...EMPTY_STARTING_TECH_DRAFT, responses: {} });
+  }
+  const allConfirmed = needers.every(
+    p => draft.responses?.[p.id]?.status === 'confirmed',
+  );
+  if (!allConfirmed) return state;
+
+  return {
+    ...state,
+    players: state.players.map((p) => {
+      const response = draft.responses?.[p.id];
+      if (!response || response.status !== 'confirmed') return p;
+      return { ...p, techIds: [...(response.picks || [])] };
+    }),
+    startingTechDraft: { ...EMPTY_STARTING_TECH_DRAFT, responses: {} },
+  };
 }
 
 export function gameReducer(state, action) {
@@ -720,6 +1218,9 @@ export function gameReducer(state, action) {
           totalTime: 0,
           damageDealt: 0,
           eliminated: false,
+          breakthrough: false,
+          techIds: [],
+          startingTechIds: [],
         }],
       };
     }
@@ -738,13 +1239,112 @@ export function gameReducer(state, action) {
       return next;
     }
 
-    case 'UPDATE_PLAYER':
-      return patchPlayer(state, action.playerId, () => action.patch);
+    case 'UPDATE_PLAYER': {
+      const patch = { ...action.patch };
+      if (Object.prototype.hasOwnProperty.call(patch, 'factionId')) {
+        patch.startingTechIds = [];
+      }
+      // Legacy field — starting techs are chosen in startingTechDraft after start.
+      if (Object.prototype.hasOwnProperty.call(patch, 'startingTechIds')) {
+        delete patch.startingTechIds;
+      }
+      return patchPlayer(state, action.playerId, () => patch);
+    }
 
-    case 'START_GAME':
-      return withMeta({ ...state, isGameActive: true }, {
+    case 'START_GAME': {
+      const needers = playersNeedingStartingTechDraft(state.players);
+      const next = {
+        ...state,
+        isGameActive: true,
+        expedition: {
+          slices: emptyExpeditionSlices(),
+          completed: false,
+          controllerId: null,
+          placedById: null,
+          awaitingControlPick: false,
+        },
+        players: state.players.map(p => ({
+          ...p,
+          breakthrough: p.factionId === 'crimson',
+          techIds: resolveStartingTechIds(p),
+        })),
+        startingTechDraft: needers.length > 0
+          ? { needed: true, active: false, responses: {} }
+          : { ...EMPTY_STARTING_TECH_DRAFT, responses: {} },
+      };
+      return withMeta(next, {
         speakerId: state.meta.speakerId ?? state.players[0]?.id ?? null,
       });
+    }
+
+    case 'START_STARTING_TECH_DRAFT': {
+      if (!state.isGameActive) return state;
+      const draft = startingTechDraftOf(state);
+      if (!draft.needed || draft.active) return state;
+      const needers = playersNeedingStartingTechDraft(state.players);
+      if (needers.length === 0) {
+        return withStartingTechDraft(state, { ...EMPTY_STARTING_TECH_DRAFT, responses: {} });
+      }
+      const responses = {};
+      needers.forEach((p) => {
+        responses[p.id] = { status: 'waiting', picks: [] };
+      });
+      return withStartingTechDraft(state, {
+        needed: true,
+        active: true,
+        responses,
+      });
+    }
+
+    case 'SET_STARTING_TECH_PICK': {
+      const draft = startingTechDraftOf(state);
+      if (!draft.active) return state;
+      const player = state.players.find(p => p.id === action.playerId);
+      if (!player || player.eliminated) return state;
+      const choice = startingTechChoice(player.factionId);
+      if (!choice) return state;
+      const current = draft.responses?.[player.id];
+      if (!current || current.status === 'confirmed') return state;
+      if (choice.wave === 'C') {
+        if (!isStartingTechWaveAReady(state)) return state;
+      }
+      const picks = sanitizeStartingTechPicks(
+        player.factionId,
+        action.picks,
+        state,
+        { playerId: player.id },
+      );
+      const responses = {
+        ...draft.responses,
+        [player.id]: {
+          status: picks.length > 0 ? 'picking' : 'waiting',
+          picks,
+        },
+      };
+      return withStartingTechDraft(state, { responses });
+    }
+
+    case 'CONFIRM_STARTING_TECH': {
+      const draft = startingTechDraftOf(state);
+      if (!draft.active) return state;
+      const player = state.players.find(p => p.id === action.playerId);
+      if (!player || player.eliminated) return state;
+      if (!canConfirmStartingTech(player, state)) return state;
+      const response = draft.responses?.[player.id];
+      const picks = sanitizeStartingTechPicks(
+        player.factionId,
+        response?.picks,
+        state,
+        { playerId: player.id },
+      );
+      const next = withStartingTechDraft(state, {
+        responses: {
+          ...draft.responses,
+          [player.id]: { status: 'confirmed', picks },
+        },
+      });
+      return applyStartingTechDraftIfComplete(next);
+    }
 
     case 'SET_SPEAKER':
       return setSpeaker(state, action.playerId);
@@ -830,7 +1430,7 @@ export function gameReducer(state, action) {
       return startRound(state, actionAt(action));
 
     case 'PLAY_STRATEGY':
-      return startStrategyResolution(state, action.cardId);
+      return beginStrategyPlay(state, action.cardId);
 
     case 'RESOLVE_STRATEGY':
       return resolveStrategyResponse(state, action.playerId, action.choice);
@@ -850,6 +1450,7 @@ export function gameReducer(state, action) {
       return eliminatePlayer(state, action.playerId, actionAt(action));
 
     case 'END_ROUND':
+      if (playersNotPassed(state).length > 0) return state;
       return endRound(state, actionAt(action));
 
     // --- Status phase ---
@@ -876,6 +1477,48 @@ export function gameReducer(state, action) {
 
     case 'PASS_OBJECTIVE_SCORING':
       return passObjectiveScoring(state, action.playerId);
+
+    case 'SELECT_IMPERIAL_PUBLIC':
+      return selectImperialPublic(state, action.playerId, action.objectiveId);
+
+    case 'TOGGLE_IMPERIAL_MECATOL':
+      return toggleImperialMecatol(state, action.playerId);
+
+    case 'TOGGLE_IMPERIAL_SECRET':
+      return toggleImperialSecret(state, action.playerId);
+
+    case 'CONFIRM_IMPERIAL_CLAIM':
+      return confirmImperialClaim(state, action.playerId);
+
+    case 'PASS_IMPERIAL_CLAIM':
+      return passImperialClaim(state, action.playerId);
+
+    case 'RESEARCH_TECH':
+      return researchTech(state, action.playerId, action.techId, {
+        force: !!action.force,
+        ignorePrereq: action.ignorePrereq,
+      });
+
+    case 'PASS_TECH_RESEARCH':
+      return passTechResearch(state, action.playerId);
+
+    case 'SET_TECH_IGNORE_PREREQ':
+      return setTechIgnorePrereq(state, action.playerId, !!action.enabled);
+
+    case 'GRANT_TECH':
+      return grantTech(state, action.playerId, action.techId);
+
+    case 'REVOKE_TECH':
+      return revokeTech(state, action.playerId, action.techId);
+
+    case 'TOGGLE_TECH':
+      return toggleTech(state, action.playerId, action.techId);
+
+    case 'CLAIM_EXPEDITION_SLICE':
+      return claimExpeditionSlice(state, action.playerId, action.sliceId);
+
+    case 'RESOLVE_THUNDERS_EDGE_CONTROL':
+      return resolveThundersEdgeControl(state, action.playerId, action.controllerId);
 
     case 'SET_STATUS_PHASE_VISIBLE':
       return withStatusPhase(state, { show: !!action.visible });

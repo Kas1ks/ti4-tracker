@@ -23,7 +23,7 @@ export function PoliticsModal({
   onLockInfluence,
   onUnlockInfluence,
   onToggleVoteReversed,
-  onSetSpeaker,
+  onSetSpeaker: _onSetSpeaker,
   onNextAgenda,
   onFinish,
   voteOrder = [],

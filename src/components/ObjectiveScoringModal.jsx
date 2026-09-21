@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import { useEscapeKey } from '../hooks/useEscapeKey';
 import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
 
@@ -7,7 +6,6 @@ import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
  * - Desktop: two columns (queue | objectives)
  * - Mobile: step layout — chip queue, large goals, sticky actions
  * Objectives are always shown for the viewing seat (or current seat for host acts).
- * Completed goals collapse; expand to see who scored them.
  */
 export function ObjectiveScoringModal({
   show,
@@ -25,8 +23,6 @@ export function ObjectiveScoringModal({
   onMinimize,
   onClose,
 }) {
-  const [expanded, setExpanded] = useState({});
-
   useEscapeKey(onMinimize || onClose, show && !minimized);
   useBodyScrollLock(show && !minimized);
   if (!show) return null;
@@ -50,7 +46,6 @@ export function ObjectiveScoringModal({
     && seatPlayerId !== currentId;
   const iAmDone = viewingSelf && (myResponse?.status === 'done' || myResponse?.status === 'passed');
 
-  const activeSeats = players.filter(p => !p.eliminated);
   const stages = [
     { stage: 1, title: 'Этап I · 1 ПО', color: 'text-blue-400' },
     { stage: 2, title: 'Этап II · 2 ПО', color: 'text-rose-400' },
@@ -93,10 +88,6 @@ export function ObjectiveScoringModal({
           ? `Отметка за: ${currentPlayer?.name || '…'}`
           : 'По инициативе · 1 общая + 1 секретная';
 
-  const toggleExpand = (id) => {
-    setExpanded(prev => ({ ...prev, [id]: !prev[id] }));
-  };
-
   const bodyProps = {
     canActOnCurrent,
     displayPlayer,
@@ -104,9 +95,6 @@ export function ObjectiveScoringModal({
     stages,
     objectives,
     completions,
-    activeSeats,
-    expanded,
-    toggleExpand,
     onToggleSecret,
     onSelectPublic,
   };
@@ -354,9 +342,6 @@ function ScoringBody({
   stages,
   objectives,
   completions,
-  activeSeats,
-  expanded,
-  toggleExpand,
   onToggleSecret,
   onSelectPublic,
   dense,
@@ -416,26 +401,7 @@ function ScoringBody({
                 : false;
               const scoredThisWindow = displayResponse?.publicId === obj.id;
               const ownedBefore = mine && !scoredThisWindow;
-              // Newly picked this window stays open for easy undo; already-owned collapse.
-              const isExpanded = expanded[obj.id] ?? !(mine && !scoredThisWindow);
               const interactive = canActOnCurrent && displayPlayer && !ownedBefore;
-
-              if (mine && !isExpanded) {
-                return (
-                  <button
-                    key={obj.id}
-                    type="button"
-                    onClick={() => toggleExpand(obj.id)}
-                    className="w-full text-left rounded-2xl border border-emerald-600/40 bg-emerald-950/20 px-3 py-2.5 flex items-center gap-2"
-                  >
-                    <span className="text-emerald-400 font-bold text-[11px] uppercase flex-shrink-0">✓</span>
-                    <span className="text-xs text-slate-400 line-through decoration-slate-600 truncate flex-1 font-bold">
-                      {obj.desc}
-                    </span>
-                    <span className="text-slate-500 text-xs flex-shrink-0">▼</span>
-                  </button>
-                );
-              }
 
               return (
                 <div
@@ -463,70 +429,22 @@ function ScoringBody({
                       ✓
                     </button>
                     <div className="min-w-0 flex-1">
-                      <div className="flex items-start gap-2">
-                        <button
-                          type="button"
-                          disabled={!interactive}
-                          onClick={() => interactive && onSelectPublic(displayPlayer.id, obj.id)}
-                          className={`min-w-0 flex-1 text-left font-bold leading-snug ${
-                            dense ? 'text-sm' : 'text-base'
-                          } ${mine ? 'text-emerald-200' : 'text-slate-100'} ${
-                            interactive ? 'cursor-pointer' : 'cursor-default'
-                          }`}
-                        >
-                          {obj.desc}
-                        </button>
-                        {mine && (
-                          <button
-                            type="button"
-                            onClick={() => toggleExpand(obj.id)}
-                            className="text-slate-500 hover:text-slate-300 text-xs px-2 py-1 rounded-lg bg-slate-950 border border-slate-800 flex-shrink-0"
-                            aria-label="Свернуть"
-                          >
-                            ▲
-                          </button>
-                        )}
-                      </div>
+                      <button
+                        type="button"
+                        disabled={!interactive}
+                        onClick={() => interactive && onSelectPublic(displayPlayer.id, obj.id)}
+                        className={`w-full text-left font-bold leading-snug ${
+                          dense ? 'text-sm' : 'text-base'
+                        } ${mine ? 'text-emerald-200' : 'text-slate-100'} ${
+                          interactive ? 'cursor-pointer' : 'cursor-default'
+                        }`}
+                      >
+                        {obj.desc}
+                      </button>
 
                       {ownedBefore && (
                         <div className="text-[11px] text-slate-500 mt-1.5 font-bold uppercase">
                           Уже засчитано ранее
-                        </div>
-                      )}
-
-                      {/* Who completed — only after expand on a scored goal */}
-                      {mine && isExpanded && (
-                        <div className={`mt-2 grid gap-1.5 ${dense ? 'grid-cols-2 sm:grid-cols-3' : 'grid-cols-2'}`}>
-                          {activeSeats.map(p => {
-                            const isDone = !!completions[`${p.id}_${obj.id}`];
-                            const pColor = p.color || '#3b82f6';
-                            const isBlack = ['#000000', '#000', 'black'].includes(pColor.toLowerCase());
-                            return (
-                              <div
-                                key={p.id}
-                                style={{
-                                  borderColor: isDone ? (isBlack ? '#ffffff' : pColor) : undefined,
-                                }}
-                                className={`px-2 py-1.5 rounded-xl font-bold flex items-center justify-between gap-1 border ${
-                                  dense ? 'text-[10px]' : 'text-xs'
-                                } ${
-                                  isDone
-                                    ? 'bg-slate-950 text-white'
-                                    : 'bg-slate-950/80 text-slate-500 border-slate-800'
-                                }`}
-                              >
-                                <span className="truncate">{p.name}</span>
-                                {isDone && (
-                                  <span
-                                    className="w-3.5 h-3.5 rounded-full flex items-center justify-center text-[9px] text-black font-extrabold flex-shrink-0"
-                                    style={{ backgroundColor: isBlack ? '#ffffff' : pColor }}
-                                  >
-                                    ✓
-                                  </span>
-                                )}
-                              </div>
-                            );
-                          })}
                         </div>
                       )}
                     </div>

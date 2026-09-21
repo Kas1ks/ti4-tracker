@@ -28,6 +28,7 @@ export function GameBoard({
   eliminatePlayer,
   releaseSeat,
   setSpeaker,
+  onOpenPlayerTech,
   claimedSeats = [],
   isGameActive,
   perms,
@@ -36,6 +37,7 @@ export function GameBoard({
   const canEliminate = !perms || perms.can('eliminate');
   const canReleaseSeat = typeof releaseSeat === 'function';
   const canSetSpeaker = typeof setSpeaker === 'function';
+  const canOpenTech = typeof onOpenPlayerTech === 'function';
   const canScoreAny = !perms || perms.can('scoreAny');
   const canScoreSelf = !perms || perms.can('scoreSelf');
   const seatId = perms?.seatPlayerId;
@@ -144,7 +146,7 @@ export function GameBoard({
                                                         </div>
 
                                                         <div className="text-xs text-slate-500 mt-2 pt-1.5 border-t border-slate-800/60">
-                                                            Время: <span className="font-mono text-slate-400">{formatTime(p.totalTime || 0)}</span>
+                                                            <span>Время: <span className="font-mono text-slate-400">{formatTime(p.totalTime || 0)}</span></span>
                                                         </div>
                                                     </div>
                                                 );
@@ -180,7 +182,8 @@ export function GameBoard({
                                                 const showEliminate = !p.eliminated && isGameActive && canEliminate;
                                                 const showRelease = canReleaseSeat && seatClaimed;
                                                 const showSetSpeaker = canSetSpeaker && !p.eliminated && p.id !== speakerId;
-                                                const hasPlayerActions = showEliminate || showRelease || showSetSpeaker;
+                                                const showOpenTech = canOpenTech && !p.eliminated;
+                                                const hasPlayerActions = showEliminate || showRelease || showSetSpeaker || showOpenTech;
                                                 const actionsOpen = playerActionsId === p.id;
 
                                                 return (
@@ -251,6 +254,20 @@ export function GameBoard({
                                                                     </div>
                                                                     {hasPlayerActions && actionsOpen && (
                                                                         <div className="mt-1.5 flex flex-wrap items-center gap-1">
+                                                                            {showOpenTech && (
+                                                                                <button
+                                                                                    type="button"
+                                                                                    onClick={() => {
+                                                                                        setPlayerActionsId(null);
+                                                                                        onOpenPlayerTech(p.id);
+                                                                                    }}
+                                                                                    className="text-slate-400 hover:text-sky-300 text-[11px] px-2 py-1 rounded-lg border border-slate-700/80 bg-slate-950/70 hover:bg-sky-950/40 transition inline-flex items-center gap-1.5"
+                                                                                    title={`Технологии: ${p.name}`}
+                                                                                >
+                                                                                    <i className="fa-solid fa-atom" />
+                                                                                    Тех
+                                                                                </button>
+                                                                            )}
                                                                             {showSetSpeaker && (
                                                                                 <button
                                                                                     type="button"

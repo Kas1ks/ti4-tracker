@@ -2,9 +2,9 @@ import { ROLE_LABELS } from '../sync/permissions';
 import { ALL_FACTIONS } from '../data/gameData';
 
 /** Waiting room for player/viewer until the host starts the game. */
-export function GuestLobby({ room, players, onLeaveRoom }) {
+export function GuestLobby({ room, players, roomError, onLeaveRoom }) {
   const roleLabel = ROLE_LABELS[room?.role] || room?.role;
-  const seatIdx = players.findIndex(p => p.id === room?.seatPlayerId);
+  const seatIdx = players.findIndex(p => String(p.id) === String(room?.seatPlayerId));
   const mySeat = seatIdx >= 0 ? players[seatIdx] : null;
   const myFaction = mySeat ? ALL_FACTIONS.find(f => f.id === mySeat.factionId) : null;
 
@@ -45,44 +45,26 @@ export function GuestLobby({ room, players, onLeaveRoom }) {
         </div>
       )}
 
-      <div className="space-y-3">
-        <div className="flex items-center justify-center gap-2 text-cyan-400">
-          <i className="fa-solid fa-spinner fa-spin" />
-          <span className="font-orbitron font-bold uppercase text-sm">Ожидание старта</span>
+      {roomError && (
+        <div className="text-sm text-rose-300 bg-rose-950/40 border border-rose-800 rounded-xl px-4 py-3">
+          {roomError}
         </div>
-        <p className="text-slate-500 text-sm">
-          Хост настраивает стол. Когда партия начнётся, табло откроется автоматически.
-        </p>
+      )}
+
+      <div className="space-y-3 text-slate-400 text-sm">
+        <p>Ожидайте, пока хост настроит стол и начнёт партию.</p>
+        <p className="text-xs text-slate-500">Экран обновится автоматически.</p>
       </div>
 
-      <div className="space-y-2 pt-4">
-        <div className="text-[10px] font-bold text-slate-600 uppercase">За столом ({players.length})</div>
-        <div className="flex flex-wrap justify-center gap-2">
-          {players.map((p, i) => (
-            <span
-              key={p.id}
-              className={`text-xs font-bold px-3 py-1.5 rounded-full border ${
-                p.id === room?.seatPlayerId
-                  ? 'border-cyan-500 text-cyan-300 bg-cyan-950/40'
-                  : 'border-slate-700 text-slate-400 bg-slate-900'
-              }`}
-            >
-              #{i + 1} {p.name}
-            </span>
-          ))}
-          {players.length === 0 && (
-            <span className="text-sm text-slate-600">Пока никого…</span>
-          )}
-        </div>
-      </div>
-
-      <button
-        type="button"
-        onClick={onLeaveRoom}
-        className="text-sm text-slate-500 hover:text-red-400 font-bold transition"
-      >
-        Выйти из комнаты
-      </button>
+      {onLeaveRoom && (
+        <button
+          type="button"
+          onClick={onLeaveRoom}
+          className="text-sm text-slate-500 hover:text-slate-300 underline underline-offset-4"
+        >
+          Покинуть комнату
+        </button>
+      )}
     </div>
   );
 }

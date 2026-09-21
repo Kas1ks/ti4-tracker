@@ -1,6 +1,8 @@
 import {
   applyRoomAction,
   createRoomRecord,
+  hydrateRoomLifecycle,
+  isRoomExpired,
   joinRoom,
   releaseSeat,
   publicRoomView,
@@ -25,6 +27,20 @@ function notify(roomId, payload) {
   }
 }
 
+function purgeIfExpired(roomId) {
+  const key = String(roomId || '').toUpperCase();
+  const room = rooms.get(key);
+  if (!room) return null;
+  const hydrated = hydrateRoomLifecycle(room);
+  if (isRoomExpired(hydrated)) {
+    rooms.delete(key);
+    listeners.delete(key);
+    return null;
+  }
+  if (hydrated !== room) rooms.set(key, hydrated);
+  return hydrated;
+}
+
 export function memoryCreateRoom(initialState) {
   const room = createRoomRecord(initialState);
   rooms.set(room.roomId, room);
@@ -32,12 +48,13 @@ export function memoryCreateRoom(initialState) {
 }
 
 export function memoryGetRoom(roomId) {
-  return rooms.get(String(roomId || '').toUpperCase()) || null;
+  return purgeIfExpired(roomId);
 }
+
 
 export function memoryJoin(roomId, body) {
   const key = String(roomId || '').toUpperCase();
-  const room = rooms.get(key);
+  const room = purgeIfExpired(key);
   if (!room) return { ok: false, error: 'not-found' };
   const result = joinRoom(room, body);
   if (!result.ok) return result;
@@ -54,7 +71,7 @@ export function memoryJoin(roomId, body) {
 
 export function memoryReleaseSeat(roomId, body) {
   const key = String(roomId || '').toUpperCase();
-  const room = rooms.get(key);
+  const room = purgeIfExpired(key);
   if (!room) return { ok: false, error: 'not-found' };
   const result = releaseSeat(room, body?.seatPlayerId, {
     sessionToken: body?.sessionToken,
@@ -75,7 +92,7 @@ export function memoryReleaseSeat(roomId, body) {
 
 export function memoryApplyAction(roomId, action, auth) {
   const key = String(roomId || '').toUpperCase();
-  const room = rooms.get(key);
+  const room = purgeIfExpired(key);
   if (!room) return { ok: false, error: 'not-found' };
 
   const result = applyRoomAction(room, action, auth);

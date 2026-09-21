@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { ALL_FACTIONS, STRATEGY_CARDS } from '../data/gameData';
 import { formatTime } from '../utils/game';
 import { areAllStrategiesPlayed, isStrategyCardPlayed } from '../game/selectors';
+import { PlayerTechSheet, TechPips } from './TechSheet';
 
 const TABS = [
   { id: 'turn', label: 'Ход', icon: 'fa-play' },
@@ -52,9 +53,12 @@ export function PlayerMobileConsole({
   canPlay,
   canNextTurn,
   onOpenProduction,
+  usePok = false,
+  useTe = false,
 }) {
   const [tab, setTab] = useState('turn');
   const [tableSortMode, setTableSortMode] = useState('initiative');
+  const [techSheetPlayerId, setTechSheetPlayerId] = useState(null);
   const scoringActive = !!scoring?.active;
   const myResponse = me ? scoring?.responses?.[me.id] : null;
   const currentScoringId = scoring?.orderIds?.[scoring?.currentIdx];
@@ -158,9 +162,19 @@ export function PlayerMobileConsole({
             speakerId={speakerId}
             sortMode={tableSortMode}
             onSortModeChange={setTableSortMode}
+            onOpenPlayerTech={(playerId) => setTechSheetPlayerId(playerId)}
           />
         </div>
       </div>
+
+      {techSheetPlayerId != null && (
+        <PlayerTechSheet
+          player={players.find(p => p.id === techSheetPlayerId)}
+          usePok={usePok}
+          useTe={useTe}
+          onClose={() => setTechSheetPlayerId(null)}
+        />
+      )}
 
       {/* In-flow spacer so scroll panels end above the fixed tab bar */}
       <div className="player-tabbar-spacer" aria-hidden="true" />
@@ -579,6 +593,7 @@ function ObjectivesTab({
               const interactive = canScore && !ownedBefore;
               const isCompletedByAll = activeSeats.length > 0
                 && activeSeats.every(p => !!completions[`${p.id}_${obj.id}`]);
+              const canCollapse = mine || isCompletedByAll;
               const isExpanded = expanded[obj.id] ?? !isCompletedByAll;
 
               return (
@@ -622,23 +637,27 @@ function ObjectivesTab({
                         <button
                           type="button"
                           onClick={(e) => {
-                            if (isCompletedByAll) {
+                            if (canCollapse) {
                               e.stopPropagation();
                               toggleExpand(obj.id);
                             }
                           }}
                           className={`min-w-0 flex-1 text-left flex items-start gap-2 ${
-                            isCompletedByAll ? 'cursor-pointer select-none' : interactive ? 'cursor-pointer' : 'cursor-default'
+                            canCollapse ? 'cursor-pointer select-none' : interactive ? 'cursor-pointer' : 'cursor-default'
                           }`}
                         >
-                          {isCompletedByAll && (
+                          {isCompletedByAll ? (
                             <span className="text-emerald-400 font-bold text-xs flex-shrink-0 mt-0.5 animate-pulse uppercase">
                               ✓ Все
                             </span>
-                          )}
+                          ) : mine ? (
+                            <span className="text-emerald-400 font-bold text-xs flex-shrink-0 mt-0.5 uppercase">
+                              ✓ Вы
+                            </span>
+                          ) : null}
                           <span
                             className={`text-sm font-bold leading-snug transition-all duration-300 ${
-                              isCompletedByAll && !isExpanded
+                              canCollapse && !isExpanded
                                 ? 'text-slate-400 line-through text-xs decoration-slate-600'
                                 : mine
                                   ? 'text-emerald-200'
@@ -648,7 +667,7 @@ function ObjectivesTab({
                             {obj.desc}
                           </span>
                         </button>
-                        {isCompletedByAll && (
+                        {canCollapse && (
                           <button
                             type="button"
                             onClick={(e) => {
@@ -756,6 +775,7 @@ function TableTab({
   speakerId,
   sortMode,
   onSortModeChange,
+  onOpenPlayerTech,
 }) {
   const activeSeats = players.filter(p => !p.eliminated);
 
@@ -822,17 +842,17 @@ function TableTab({
       {list.map((p, idx) => {
         const faction = ALL_FACTIONS.find(f => f.id === p.factionId);
         const score = getPlayerScore(p.id);
-        const secrets = p.secrets ?? 0;
-        const mecatol = p.extra ?? 0;
         const isCurrent = activePlayer?.id === p.id && !passed[p.id];
         const isMe = me?.id === p.id;
         const hasPassed = !!passed[p.id];
         const cardsPlayed = areAllStrategiesPlayed(p);
 
         return (
-          <div
+          <button
             key={p.id}
-            className={`flex items-center gap-3 rounded-2xl border px-3 py-2.5 ${
+            type="button"
+            onClick={() => onOpenPlayerTech?.(p.id)}
+            className={`w-full flex items-center gap-3 rounded-2xl border px-3 py-2.5 text-left transition active:scale-[0.99] ${
               isCurrent
                 ? 'border-cyan-500/60 bg-cyan-950/25'
                 : isMe
@@ -861,16 +881,16 @@ function TableTab({
                   </span>
                 )}
               </div>
-              <div className="text-xs text-slate-500 truncate">
-                {hasPassed ? 'Пас' : isCurrent ? 'Ходит' : cardsPlayed ? 'Стратегия сыграна' : 'В игре'}
-                <span className="text-slate-600"> · </span>
-                <span className="text-slate-400">Секр {secrets}</span>
-                <span className="text-slate-600"> · </span>
-                <span className="text-purple-400/80">Мек {mecatol}</span>
+              <div className="text-xs text-slate-500 truncate flex items-center gap-1.5 flex-wrap">
+                <span>
+                  {hasPassed ? 'Пас' : isCurrent ? 'Ходит' : cardsPlayed ? 'Стратегия сыграна' : 'В игре'}
+                </span>
+                <TechPips techIds={p.techIds} />
               </div>
             </div>
             <div className="font-orbitron font-black text-xl text-amber-400 tabular-nums">{score}</div>
-          </div>
+            <i className="fa-solid fa-atom text-sky-500/80 text-sm flex-shrink-0" aria-hidden="true" />
+          </button>
         );
       })}
       {!list.length && (

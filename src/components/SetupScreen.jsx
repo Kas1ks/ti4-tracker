@@ -198,7 +198,10 @@ export function SetupScreen({
                       <div className="text-[10px] uppercase font-bold text-slate-500">Фракция:</div>
                       <select
                         value={p.factionId}
-                        onChange={(e) => updatePlayer(p.id, { factionId: e.target.value })}
+                        onChange={(e) => updatePlayer(p.id, {
+                          factionId: e.target.value,
+                          startingTechIds: [],
+                        })}
                         className="bg-transparent text-sm font-bold text-amber-400 focus:outline-none w-full"
                       >
                         {availableFactions.map(f => (

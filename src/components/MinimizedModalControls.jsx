@@ -6,6 +6,11 @@ export function MinimizedModalControls({
   showStatusPhaseModal,
   scoringActive = false,
   strategyResolutionActive = false,
+  imperialClaimActive = false,
+  techResearchActive = false,
+  expeditionActive = false,
+  startingTechDraftActive = false,
+  startingTechPlayerActive = false,
   onRestore,
 }) {
   const controls = [
@@ -17,6 +22,41 @@ export function MinimizedModalControls({
       show: strategyResolutionActive,
       label: 'Розыгрыш стратегии',
       icon: 'fa-clone',
+      className: 'bg-slate-800 border border-amber-500 text-amber-300',
+    },
+    {
+      id: 'startingTechDraft',
+      show: startingTechDraftActive,
+      label: 'Стартовые tech',
+      icon: 'fa-atom',
+      className: 'bg-slate-800 border border-cyan-500 text-cyan-300',
+    },
+    {
+      id: 'startingTechPlayer',
+      show: startingTechPlayerActive,
+      label: 'Мои стартовые tech',
+      icon: 'fa-microchip',
+      className: 'bg-slate-800 border border-cyan-500 text-cyan-300',
+    },
+    {
+      id: 'imperialClaim',
+      show: imperialClaimActive,
+      label: 'Экспансия',
+      icon: 'fa-globe',
+      className: 'bg-slate-800 border border-purple-500 text-purple-300',
+    },
+    {
+      id: 'techResearch',
+      show: techResearchActive,
+      label: 'Технологии',
+      icon: 'fa-atom',
+      className: 'bg-slate-800 border border-sky-500 text-sky-300',
+    },
+    {
+      id: 'expedition',
+      show: expeditionActive,
+      label: 'Экспедиция',
+      icon: 'fa-mountain',
       className: 'bg-slate-800 border border-amber-500 text-amber-300',
     },
     {
@@ -37,7 +77,7 @@ export function MinimizedModalControls({
   ];
 
   return (
-    <div className="fixed bottom-4 right-4 z-40 flex flex-col items-end gap-2 max-md:bottom-[max(1rem,env(safe-area-inset-bottom))] max-md:right-2">
+    <div className="fixed bottom-4 right-4 z-[65] flex flex-col items-end gap-2 max-md:bottom-[max(1rem,env(safe-area-inset-bottom))] max-md:right-2">
       {controls.filter((control) => minimizedModals[control.id] && control.show).map((control) => (
         <button key={control.id} onClick={() => onRestore(control.id)} className={control.className + ' font-bold px-4 py-2 rounded-xl text-xs transition shadow-lg hover:bg-slate-700 flex items-center gap-2'}>
           <i className={'fa-solid ' + control.icon} /><span>{control.label}</span>

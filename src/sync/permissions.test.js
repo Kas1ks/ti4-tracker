@@ -268,6 +268,173 @@ describe('authorizeAction', () => {
       state,
     }).ok).toBe(true);
   });
+
+  it('allows expedition claim on own turn when TE is on', () => {
+    let state = normalizeGameState({
+      isGameActive: true,
+      players: [player(1, 'A'), player(2, 'B')],
+      speakerId: 1,
+      useTe: true,
+    });
+    state = {
+      ...state,
+      round: {
+        ...state.round,
+        active: true,
+        turnOrderIds: [1, 2],
+        activeTurnIdx: 0,
+        passed: {},
+      },
+    };
+
+    expect(authorizeAction({
+      role: ROLES.PLAYER,
+      seatPlayerId: 1,
+      action: { type: 'CLAIM_EXPEDITION_SLICE', playerId: 1, sliceId: 'resources' },
+      state,
+    }).ok).toBe(true);
+
+    expect(authorizeAction({
+      role: ROLES.PLAYER,
+      seatPlayerId: 2,
+      action: { type: 'CLAIM_EXPEDITION_SLICE', playerId: 2, sliceId: 'resources' },
+      state,
+    }).ok).toBe(false);
+
+    state = {
+      ...state,
+      expedition: {
+        ...state.expedition,
+        awaitingControlPick: true,
+        placedById: 1,
+      },
+    };
+    expect(authorizeAction({
+      role: ROLES.PLAYER,
+      seatPlayerId: 1,
+      action: { type: 'RESOLVE_THUNDERS_EDGE_CONTROL', playerId: 1, controllerId: 2 },
+      state,
+    }).ok).toBe(true);
+  });
+
+  it('allows tech research only for pending seats during Technology resolution', () => {
+    const state = {
+      ...createEmptyGameState(),
+      isGameActive: true,
+      players: [
+        { id: 1, name: 'A' },
+        { id: 2, name: 'B' },
+      ],
+      round: {
+        ...createEmptyGameState().round,
+        strategyResolution: {
+          active: true,
+          cardId: 7,
+          playerId: 1,
+          responses: { 1: 'pending', 2: 'pending' },
+        },
+        techResearch: {
+          active: true,
+          concurrent: true,
+          primaryPlayerId: 1,
+          byPlayer: {},
+          picks: [],
+          queueIds: [],
+        },
+      },
+    };
+
+    expect(authorizeAction({
+      role: ROLES.PLAYER,
+      seatPlayerId: 1,
+      action: { type: 'RESEARCH_TECH', playerId: 1, techId: 'neural_motivator' },
+      state,
+    }).ok).toBe(true);
+
+    expect(authorizeAction({
+      role: ROLES.PLAYER,
+      seatPlayerId: 2,
+      action: { type: 'RESEARCH_TECH', playerId: 1, techId: 'neural_motivator' },
+      state,
+    }).ok).toBe(false);
+
+    expect(authorizeAction({
+      role: ROLES.PLAYER,
+      seatPlayerId: 2,
+      action: { type: 'RESEARCH_TECH', playerId: 2, techId: 'neural_motivator' },
+      state,
+    }).ok).toBe(true);
+
+    expect(authorizeAction({
+      role: ROLES.PLAYER,
+      seatPlayerId: 2,
+      action: { type: 'TOGGLE_TECH', playerId: 2, techId: 'neural_motivator' },
+      state,
+    }).ok).toBe(true);
+
+    expect(authorizeAction({
+      role: ROLES.PLAYER,
+      seatPlayerId: 2,
+      action: { type: 'TOGGLE_TECH', playerId: 1, techId: 'neural_motivator' },
+      state,
+    }).ok).toBe(false);
+  });
+
+  it('lets a seated player pick and confirm starting techs during an active draft', () => {
+    const live = createEmptyGameState();
+    live.isGameActive = true;
+    live.players = [
+      { id: 1, name: 'A', factionId: 'argent', color: '#fff' },
+      { id: 2, name: 'B', factionId: 'sol', color: '#000' },
+    ];
+    live.startingTechDraft = {
+      needed: true,
+      active: true,
+      responses: {
+        1: { status: 'waiting', picks: [] },
+      },
+    };
+
+    expect(authorizeAction({
+      role: ROLES.PLAYER,
+      seatPlayerId: 1,
+      action: {
+        type: 'SET_STARTING_TECH_PICK',
+        playerId: 1,
+        picks: ['neural_motivator', 'plasma_scoring'],
+      },
+      state: live,
+    }).ok).toBe(true);
+
+    expect(authorizeAction({
+      role: ROLES.PLAYER,
+      seatPlayerId: 1,
+      action: {
+        type: 'SET_STARTING_TECH_PICK',
+        playerId: 2,
+        picks: ['neural_motivator'],
+      },
+      state: live,
+    }).error).toBe('not-your-starting-tech');
+
+    expect(authorizeAction({
+      role: ROLES.PLAYER,
+      seatPlayerId: 1,
+      action: { type: 'CONFIRM_STARTING_TECH', playerId: 1 },
+      state: live,
+    }).ok).toBe(true);
+
+    expect(authorizeAction({
+      role: ROLES.PLAYER,
+      seatPlayerId: 1,
+      action: {
+        type: 'UPDATE_PLAYER',
+        playerId: 1,
+        patch: { startingTechIds: ['neural_motivator', 'plasma_scoring'] },
+      },
+      state: live,
+    }).ok).toBe(false);
+  });
 });
 
 describe('can (UI capabilities)', () => {

@@ -67,6 +67,14 @@ describe('normalizeGameState', () => {
     expect(normalizeGameState(once)).toEqual(once);
   });
 
+  it('keeps empty expedition slices as null (not player 0)', () => {
+    const state = normalizeGameState(createEmptyGameState());
+    expect(state.expedition.slices.resources).toBeNull();
+    expect(Object.values(state.expedition.slices).every(v => v === null)).toBe(true);
+    expect(state.expedition.controllerId).toBeNull();
+    expect(state.expedition.placedById).toBeNull();
+  });
+
   it('reads a legacy flat snapshot', () => {
     const state = normalizeGameState({
       targetScore: 14,

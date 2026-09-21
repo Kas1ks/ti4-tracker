@@ -1,9 +1,14 @@
 import { createEmptyGameState, normalizeGameState } from '../../src/game/gameState.js';
-import { gameReducer } from '../../src/game/gameReducer.js';
+import { reduceGame } from '../../src/game/gameEvents.js';
 import { LOCAL_ONLY_ACTIONS } from '../../src/sync/constants.js';
 import { authorizeAction, makeSessionToken, ROLES } from '../../src/sync/permissions.js';
 
 export { LOCAL_ONLY_ACTIONS, ROLES };
+
+/** Idle rooms expire after 48h without join/action. */
+export const ROOM_IDLE_TTL_MS = 48 * 60 * 60 * 1000;
+/** After host ends the party, keep the DO briefly then wipe. */
+export const ROOM_ENDED_TTL_MS = 2 * 60 * 60 * 1000;
 
 export function makeRoomId() {
   const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -30,6 +35,45 @@ export function makeSeatSecret() {
   return secret;
 }
 
+/**
+ * Refresh activity timestamps and push expiresAt forward.
+ * @param {{ ended?: boolean, now?: number }} [opts]
+ */
+export function touchRoomActivity(room, opts = {}) {
+  if (!room) return room;
+  const now = Number.isFinite(opts.now) ? opts.now : Date.now();
+  const ttl = opts.ended ? ROOM_ENDED_TTL_MS : ROOM_IDLE_TTL_MS;
+  const iso = new Date(now).toISOString();
+  return {
+    ...room,
+    createdAt: room.createdAt || iso,
+    lastActivityAt: iso,
+    expiresAt: new Date(now + ttl).toISOString(),
+    updatedAt: iso,
+  };
+}
+
+/** Fill lifecycle fields for rooms created before TTL existed. */
+export function hydrateRoomLifecycle(room, now = Date.now()) {
+  if (!room) return null;
+  if (room.createdAt && room.lastActivityAt && room.expiresAt) return room;
+  const parsed = room.updatedAt ? Date.parse(room.updatedAt) : NaN;
+  const base = Number.isFinite(parsed) ? parsed : now;
+  const iso = new Date(base).toISOString();
+  return {
+    ...room,
+    createdAt: room.createdAt || iso,
+    lastActivityAt: room.lastActivityAt || iso,
+    expiresAt: room.expiresAt || new Date(base + ROOM_IDLE_TTL_MS).toISOString(),
+  };
+}
+
+export function isRoomExpired(room, now = Date.now()) {
+  if (!room?.expiresAt) return false;
+  const at = Date.parse(room.expiresAt);
+  return Number.isFinite(at) && at <= now;
+}
+
 export function createRoomRecord(initialState = null) {
   const state = initialState
     ? normalizeGameState(initialState)
@@ -38,12 +82,11 @@ export function createRoomRecord(initialState = null) {
   const hostKey = makeHostKey();
   const sessionToken = makeSessionToken();
 
-  return {
+  return touchRoomActivity({
     roomId: makeRoomId(),
     hostKey,
     seq: 0,
     state,
-    updatedAt: new Date().toISOString(),
     sessions: {
       [sessionToken]: { role: ROLES.ADMIN, seatPlayerId: null },
     },
@@ -51,7 +94,7 @@ export function createRoomRecord(initialState = null) {
     seatClaims: {},
     /** seatPlayerId → short secret required to reclaim */
     seatSecrets: {},
-  };
+  });
 }
 
 export function adminSessionFromRoom(room) {
@@ -107,13 +150,12 @@ export function joinRoom(room, { role, seatPlayerId, seatSecret } = {}) {
     }
     sessions[sessionToken] = { role: ROLES.PLAYER, seatPlayerId: seat.id };
 
-    const next = {
+    const next = touchRoomActivity({
       ...room,
       sessions,
       seatClaims: { ...(room.seatClaims || {}), [seat.id]: sessionToken },
       seatSecrets,
-      updatedAt: new Date().toISOString(),
-    };
+    });
     return {
       ok: true,
       room: next,
@@ -127,14 +169,13 @@ export function joinRoom(room, { role, seatPlayerId, seatSecret } = {}) {
   }
 
   const sessionToken = makeSessionToken();
-  const next = {
+  const next = touchRoomActivity({
     ...room,
     sessions: {
       ...room.sessions,
       [sessionToken]: { role: ROLES.VIEWER, seatPlayerId: null },
     },
-    updatedAt: new Date().toISOString(),
-  };
+  });
   return {
     ok: true,
     room: next,
@@ -176,13 +217,12 @@ export function releaseSeat(room, seatPlayerId, auth = {}) {
   const seatSecrets = { ...(room.seatSecrets || {}) };
   delete seatSecrets[seat.id];
 
-  const next = {
+  const next = touchRoomActivity({
     ...room,
     sessions,
     seatClaims,
     seatSecrets,
-    updatedAt: new Date().toISOString(),
-  };
+  });
   return {
     ok: true,
     room: next,
@@ -230,22 +270,21 @@ export function applyRoomAction(room, action, auth = {}) {
     ? { ...action, at: Date.now() }
     : action;
 
-  const nextState = gameReducer(room.state, stamped);
+  const nextState = reduceGame(room.state, stamped);
   if (nextState === room.state) {
     return {
       ok: true,
-      room: { ...room, updatedAt: new Date().toISOString() },
+      room: touchRoomActivity(room),
       action: stamped,
       noop: true,
     };
   }
 
-  let nextRoom = {
+  let nextRoom = touchRoomActivity({
     ...room,
     seq: room.seq + 1,
     state: nextState,
-    updatedAt: new Date().toISOString(),
-  };
+  });
 
   // Ending the party: wipe seats so every guest must return to the hub.
   if (stamped.type === 'RESET_GAME') {
@@ -253,12 +292,12 @@ export function applyRoomAction(room, action, auth = {}) {
     for (const [token, session] of Object.entries(room.sessions || {})) {
       if (session?.role === ROLES.ADMIN) sessions[token] = session;
     }
-    nextRoom = {
+    nextRoom = touchRoomActivity({
       ...nextRoom,
       sessions,
       seatClaims: {},
       seatSecrets: {},
-    };
+    }, { ended: true });
     return {
       ok: true,
       room: nextRoom,
@@ -291,12 +330,12 @@ export function applyRoomAction(room, action, auth = {}) {
       delete seatSecrets[claimKey];
     }
 
-    nextRoom = {
+    nextRoom = touchRoomActivity({
       ...nextRoom,
       sessions,
       seatClaims,
       seatSecrets,
-    };
+    });
 
     return {
       ok: true,
@@ -329,6 +368,9 @@ export function publicRoomView(room) {
     seq: room.seq,
     state: room.state,
     updatedAt: room.updatedAt,
+    createdAt: room.createdAt || null,
+    lastActivityAt: room.lastActivityAt || null,
+    expiresAt: room.expiresAt || null,
     claimedSeats,
   };
 }

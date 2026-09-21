@@ -158,8 +158,12 @@ export default defineConfig(({ mode }) => ({
   plugins: [react(), cloudApiPlugin(mode), figurinesStaticPlugin()],
   server: {
     watch: {
-      // Large binary packs — watching them can throw EBUSY on Windows.
-      ignored: ['**/ti4_figurines_8_colors/**'],
+      // Binary / locked image drops on Windows throw EBUSY and kill the server.
+      ignored: [
+        '**/ti4_figurines_8_colors/**',
+        '**/public/expedition/**',
+        '**/*.{png,webp,jpg,jpeg,gif,PNG,WEBP,JPG,JPEG,GIF}',
+      ],
     },
   },
 }));

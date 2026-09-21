@@ -47,6 +47,111 @@ export function strategyResolutionResponseFor(state, playerId) {
   return strategyResolution(state).responses?.[playerId] ?? null;
 }
 
+export function imperialClaim(state) {
+  return state.round?.imperialClaim || {
+    active: false,
+    playerId: null,
+    publicId: null,
+    mecatol: false,
+    secret: false,
+  };
+}
+
+export function isImperialClaimActive(state) {
+  return !!imperialClaim(state).active;
+}
+
+export function techResearch(state) {
+  return state.round?.techResearch || {
+    active: false,
+    concurrent: false,
+    playerId: null,
+    mode: 'primary',
+    picks: [],
+    ignorePrereq: 0,
+    queueIds: [],
+    primaryPlayerId: null,
+    byPlayer: {},
+  };
+}
+
+export function isTechResearchActive(state) {
+  return !!techResearch(state).active;
+}
+
+/** Per-seat view of concurrent Technology (7) research during the shared poll. */
+export function techResearchSessionFor(state, playerId) {
+  const session = techResearch(state);
+  if (!session.active || playerId == null) return null;
+  if (!session.concurrent) {
+    if (session.playerId !== playerId) return null;
+    return session;
+  }
+  const resolution = strategyResolution(state);
+  if (!resolution.active || resolution.cardId !== 7) return null;
+  const status = resolution.responses?.[playerId]
+    ?? resolution.responses?.[String(playerId)]
+    ?? resolution.responses?.[Number(playerId)];
+  if (status !== 'pending') return null;
+  const entry = session.byPlayer?.[playerId]
+    || session.byPlayer?.[String(playerId)]
+    || {};
+  const player = state.players?.find(p => p.id === playerId);
+  const isPrimaryOwner = playerId === session.primaryPlayerId;
+  const isJolNarBrilliant = player?.factionId === 'jolnar';
+  return {
+    active: true,
+    concurrent: true,
+    playerId,
+    mode: (isPrimaryOwner || isJolNarBrilliant) ? 'primary' : 'secondary',
+    picks: Array.isArray(entry.picks) ? entry.picks : [],
+    ignorePrereq: entry.ignorePrereq ? 1 : 0,
+    queueIds: [],
+    primaryPlayerId: session.primaryPlayerId,
+    brilliant: !isPrimaryOwner && isJolNarBrilliant,
+  };
+}
+
+export function expedition(state) {
+  return state.expedition || {
+    slices: {
+      resources: null,
+      actionCards: null,
+      influence: null,
+      secret: null,
+      techPlanet: null,
+      tradeGoods: null,
+    },
+    completed: false,
+    controllerId: null,
+    placedById: null,
+    awaitingControlPick: false,
+  };
+}
+
+export function expeditionSliceCounts(state) {
+  const counts = {};
+  Object.values(expedition(state).slices || {}).forEach(playerId => {
+    if (playerId == null) return;
+    counts[playerId] = (counts[playerId] || 0) + 1;
+  });
+  return counts;
+}
+
+export function expeditionLeaders(state) {
+  const counts = expeditionSliceCounts(state);
+  let best = 0;
+  Object.values(counts).forEach(n => { if (n > best) best = n; });
+  if (best <= 0) return [];
+  return Object.entries(counts)
+    .filter(([, n]) => n === best)
+    .map(([id]) => Number(id));
+}
+
+export function claimedExpeditionCount(state) {
+  return Object.values(expedition(state).slices || {}).filter(id => id != null).length;
+}
+
 export function scoringResponseFor(state, playerId) {
   return objectiveScoring(state).responses?.[playerId] || null;
 }
@@ -125,6 +230,14 @@ export function playersForBoard(state) {
 export function canStartRound(state) {
   const active = activePlayers(state);
   return active.length > 0 && active.every(p => p.cards && p.cards.length > 0);
+}
+
+/** Host may end the action phase only after every seat in turn order has passed. */
+export function canEndRound(state) {
+  if (!state.round?.active) return false;
+  const order = turnOrder(state);
+  if (order.length === 0) return false;
+  return playersNotPassed(state).length === 0;
 }
 
 export function isDraftInProgress(state) {
@@ -210,4 +323,25 @@ export function isFactionTaken(state, factionId, currentPlayerId) {
 
 export function isColorTaken(state, colorHex, currentPlayerId) {
   return state.players.some(p => p.id !== currentPlayerId && p.color === colorHex);
+}
+
+export function startingTechDraft(state) {
+  return state.startingTechDraft || {
+    needed: false,
+    active: false,
+    responses: {},
+  };
+}
+
+export function isStartingTechDraftNeeded(state) {
+  const draft = startingTechDraft(state);
+  return !!draft.needed && !draft.active;
+}
+
+export function isStartingTechDraftActive(state) {
+  return !!startingTechDraft(state).active;
+}
+
+export function startingTechDraftResponseFor(state, playerId) {
+  return startingTechDraft(state).responses?.[playerId] ?? null;
 }

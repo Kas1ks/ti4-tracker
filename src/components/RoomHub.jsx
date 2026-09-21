@@ -15,7 +15,6 @@ export function RoomHub({
   onJoinRoom,
   onPlaySolo,
   importGameToken,
-  uiConfirm,
   uiPrompt,
 }) {
   const [view, setView] = useState('hub'); // hub | join | extras

@@ -5,6 +5,68 @@ import { ROLE_LABELS, ROLES } from '../sync/permissions';
 const CTRL =
   'inline-flex items-center justify-center gap-1.5 h-9 px-3 rounded-xl text-xs font-bold transition border';
 
+function RoomLiveBadge({ room }) {
+  const [expanded, setExpanded] = useState(false);
+  const rootRef = useRef(null);
+
+  useEffect(() => {
+    if (!expanded) return undefined;
+    const onPointerDown = (event) => {
+      if (!rootRef.current?.contains(event.target)) setExpanded(false);
+    };
+    const onKeyDown = (event) => {
+      if (event.key === 'Escape') setExpanded(false);
+    };
+    document.addEventListener('pointerdown', onPointerDown);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [expanded]);
+
+  const roleLabel = ROLE_LABELS[room.role] || room.role;
+
+  return (
+    <div className="relative flex-shrink-0" ref={rootRef}>
+      {/* Desktop: full code + role */}
+      <div className="hidden md:flex items-center gap-2 h-9 bg-slate-950 border border-emerald-800/80 text-emerald-300 font-orbitron font-bold text-xs px-3 rounded-xl">
+        <i className="fa-solid fa-wifi" aria-hidden="true" />
+        <span>{room.roomId}</span>
+        <span className="text-emerald-500/80 font-sans font-semibold normal-case">
+          {roleLabel}
+        </span>
+      </div>
+
+      {/* Mobile: wifi only; tap reveals room code */}
+      <button
+        type="button"
+        className="md:hidden inline-flex items-center justify-center h-9 w-9 rounded-xl bg-slate-950 border border-emerald-800/80 text-emerald-300"
+        aria-expanded={expanded}
+        aria-label={expanded ? `Комната ${room.roomId}` : 'Показать код комнаты'}
+        title="Код комнаты"
+        onClick={() => setExpanded(v => !v)}
+      >
+        <i className="fa-solid fa-wifi" aria-hidden="true" />
+      </button>
+
+      {expanded && (
+        <div
+          role="status"
+          className="md:hidden absolute left-0 top-[calc(100%+6px)] z-50 min-w-[9.5rem] rounded-xl border border-emerald-800/80 bg-slate-950 px-3 py-2 shadow-xl"
+        >
+          <div className="font-orbitron font-bold text-sm text-emerald-300 tracking-wider">
+            {room.roomId}
+          </div>
+          <div className="text-[11px] text-emerald-500/80 font-semibold mt-0.5">
+            {roleLabel}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function GameHeader({
   isGameActive,
   roundNumber,
@@ -16,9 +78,13 @@ export function GameHeader({
   onOpenDraft,
   onStartRound,
   onEndRound,
+  canEndRound = false,
   onExport,
   onOpenEndGame,
   onOpenStats,
+  onOpenEventLog,
+  onOpenExpedition,
+  onOpenTech,
   turnOrder,
   activePlayer,
   passed,
@@ -27,6 +93,8 @@ export function GameHeader({
   strategyActionTaken,
   strategyResolutionActive = false,
   resolvingCardId = null,
+  imperialClaimActive = false,
+  techResearchActive = false,
   onPlayStrategy,
   turnTime,
   onNextTurn,
@@ -46,6 +114,8 @@ export function GameHeader({
   const canPlayTurn = isAdmin || role === ROLES.PLAYER;
   const canNextTurn = isAdmin || role === ROLES.PLAYER;
 
+  const turnLocked = strategyResolutionActive || imperialClaimActive || techResearchActive;
+
   const seatIsActive = !perms?.seatPlayerId || activePlayer?.id === perms.seatPlayerId;
   const showTurnBar = isGameActive && turnOrder.length > 0 && activePlayer && !passed[activePlayer.id]
     && (isAdmin || canPlayTurn || role === ROLES.VIEWER);
@@ -60,22 +130,16 @@ export function GameHeader({
           : 'p-4 sticky top-0 rounded-b-2xl'
       }`}
     >
-      <div className="flex items-center justify-between gap-3 max-md:flex-wrap">
-        <div className="flex items-center gap-3 md:gap-4 min-w-0">
-          <div className="flex items-center gap-3 min-w-0">
+      <div className="flex items-center justify-between gap-2 md:gap-3 flex-nowrap">
+        <div className="flex items-center gap-2 md:gap-4 min-w-0">
+          <div className="flex items-center gap-2 md:gap-3 min-w-0">
             <i className="fa-solid fa-khanda text-cyan-400 text-2xl md:text-3xl flex-shrink-0" />
             <span className={`font-orbitron font-black text-xl md:text-3xl text-white tracking-wider truncate ${hideTurnBarOnMobile ? 'max-md:text-base' : ''}`}>
               TI4 TRACKER
             </span>
           </div>
           {roomStatus === 'live' && room?.roomId && (
-            <div className="flex items-center gap-2 h-9 bg-slate-950 border border-emerald-800/80 text-emerald-300 font-orbitron font-bold text-xs px-3 rounded-xl flex-shrink-0">
-              <i className="fa-solid fa-wifi" />
-              <span>{room.roomId}</span>
-              <span className="text-emerald-500/80 font-sans font-semibold normal-case max-md:hidden">
-                {ROLE_LABELS[room.role] || room.role}
-              </span>
-            </div>
+            <RoomLiveBadge room={room} />
           )}
           {isGameActive && (
             <div className={`${CTRL} !text-sm md:!text-base bg-slate-950 border-slate-800 text-amber-400 font-orbitron cursor-default flex-shrink-0 px-3.5`}>
@@ -85,7 +149,7 @@ export function GameHeader({
           )}
         </div>
 
-        <div className="flex items-center gap-2 flex-shrink-0 ml-auto">
+        <div className="flex items-center gap-2 flex-shrink-0">
           {isGameActive ? (
             <>
               {/* Desktop host: Primary + overflow (variant B) */}
@@ -126,7 +190,13 @@ export function GameHeader({
                     <button
                       type="button"
                       onClick={onEndRound}
-                      className={`${CTRL} bg-indigo-600 hover:bg-indigo-500 border-indigo-500/40 text-white`}
+                      disabled={!canEndRound}
+                      title={canEndRound ? undefined : 'Сначала все игроки должны спасовать'}
+                      className={`${CTRL} ${
+                        canEndRound
+                          ? 'bg-indigo-600 hover:bg-indigo-500 border-indigo-500/40 text-white'
+                          : 'bg-slate-800 border-slate-800 text-slate-600 cursor-not-allowed'
+                      }`}
                     >
                       <i className="fa-solid fa-flag-checkered" />
                       Завершить раунд
@@ -143,12 +213,37 @@ export function GameHeader({
                     onTogglePolitics={onTogglePolitics}
                     onExport={onExport}
                     onOpenEndGame={onOpenEndGame}
+                    onOpenEventLog={onOpenEventLog}
+                    onOpenTech={onOpenTech}
+                    onOpenExpedition={onOpenExpedition}
                   />
+                )}
+                {!hasMoreItems && onOpenTech && (
+                  <button
+                    type="button"
+                    onClick={onOpenTech}
+                    className={`${CTRL} bg-slate-950 hover:bg-slate-800 border-sky-800/60 text-sky-300`}
+                    title="Технологии"
+                  >
+                    <i className="fa-solid fa-atom" />
+                    <span className="max-md:hidden">Тех</span>
+                  </button>
+                )}
+                {!hasMoreItems && onOpenEventLog && (
+                  <button
+                    type="button"
+                    onClick={onOpenEventLog}
+                    className={`${CTRL} bg-slate-950 hover:bg-slate-800 border-slate-700 text-slate-300`}
+                    title="Журнал партии"
+                  >
+                    <i className="fa-solid fa-scroll" />
+                    <span className="max-md:hidden">Журнал</span>
+                  </button>
                 )}
               </div>
 
               {/* Mobile: full classic controls (unchanged layout) */}
-              <div className="flex md:hidden items-center gap-2 flex-wrap justify-end">
+              <div className="flex md:hidden items-center gap-2 flex-nowrap justify-end">
                 {canPhases && (
                   <div className="flex items-center gap-2 bg-slate-950 border border-slate-800 px-3 py-1.5 rounded-xl">
                     <span className={`font-bold text-xs uppercase ${isPoliticsActive ? 'text-purple-400' : 'text-slate-500'}`}>
@@ -196,7 +291,13 @@ export function GameHeader({
                       <button
                         type="button"
                         onClick={onEndRound}
-                        className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-3 py-2 rounded-xl text-xs transition shadow-md flex items-center gap-1.5"
+                        disabled={!canEndRound}
+                        title={canEndRound ? undefined : 'Сначала все игроки должны спасовать'}
+                        className={`font-bold px-3 py-2 rounded-xl text-xs transition shadow-md flex items-center gap-1.5 ${
+                          canEndRound
+                            ? 'bg-indigo-600 hover:bg-indigo-500 text-white'
+                            : 'bg-slate-800 text-slate-600 cursor-not-allowed'
+                        }`}
                       >
                         <i className="fa-solid fa-flag-checkered" />
                         Конец
@@ -213,6 +314,42 @@ export function GameHeader({
                     title="Скопировать токен партии"
                   >
                     <i className="fa-solid fa-share-nodes" />
+                  </button>
+                )}
+
+                {onOpenTech && (
+                  <button
+                    type="button"
+                    onClick={onOpenTech}
+                    className="inline-flex items-center justify-center h-9 w-9 rounded-xl bg-slate-950 hover:bg-slate-800 text-sky-300 border border-sky-800/60 transition shadow"
+                    title="Технологии"
+                    aria-label="Технологии"
+                  >
+                    <i className="fa-solid fa-atom" />
+                  </button>
+                )}
+
+                {onOpenExpedition && (
+                  <button
+                    type="button"
+                    onClick={onOpenExpedition}
+                    className="inline-flex items-center justify-center h-9 w-9 rounded-xl bg-slate-950 hover:bg-slate-800 text-amber-300 border border-amber-800/60 transition shadow"
+                    title="Экспедиция Грозового рубежа"
+                    aria-label="Экспедиция"
+                  >
+                    <i className="fa-solid fa-mountain" />
+                  </button>
+                )}
+
+                {onOpenEventLog && (
+                  <button
+                    type="button"
+                    onClick={onOpenEventLog}
+                    className="inline-flex items-center justify-center h-9 w-9 rounded-xl bg-slate-950 hover:bg-slate-800 text-slate-300 border border-slate-700 transition shadow"
+                    title="Журнал партии"
+                    aria-label="Журнал партии"
+                  >
+                    <i className="fa-solid fa-scroll" />
                   </button>
                 )}
 
@@ -252,7 +389,7 @@ export function GameHeader({
             strategyCards={strategyCards}
             allStrategiesPlayed={allStrategiesPlayed}
             strategyActionTaken={strategyActionTaken}
-            strategyResolutionActive={strategyResolutionActive}
+            strategyResolutionActive={strategyResolutionActive || imperialClaimActive || techResearchActive}
             resolvingCardId={resolvingCardId}
             onPlayStrategy={onPlayStrategy}
             turnTime={turnTime}
@@ -260,7 +397,7 @@ export function GameHeader({
             onPassTurn={onPassTurn}
             onOpenCombat={onOpenCombat}
             canPlay={canPlayTurn && seatIsActive}
-            canNextTurn={canNextTurn && seatIsActive && !strategyResolutionActive}
+            canNextTurn={canNextTurn && seatIsActive && !turnLocked}
             canCombat={canCombat}
           />
         </div>
@@ -277,6 +414,9 @@ function HeaderMoreMenu({
   onTogglePolitics,
   onExport,
   onOpenEndGame,
+  onOpenEventLog,
+  onOpenTech,
+  onOpenExpedition,
 }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef(null);
@@ -360,6 +500,42 @@ function HeaderMoreMenu({
             >
               <i className="fa-solid fa-share-nodes w-4 text-center text-cyan-400" />
               <span className="flex-1">Код игры</span>
+            </button>
+          )}
+
+          {onOpenTech && (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={runAndClose(onOpenTech)}
+              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left text-sm font-semibold text-slate-200 hover:bg-slate-900 transition"
+            >
+              <i className="fa-solid fa-atom w-4 text-center text-sky-400" />
+              <span className="flex-1">Технологии</span>
+            </button>
+          )}
+
+          {onOpenExpedition && (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={runAndClose(onOpenExpedition)}
+              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left text-sm font-semibold text-slate-200 hover:bg-slate-900 transition"
+            >
+              <i className="fa-solid fa-mountain w-4 text-center text-amber-400" />
+              <span className="flex-1">Экспедиция</span>
+            </button>
+          )}
+
+          {onOpenEventLog && (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={runAndClose(onOpenEventLog)}
+              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left text-sm font-semibold text-slate-200 hover:bg-slate-900 transition"
+            >
+              <i className="fa-solid fa-scroll w-4 text-center text-cyan-400" />
+              <span className="flex-1">Журнал партии</span>
             </button>
           )}
 

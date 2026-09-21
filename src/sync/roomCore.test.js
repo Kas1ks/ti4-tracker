@@ -3,8 +3,13 @@ import { createEmptyGameState, normalizeGameState } from '../game/gameState.js';
 import {
   applyRoomAction,
   createRoomRecord,
+  hydrateRoomLifecycle,
+  isRoomExpired,
   joinRoom,
   releaseSeat,
+  touchRoomActivity,
+  ROOM_ENDED_TTL_MS,
+  ROOM_IDLE_TTL_MS,
   LOCAL_ONLY_ACTIONS,
 } from '../../worker/rooms/roomCore.js';
 import { ROLES } from './permissions.js';
@@ -21,6 +26,11 @@ describe('roomCore', () => {
     expect(room.hostKey).toBeTruthy();
     expect(room.seq).toBe(0);
     expect(room.state.isGameActive).toBe(false);
+    expect(room.createdAt).toBeTruthy();
+    expect(room.lastActivityAt).toBeTruthy();
+    expect(room.expiresAt).toBeTruthy();
+    expect(Date.parse(room.expiresAt) - Date.parse(room.lastActivityAt))
+      .toBe(ROOM_IDLE_TTL_MS);
   });
 
   it('seeds a room from an existing document', () => {
@@ -151,5 +161,38 @@ describe('roomCore', () => {
     expect(removed.room.state.players.find(p => p.id === 1)).toBeUndefined();
     expect(removed.room.seatClaims[1]).toBeUndefined();
     expect(removed.room.sessions[joined.sessionToken]).toBeUndefined();
+  });
+
+  it('tracks activity TTL and shortens it after RESET_GAME', () => {
+    const t0 = Date.parse('2026-01-01T12:00:00.000Z');
+    let room = touchRoomActivity(createRoomRecord(), { now: t0 });
+    expect(Date.parse(room.expiresAt)).toBe(t0 + ROOM_IDLE_TTL_MS);
+
+    room = touchRoomActivity(room, { now: t0 + 60_000 });
+    expect(Date.parse(room.lastActivityAt)).toBe(t0 + 60_000);
+    expect(Date.parse(room.expiresAt)).toBe(t0 + 60_000 + ROOM_IDLE_TTL_MS);
+
+    const ended = applyRoomAction(room, { type: 'RESET_GAME' }, { hostKey: room.hostKey });
+    expect(ended.ok).toBe(true);
+    const endedAt = Date.parse(ended.room.lastActivityAt);
+    expect(Date.parse(ended.room.expiresAt) - endedAt).toBe(ROOM_ENDED_TTL_MS);
+  });
+
+  it('hydrates legacy rooms and detects expiry', () => {
+    const legacy = {
+      roomId: 'ABCDEF',
+      hostKey: 'hk',
+      seq: 1,
+      state: createEmptyGameState(),
+      sessions: {},
+      seatClaims: {},
+      seatSecrets: {},
+      updatedAt: '2020-01-01T00:00:00.000Z',
+    };
+    const hydrated = hydrateRoomLifecycle(legacy, Date.parse('2020-01-01T00:00:00.000Z'));
+    expect(hydrated.createdAt).toBe('2020-01-01T00:00:00.000Z');
+    expect(hydrated.expiresAt).toBeTruthy();
+    expect(isRoomExpired(hydrated, Date.parse('2020-01-03T00:00:00.000Z'))).toBe(true);
+    expect(isRoomExpired(hydrated, Date.parse('2020-01-01T01:00:00.000Z'))).toBe(false);
   });
 });

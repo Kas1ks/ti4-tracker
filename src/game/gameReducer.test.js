@@ -28,6 +28,15 @@ const gameWith = (players, overrides = {}) => normalizeGameState({
   ...overrides,
 });
 
+/** Mark every seat in turn order as passed so END_ROUND is allowed. */
+const withAllPassed = (state) => ({
+  ...state,
+  round: {
+    ...state.round,
+    passed: Object.fromEntries((state.round.turnOrderIds || []).map(id => [id, true])),
+  },
+});
+
 /** Every reducer case must return new objects instead of editing the old ones. */
 const dispatch = (state, action) => {
   const before = JSON.stringify(state);
@@ -428,6 +437,95 @@ describe('round and turn order', () => {
     expect(activePlayer(state).id).toBe(3);
   });
 
+  it('opens Imperial claim before strategy 8 resolution', () => {
+    let state = gameWith([
+      player(1, 'Imp', { cards: [STRATEGY_CARDS[7]], lastMinInitiative: 1 }),
+      player(2, 'B', { cards: [STRATEGY_CARDS[0]], lastMinInitiative: 2 }),
+    ]);
+    const objective = BASE_OBJECTIVES[0];
+    state = {
+      ...state,
+      objectives: { ...state.objectives, active: [objective] },
+    };
+    state = dispatch(state, { type: 'START_ROUND' });
+    expect(activePlayer(state).id).toBe(1);
+
+    state = dispatch(state, { type: 'PLAY_STRATEGY', cardId: 8 });
+    expect(state.round.imperialClaim).toMatchObject({
+      active: true,
+      playerId: 1,
+      publicId: null,
+      mecatol: false,
+      secret: false,
+    });
+    expect(state.round.strategyResolution.active).toBe(false);
+    expect(dispatch(state, { type: 'NEXT_TURN' })).toBe(state);
+
+    state = dispatch(state, { type: 'TOGGLE_IMPERIAL_MECATOL', playerId: 1 });
+    expect(state.players.find(p => p.id === 1).extra).toBe(0);
+    expect(state.round.imperialClaim.mecatol).toBe(true);
+
+    state = dispatch(state, { type: 'SELECT_IMPERIAL_PUBLIC', playerId: 1, objectiveId: objective.id });
+    expect(state.objectives.completions[`1_${objective.id}`]).toBeFalsy();
+    expect(state.round.imperialClaim.publicId).toBe(objective.id);
+
+    state = dispatch(state, { type: 'CONFIRM_IMPERIAL_CLAIM', playerId: 1 });
+    expect(state.round.imperialClaim.active).toBe(false);
+    expect(state.players.find(p => p.id === 1).extra).toBe(1);
+    expect(state.objectives.completions[`1_${objective.id}`]).toBe(true);
+    expect(state.round.strategyResolution.active).toBe(true);
+    expect(state.round.strategyResolution.cardId).toBe(8);
+
+    state = resolveAllStrategy(state);
+    expect(state.round.strategyResolution.active).toBe(false);
+    expect(state.players.find(p => p.id === 1).playedCardIds).toEqual([8]);
+  });
+
+  it('Imperial pass discards draft picks then starts strategy resolution', () => {
+    let state = gameWith([
+      player(1, 'Imp', { cards: [STRATEGY_CARDS[7]], lastMinInitiative: 1 }),
+      player(2, 'B', { cards: [STRATEGY_CARDS[0]], lastMinInitiative: 2 }),
+    ]);
+    const objective = BASE_OBJECTIVES[0];
+    state = {
+      ...state,
+      objectives: { ...state.objectives, active: [objective] },
+    };
+    state = dispatch(state, { type: 'START_ROUND' });
+    state = dispatch(state, { type: 'PLAY_STRATEGY', cardId: 8 });
+    state = dispatch(state, { type: 'TOGGLE_IMPERIAL_MECATOL', playerId: 1 });
+    state = dispatch(state, { type: 'SELECT_IMPERIAL_PUBLIC', playerId: 1, objectiveId: objective.id });
+    state = dispatch(state, { type: 'PASS_IMPERIAL_CLAIM', playerId: 1 });
+
+    expect(state.round.imperialClaim.active).toBe(false);
+    expect(state.players.find(p => p.id === 1).extra).toBe(0);
+    expect(state.objectives.completions[`1_${objective.id}`]).toBeFalsy();
+    expect(state.round.strategyResolution.active).toBe(true);
+    expect(state.round.strategyResolution.cardId).toBe(8);
+  });
+
+  it('Imperial secret is available instead of Mecatol and applies on confirm', () => {
+    let state = gameWith([
+      player(1, 'Imp', { cards: [STRATEGY_CARDS[7]], lastMinInitiative: 1, secrets: 1 }),
+      player(2, 'B', { cards: [STRATEGY_CARDS[0]], lastMinInitiative: 2 }),
+    ]);
+    state = dispatch(state, { type: 'START_ROUND' });
+    state = dispatch(state, { type: 'PLAY_STRATEGY', cardId: 8 });
+
+    state = dispatch(state, { type: 'TOGGLE_IMPERIAL_SECRET', playerId: 1 });
+    expect(state.round.imperialClaim.secret).toBe(true);
+    expect(state.players.find(p => p.id === 1).secrets).toBe(1);
+
+    state = dispatch(state, { type: 'TOGGLE_IMPERIAL_MECATOL', playerId: 1 });
+    expect(state.round.imperialClaim).toMatchObject({ mecatol: true, secret: false });
+
+    state = dispatch(state, { type: 'TOGGLE_IMPERIAL_MECATOL', playerId: 1 });
+    state = dispatch(state, { type: 'TOGGLE_IMPERIAL_SECRET', playerId: 1 });
+    state = dispatch(state, { type: 'CONFIRM_IMPERIAL_CLAIM', playerId: 1 });
+    expect(state.players.find(p => p.id === 1).secrets).toBe(2);
+    expect(state.players.find(p => p.id === 1).extra).toBe(0);
+  });
+
   it('banks wall-clock elapsed into totalTime on NEXT_TURN', () => {
     const t0 = 1_000_000;
     let state = dispatch(drafted(), { type: 'START_ROUND', at: t0 });
@@ -499,8 +597,15 @@ describe('round and turn order', () => {
   it('opens the agenda phase instead when one is pending', () => {
     let state = drafted();
     state = { ...state, meta: { ...state.meta, isAgendaPhasePending: true } };
-    state = dispatch(state, { type: 'END_ROUND' });
+    state = dispatch(state, { type: 'START_ROUND' });
+    state = dispatch(withAllPassed(state), { type: 'END_ROUND' });
     expect(state.politics.showModal).toBe(true);
+    expect(state.statusPhase.show).toBe(false);
+  });
+
+  it('ignores END_ROUND until every player has passed', () => {
+    let state = dispatch(drafted(), { type: 'START_ROUND' });
+    expect(dispatch(state, { type: 'END_ROUND' })).toBe(state);
     expect(state.statusPhase.show).toBe(false);
   });
 });
@@ -561,7 +666,7 @@ describe('eliminating a player', () => {
 describe('status phase', () => {
   const atStatusPhase = () => {
     const state = gameReducer(gameWith([player(1, 'A'), player(2, 'B')]), { type: 'START_ROUND' });
-    return gameReducer(state, { type: 'END_ROUND' });
+    return gameReducer(withAllPassed(state), { type: 'END_ROUND' });
   };
 
   it('does not toggle scoreObjectives via the checklist — scoring window owns that step', () => {
@@ -621,7 +726,7 @@ describe('status phase', () => {
       player(3, 'C', { lastMinInitiative: 3 }),
     ]);
     state = dispatch(state, { type: 'START_ROUND' });
-    state = dispatch(state, { type: 'END_ROUND' });
+    state = dispatch(withAllPassed(state), { type: 'END_ROUND' });
     state = dispatch(state, { type: 'START_OBJECTIVE_SCORING' });
     expect(state.statusPhase.scoring.orderIds).toEqual([2, 3, 1]);
     expect(state.statusPhase.scoring.currentIdx).toBe(0);
@@ -684,7 +789,7 @@ describe('agenda phase', () => {
     let state = gameWith([player(1, 'A'), player(2, 'B')]);
     state = gameReducer(state, { type: 'TOGGLE_POLITICS_ACTIVE' });
     state = gameReducer(state, { type: 'START_ROUND' });
-    state = gameReducer(state, { type: 'END_ROUND' });
+    state = gameReducer(withAllPassed(state), { type: 'END_ROUND' });
     return gameReducer(state, { type: 'CONFIRM_STATUS_PHASE' });
   };
 
@@ -750,6 +855,536 @@ describe('combat', () => {
       damageByPlayerId: { 1: 3, 2: 5 },
     });
     expect(state.players.map(p => p.damageDealt)).toEqual([3, 5, 0]);
+  });
+});
+
+describe("Thunder's Edge expedition", () => {
+  const withTe = (players, extra = {}) => normalizeGameState({
+    ...createEmptyGameState(),
+    isGameActive: true,
+    players,
+    meta: {
+      ...createEmptyGameState().meta,
+      speakerId: players[0]?.id ?? null,
+      useTe: true,
+      ...(extra.meta || {}),
+    },
+    round: {
+      ...createEmptyGameState().round,
+      active: true,
+      turnOrderIds: players.map(p => p.id),
+      activeTurnIdx: 0,
+      passed: {},
+      ...(extra.round || {}),
+    },
+    expedition: extra.expedition,
+  });
+
+  const asTurn = (state, playerId) => ({
+    ...state,
+    round: {
+      ...state.round,
+      activeTurnIdx: state.round.turnOrderIds.indexOf(playerId),
+      expeditionClaimedThisTurn: false,
+    },
+  });
+
+  const slices = ['resources', 'actionCards', 'influence', 'secret', 'techPlanet', 'tradeGoods'];
+
+  it('grants breakthrough on first claim and allows only one claim per turn', () => {
+    let state = withTe([player(1, 'A'), player(2, 'B')]);
+    state = dispatch(state, { type: 'CLAIM_EXPEDITION_SLICE', playerId: 1, sliceId: 'resources' });
+    expect(state.expedition.slices.resources).toBe(1);
+    expect(state.players.find(p => p.id === 1).breakthrough).toBe(true);
+    expect(state.round.expeditionClaimedThisTurn).toBe(true);
+
+    const again = dispatch(state, { type: 'CLAIM_EXPEDITION_SLICE', playerId: 1, sliceId: 'resources' });
+    expect(again).toBe(state);
+
+    const secondSlot = dispatch(state, { type: 'CLAIM_EXPEDITION_SLICE', playerId: 1, sliceId: 'influence' });
+    expect(secondSlot).toBe(state);
+
+    state = asTurn(state, 2);
+    expect(state.round.expeditionClaimedThisTurn).toBe(false);
+    state = dispatch(state, { type: 'CLAIM_EXPEDITION_SLICE', playerId: 2, sliceId: 'influence' });
+    expect(state.expedition.slices.influence).toBe(2);
+  });
+
+  it('rejects claims off-turn or without TE', () => {
+    const noTe = withTe([player(1, 'A'), player(2, 'B')], { meta: { useTe: false } });
+    expect(dispatch(noTe, { type: 'CLAIM_EXPEDITION_SLICE', playerId: 1, sliceId: 'resources' }))
+      .toBe(noTe);
+
+    const state = withTe([player(1, 'A'), player(2, 'B')]);
+    expect(dispatch(state, { type: 'CLAIM_EXPEDITION_SLICE', playerId: 2, sliceId: 'resources' }))
+      .toBe(state);
+  });
+
+  it('auto-assigns controller when one player leads after 6th slice', () => {
+    let state = withTe([player(1, 'A'), player(2, 'B')]);
+    const owners = [1, 1, 1, 1, 2, 1];
+    owners.forEach((pid, i) => {
+      state = asTurn(state, pid);
+      state = dispatch(state, { type: 'CLAIM_EXPEDITION_SLICE', playerId: pid, sliceId: slices[i] });
+    });
+    expect(state.expedition.completed).toBe(true);
+    expect(state.expedition.controllerId).toBe(1);
+    expect(state.expedition.placedById).toBe(1);
+    expect(state.expedition.awaitingControlPick).toBe(false);
+  });
+
+  it('awaits control pick on a tie, then resolves', () => {
+    let state = withTe([player(1, 'A'), player(2, 'B')]);
+    const owners = [1, 2, 1, 2, 1, 2];
+    owners.forEach((pid, i) => {
+      state = asTurn(state, pid);
+      state = dispatch(state, { type: 'CLAIM_EXPEDITION_SLICE', playerId: pid, sliceId: slices[i] });
+    });
+    expect(state.expedition.awaitingControlPick).toBe(true);
+    expect(state.expedition.placedById).toBe(2);
+    expect(state.expedition.completed).toBe(false);
+
+    const wrong = dispatch(state, {
+      type: 'RESOLVE_THUNDERS_EDGE_CONTROL',
+      playerId: 1,
+      controllerId: 1,
+    });
+    expect(wrong).toBe(state);
+
+    state = dispatch(state, {
+      type: 'RESOLVE_THUNDERS_EDGE_CONTROL',
+      playerId: 2,
+      controllerId: 1,
+    });
+    expect(state.expedition).toMatchObject({
+      completed: true,
+      controllerId: 1,
+      placedById: 2,
+      awaitingControlPick: false,
+    });
+  });
+});
+
+describe('Technology research (card 7)', () => {
+  it('applies starting techs on START_GAME', () => {
+    let state = createEmptyGameState();
+    state = dispatch(state, {
+      type: 'ADD_PLAYER',
+      playerId: 1,
+      name: 'JN',
+      factionId: 'jolnar',
+    });
+    state = dispatch(state, { type: 'START_GAME' });
+    expect(state.players[0].techIds).toEqual([
+      'neural_motivator',
+      'antimass_deflectors',
+      'sarween_tools',
+      'plasma_scoring',
+    ]);
+    expect(state.startingTechDraft.needed).toBe(false);
+  });
+
+  it('does not apply Argent picks on START_GAME — opens draft flag instead', () => {
+    let state = createEmptyGameState();
+    state = dispatch(state, {
+      type: 'ADD_PLAYER',
+      playerId: 1,
+      name: 'AF',
+      factionId: 'argent',
+    });
+    state = dispatch(state, {
+      type: 'ADD_PLAYER',
+      playerId: 2,
+      name: 'Sol',
+      factionId: 'sol',
+    });
+    state = dispatch(state, { type: 'START_GAME' });
+    expect(state.players.find(p => p.id === 1).techIds).toEqual([]);
+    expect(state.startingTechDraft).toMatchObject({
+      needed: true,
+      active: false,
+    });
+  });
+
+  it('grants Crimson breakthrough on START_GAME', () => {
+    let state = createEmptyGameState();
+    state.meta.useTe = true;
+    state = dispatch(state, {
+      type: 'ADD_PLAYER',
+      playerId: 1,
+      name: 'CR',
+      factionId: 'crimson',
+    });
+    state = dispatch(state, {
+      type: 'ADD_PLAYER',
+      playerId: 2,
+      name: 'Sol',
+      factionId: 'sol',
+    });
+    state = dispatch(state, { type: 'START_GAME' });
+    expect(state.players.find(p => p.id === 1).breakthrough).toBe(true);
+    expect(state.players.find(p => p.id === 2).breakthrough).toBe(false);
+  });
+
+  it('opens concurrent tech research with host resolution poll', () => {
+    let state = gameWith([
+      player(1, 'Tech', {
+        cards: [STRATEGY_CARDS[6]],
+        lastMinInitiative: 1,
+        techIds: ['neural_motivator'],
+      }),
+      player(2, 'B', {
+        cards: [STRATEGY_CARDS[0]],
+        lastMinInitiative: 2,
+        techIds: ['sarween_tools'],
+      }),
+    ]);
+    state = dispatch(state, { type: 'START_ROUND' });
+    state = dispatch(state, { type: 'PLAY_STRATEGY', cardId: 7 });
+
+    expect(state.round.strategyResolution).toMatchObject({
+      active: true,
+      cardId: 7,
+      playerId: 1,
+    });
+    expect(state.round.strategyResolution.responses).toEqual({
+      1: 'pending',
+      2: 'pending',
+    });
+    expect(state.round.techResearch).toMatchObject({
+      active: true,
+      concurrent: true,
+      primaryPlayerId: 1,
+    });
+
+    state = dispatch(state, {
+      type: 'RESEARCH_TECH',
+      playerId: 2,
+      techId: 'graviton_laser_system',
+    });
+    expect(state.players.find(p => p.id === 2).techIds).toContain('graviton_laser_system');
+    expect(state.round.strategyResolution.responses[2]).toBe('played');
+    expect(state.round.strategyResolution.active).toBe(true);
+
+    state = dispatch(state, {
+      type: 'RESEARCH_TECH',
+      playerId: 1,
+      techId: 'dacxive_animators',
+    });
+    expect(state.players.find(p => p.id === 1).techIds).toContain('dacxive_animators');
+    expect(state.round.strategyResolution.responses[1]).toBe('pending');
+
+    state = dispatch(state, { type: 'PASS_TECH_RESEARCH', playerId: 1 });
+    expect(state.round.techResearch.active).toBe(false);
+    expect(state.round.strategyResolution.active).toBe(false);
+    expect(state.players.find(p => p.id === 1).playedCardIds).toEqual([7]);
+    expect(state.round.strategyActionTaken).toBe(true);
+  });
+
+  it('Jol-Nar Brilliant uses primary slots when resolving Technology secondary', () => {
+    let state = gameWith([
+      player(1, 'Sol', {
+        cards: [STRATEGY_CARDS[6]],
+        lastMinInitiative: 1,
+        techIds: ['neural_motivator'],
+        factionId: 'sol',
+      }),
+      player(2, 'JN', {
+        cards: [STRATEGY_CARDS[0]],
+        lastMinInitiative: 2,
+        techIds: ['neural_motivator', 'antimass_deflectors', 'sarween_tools', 'plasma_scoring'],
+        factionId: 'jolnar',
+      }),
+    ]);
+    state = dispatch(state, { type: 'START_ROUND' });
+    state = dispatch(state, { type: 'PLAY_STRATEGY', cardId: 7 });
+
+    // Jol-Nar secondary → primary: can take 2 techs before auto-resolve
+    state = dispatch(state, {
+      type: 'RESEARCH_TECH',
+      playerId: 2,
+      techId: 'dacxive_animators',
+    });
+    expect(state.round.strategyResolution.responses[2]).toBe('pending');
+    expect(state.round.techResearch.byPlayer[2].picks).toEqual(['dacxive_animators']);
+
+    state = dispatch(state, {
+      type: 'RESEARCH_TECH',
+      playerId: 2,
+      techId: 'gravity_drive',
+    });
+    expect(state.players.find(p => p.id === 2).techIds).toEqual(expect.arrayContaining([
+      'dacxive_animators',
+      'gravity_drive',
+    ]));
+    expect(state.round.strategyResolution.responses[2]).toBe('played');
+  });
+
+  it('allows ignore-1 prereq and hides PoK without usePok', () => {
+    let state = gameWith([
+      player(1, 'Tech', {
+        cards: [STRATEGY_CARDS[6]],
+        lastMinInitiative: 1,
+        techIds: ['neural_motivator'],
+        factionId: 'sol',
+      }),
+      player(2, 'B', { cards: [STRATEGY_CARDS[0]], lastMinInitiative: 2 }),
+    ], {
+      meta: { ...createEmptyGameState().meta, speakerId: 1, usePok: false },
+    });
+    state = dispatch(state, { type: 'START_ROUND' });
+    state = dispatch(state, { type: 'PLAY_STRATEGY', cardId: 7 });
+
+    const pokBlocked = dispatch(state, {
+      type: 'RESEARCH_TECH',
+      playerId: 1,
+      techId: 'psychoarchaeology',
+    });
+    expect(pokBlocked).toBe(state);
+
+    state = dispatch(state, {
+      type: 'RESEARCH_TECH',
+      playerId: 1,
+      techId: 'hyper_metabolism',
+      ignorePrereq: 1,
+    });
+    expect(state.players.find(p => p.id === 1).techIds).toContain('hyper_metabolism');
+  });
+
+  it('GRANT_TECH lets host add outside strategy card', () => {
+    let state = gameWith([player(1, 'A', { techIds: [] })]);
+    state = dispatch(state, { type: 'GRANT_TECH', playerId: 1, techId: 'assault_cannon' });
+    expect(state.players[0].techIds).toEqual(['assault_cannon']);
+    state = dispatch(state, { type: 'REVOKE_TECH', playerId: 1, techId: 'assault_cannon' });
+    expect(state.players[0].techIds).toEqual([]);
+  });
+
+  it('breakthrough synergy helps research', () => {
+    let state = gameWith([
+      player(1, 'Arb', {
+        factionId: 'arborec',
+        cards: [STRATEGY_CARDS[6]],
+        lastMinInitiative: 1,
+        techIds: ['plasma_scoring'],
+        breakthrough: true,
+      }),
+      player(2, 'B', { cards: [STRATEGY_CARDS[0]], lastMinInitiative: 2 }),
+    ], {
+      meta: { ...createEmptyGameState().meta, speakerId: 1, useTe: true, usePok: true },
+    });
+    state = dispatch(state, { type: 'START_ROUND' });
+    state = dispatch(state, { type: 'PLAY_STRATEGY', cardId: 7 });
+    state = dispatch(state, {
+      type: 'RESEARCH_TECH',
+      playerId: 1,
+      techId: 'bio_stims',
+    });
+    expect(state.players.find(p => p.id === 1).techIds).toContain('bio_stims');
+  });
+
+  it('Crimson starting breakthrough applies blue/red synergy on research', () => {
+    let state = gameWith([
+      player(1, 'CR', {
+        factionId: 'crimson',
+        cards: [STRATEGY_CARDS[6]],
+        lastMinInitiative: 1,
+        techIds: ['plasma_scoring'],
+        breakthrough: true,
+      }),
+      player(2, 'B', { cards: [STRATEGY_CARDS[0]], lastMinInitiative: 2 }),
+    ], {
+      meta: { ...createEmptyGameState().meta, speakerId: 1, useTe: true },
+    });
+    state = dispatch(state, { type: 'START_ROUND' });
+    state = dispatch(state, { type: 'PLAY_STRATEGY', cardId: 7 });
+    state = dispatch(state, {
+      type: 'RESEARCH_TECH',
+      playerId: 1,
+      techId: 'gravity_drive',
+    });
+    expect(state.players.find(p => p.id === 1).techIds).toContain('gravity_drive');
+  });
+});
+
+describe('Starting tech draft', () => {
+  function startDraftWith(...factionEntries) {
+    let state = createEmptyGameState();
+    state.meta.usePok = true;
+    state.meta.useTe = true;
+    factionEntries.forEach(([id, factionId, name], index) => {
+      state = dispatch(state, {
+        type: 'ADD_PLAYER',
+        playerId: id,
+        name: name || `P${id}`,
+        factionId,
+      });
+      state = dispatch(state, {
+        type: 'UPDATE_PLAYER',
+        playerId: id,
+        patch: { color: ['#fff', '#000', '#f00', '#0f0', '#00f', '#ff0', '#f0f', '#0ff'][index] },
+      });
+    });
+    state = dispatch(state, { type: 'START_GAME' });
+    state = dispatch(state, { type: 'START_STARTING_TECH_DRAFT' });
+    return state;
+  }
+
+  it('Argent picks 2 of 3 then applies on confirm', () => {
+    let state = startDraftWith([1, 'argent'], [2, 'sol']);
+    expect(state.startingTechDraft.active).toBe(true);
+    state = dispatch(state, {
+      type: 'SET_STARTING_TECH_PICK',
+      playerId: 1,
+      picks: ['neural_motivator', 'plasma_scoring'],
+    });
+    state = dispatch(state, { type: 'CONFIRM_STARTING_TECH', playerId: 1 });
+    expect(state.startingTechDraft.active).toBe(false);
+    expect(state.players.find(p => p.id === 1).techIds).toEqual([
+      'neural_motivator',
+      'plasma_scoring',
+    ]);
+  });
+
+  it('Winnu picks one no-prereq tech', () => {
+    let state = startDraftWith([1, 'winnu'], [2, 'sol']);
+    state = dispatch(state, {
+      type: 'SET_STARTING_TECH_PICK',
+      playerId: 1,
+      picks: ['neural_motivator'],
+    });
+    state = dispatch(state, { type: 'CONFIRM_STARTING_TECH', playerId: 1 });
+    expect(state.players.find(p => p.id === 1).techIds).toEqual(['neural_motivator']);
+  });
+
+  it('rejects Winnu tech that has prereqs', () => {
+    let state = startDraftWith([1, 'winnu'], [2, 'sol']);
+    state = dispatch(state, {
+      type: 'SET_STARTING_TECH_PICK',
+      playerId: 1,
+      picks: ['hyper_metabolism'],
+    });
+    expect(state.startingTechDraft.responses[1].picks).toEqual([]);
+  });
+
+  it('TE color picks enforce color + no prereqs', () => {
+    let state = startDraftWith(
+      [1, 'crimson'],
+      [2, 'firmament'],
+      [3, 'bastion'],
+      [4, 'ralnel'],
+    );
+    // Wrong color for crimson (green) is rejected
+    const blocked = dispatch(state, {
+      type: 'SET_STARTING_TECH_PICK',
+      playerId: 1,
+      picks: ['neural_motivator'],
+    });
+    expect(blocked.startingTechDraft.responses[1].picks).toEqual([]);
+
+    state = dispatch(state, {
+      type: 'SET_STARTING_TECH_PICK',
+      playerId: 1,
+      picks: ['plasma_scoring'],
+    });
+    state = dispatch(state, {
+      type: 'SET_STARTING_TECH_PICK',
+      playerId: 2,
+      picks: ['neural_motivator'],
+    });
+    state = dispatch(state, {
+      type: 'SET_STARTING_TECH_PICK',
+      playerId: 3,
+      picks: ['antimass_deflectors'],
+    });
+    state = dispatch(state, {
+      type: 'SET_STARTING_TECH_PICK',
+      playerId: 4,
+      picks: ['plasma_scoring'],
+    });
+
+    for (const id of [1, 2, 3, 4]) {
+      state = dispatch(state, { type: 'CONFIRM_STARTING_TECH', playerId: id });
+    }
+    expect(state.startingTechDraft.active).toBe(false);
+    expect(state.players.find(p => p.id === 1).techIds).toEqual(['plasma_scoring']);
+    expect(state.players.find(p => p.id === 2).techIds).toEqual(['neural_motivator']);
+    expect(state.players.find(p => p.id === 4).techIds).toEqual(['plasma_scoring']);
+  });
+
+  it('Deepwrought researches twice with chained prereqs', () => {
+    let state = startDraftWith([1, 'deepwrought'], [2, 'sol']);
+    state = dispatch(state, {
+      type: 'SET_STARTING_TECH_PICK',
+      playerId: 1,
+      picks: ['neural_motivator', 'dacxive_animators'],
+    });
+    state = dispatch(state, { type: 'CONFIRM_STARTING_TECH', playerId: 1 });
+    expect(state.players.find(p => p.id === 1).techIds).toEqual([
+      'neural_motivator',
+      'dacxive_animators',
+    ]);
+  });
+
+  it('Deepwrought starting research uses breakthrough synergy when unlocked', () => {
+    let state = startDraftWith([1, 'deepwrought'], [2, 'sol']);
+    state = {
+      ...state,
+      players: state.players.map(p => (
+        p.id === 1 ? { ...p, breakthrough: true } : p
+      )),
+    };
+    // Y/G synergy: neural (green) counts as yellow → graviton (1 yellow)
+    state = dispatch(state, {
+      type: 'SET_STARTING_TECH_PICK',
+      playerId: 1,
+      picks: ['neural_motivator', 'graviton_laser_system'],
+    });
+    expect(state.startingTechDraft.responses[1].picks).toEqual([
+      'neural_motivator',
+      'graviton_laser_system',
+    ]);
+  });
+
+  it('Keleres waits for wave A and picks from others', () => {
+    let state = startDraftWith(
+      [1, 'argent'],
+      [2, 'keleres_argent'],
+      [3, 'sol'],
+    );
+    // Sol has fixed starting techs after START_GAME
+    expect(state.players.find(p => p.id === 3).techIds).toEqual([
+      'neural_motivator',
+      'antimass_deflectors',
+    ]);
+
+    // Keleres cannot confirm before Argent
+    state = dispatch(state, {
+      type: 'SET_STARTING_TECH_PICK',
+      playerId: 2,
+      picks: ['neural_motivator', 'antimass_deflectors'],
+    });
+    expect(state.startingTechDraft.responses[2].picks).toEqual([]);
+    state = dispatch(state, { type: 'CONFIRM_STARTING_TECH', playerId: 2 });
+    expect(state.startingTechDraft.responses[2].status).not.toBe('confirmed');
+
+    state = dispatch(state, {
+      type: 'SET_STARTING_TECH_PICK',
+      playerId: 1,
+      picks: ['sarween_tools', 'plasma_scoring'],
+    });
+    state = dispatch(state, { type: 'CONFIRM_STARTING_TECH', playerId: 1 });
+
+    state = dispatch(state, {
+      type: 'SET_STARTING_TECH_PICK',
+      playerId: 2,
+      picks: ['sarween_tools', 'neural_motivator'],
+    });
+    state = dispatch(state, { type: 'CONFIRM_STARTING_TECH', playerId: 2 });
+    expect(state.startingTechDraft.active).toBe(false);
+    expect(state.players.find(p => p.id === 2).techIds).toEqual([
+      'sarween_tools',
+      'neural_motivator',
+    ]);
   });
 });
 

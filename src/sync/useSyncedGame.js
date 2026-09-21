@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 import { clearGameState, loadGameState, saveGameState, stampGameState } from '../game/gameState';
-import { gameReducer } from '../game/gameReducer';
+import { reduceGame } from '../game/gameEvents';
 import { can, ROLES } from './permissions';
 import {
   clearRoomSession,
@@ -20,7 +20,7 @@ import { loadSeatSecret, saveSeatSecret } from './seatSecrets';
 
 function syncedReducer(state, action) {
   if (action?.type === '__REPLACE__') return action.state;
-  return gameReducer(state, action);
+  return reduceGame(state, action);
 }
 
 /**
@@ -46,10 +46,59 @@ export function useSyncedGame() {
   const [roomError, setRoomError] = useState(null);
   const seqRef = useRef(loadRoomSession()?.seq || 0);
   const roomRef = useRef(null);
+  const gameRef = useRef(game);
+  gameRef.current = game;
 
+  /** Apply server/SSE state only if seq is not older than what we already have. */
+  const applyAuthoritativeState = useCallback((seq, state, extras = {}) => {
+    if (!state) return false;
+    if (typeof seq === 'number') {
+      if (seq < seqRef.current) return false;
+      seqRef.current = seq;
+    }
+    setGame({ type: '__REPLACE__', state });
+    setRoom(prev => (prev ? {
+      ...prev,
+      seq: typeof seq === 'number' ? seq : prev.seq,
+      claimedSeats: extras.claimedSeats ?? prev.claimedSeats,
+    } : prev));
+    return true;
+  }, []);
+
+  // Debounce + idle persist so rapid dispatches don't thrash localStorage.
   useEffect(() => {
-    saveGameState(stampGameState(game));
+    let idleId = 0;
+    const timeoutId = window.setTimeout(() => {
+      const persist = () => saveGameState(stampGameState(game));
+      if (typeof requestIdleCallback === 'function') {
+        idleId = requestIdleCallback(persist, { timeout: 400 });
+      } else {
+        persist();
+      }
+    }, 250);
+    return () => {
+      window.clearTimeout(timeoutId);
+      if (idleId && typeof cancelIdleCallback === 'function') {
+        cancelIdleCallback(idleId);
+      }
+    };
   }, [game]);
+
+  // Flush latest state on leave / unmount so debounced writes are not lost.
+  useEffect(() => {
+    const flush = () => {
+      try {
+        saveGameState(stampGameState(gameRef.current));
+      } catch {
+        /* ignore quota / private-mode failures */
+      }
+    };
+    window.addEventListener('pagehide', flush);
+    return () => {
+      window.removeEventListener('pagehide', flush);
+      flush();
+    };
+  }, []);
 
   useEffect(() => {
     roomRef.current = room;
@@ -134,11 +183,6 @@ export function useSyncedGame() {
       }
 
       if ((msg.type === 'hello' || msg.type === 'state') && msg.state) {
-        if (typeof msg.seq === 'number') {
-          if (msg.seq < seqRef.current) return;
-          seqRef.current = msg.seq;
-        }
-
         const current = roomRef.current;
         const endedByHost = msg.type === 'state'
           && (msg.roomEnded || msg.action?.type === 'RESET_GAME');
@@ -163,17 +207,12 @@ export function useSyncedGame() {
           return;
         }
 
-        setGame({ type: '__REPLACE__', state: msg.state });
-        setRoom(prev => (prev ? {
-          ...prev,
-          seq: msg.seq ?? prev.seq,
-          claimedSeats: msg.claimedSeats ?? prev.claimedSeats,
-        } : prev));
+        applyAuthoritativeState(msg.seq, msg.state, { claimedSeats: msg.claimedSeats });
       }
     });
 
     return unsubscribe;
-  }, [room?.roomId]);
+  }, [room?.roomId, applyAuthoritativeState]);
 
   const dispatch = useCallback((action) => {
     if (!action || typeof action !== 'object') return;
@@ -211,9 +250,14 @@ export function useSyncedGame() {
         'PICK_CARD', 'UNDO_PICK', 'PLAY_STRATEGY', 'RESOLVE_STRATEGY', 'PASS_TURN', 'NEXT_TURN',
         'SELECT_SCORING_PUBLIC', 'TOGGLE_SCORING_SECRET',
         'CONFIRM_OBJECTIVE_SCORING', 'PASS_OBJECTIVE_SCORING',
+        'SELECT_IMPERIAL_PUBLIC', 'TOGGLE_IMPERIAL_MECATOL', 'TOGGLE_IMPERIAL_SECRET',
+        'CONFIRM_IMPERIAL_CLAIM', 'PASS_IMPERIAL_CLAIM',
+        'RESEARCH_TECH', 'PASS_TECH_RESEARCH', 'SET_TECH_IGNORE_PREREQ', 'TOGGLE_TECH',
+        'CLAIM_EXPEDITION_SLICE', 'RESOLVE_THUNDERS_EDGE_CONTROL',
         'SET_SPEAKER',
         'SET_INFLUENCE', 'LOCK_INFLUENCE', 'SET_VOTE', 'LOCK_VOTE',
         'FINISH_AGENDA_PHASE',
+        'SET_STARTING_TECH_PICK', 'CONFIRM_STARTING_TECH',
       ];
       if (!soft.includes(stamped.type)) {
         setRoomError('Только админ может это сделать');
@@ -228,8 +272,7 @@ export function useSyncedGame() {
       hostKey: current.hostKey,
     })
       .then((result) => {
-        if (typeof result.seq === 'number') seqRef.current = result.seq;
-        if (result.state) setGame({ type: '__REPLACE__', state: result.state });
+        applyAuthoritativeState(result.seq, result.state);
         setRoomError(null);
       })
       .catch((err) => {
@@ -246,12 +289,13 @@ export function useSyncedGame() {
         setRoomError(message);
         fetchRoomSnapshot(roomId)
           .then((snap) => {
-            if (snap?.state) setGame({ type: '__REPLACE__', state: snap.state });
-            if (typeof snap?.seq === 'number') seqRef.current = snap.seq;
+            applyAuthoritativeState(snap?.seq, snap?.state, {
+              claimedSeats: snap?.claimedSeats,
+            });
           })
           .catch(() => {});
       });
-  }, []);
+  }, [applyAuthoritativeState]);
 
   const startHostRoom = useCallback(async () => {
     setRoomStatus('connecting');

@@ -56,6 +56,7 @@ Vite serves `/api/*` via a local middleware that keeps secrets on the Node side.
 - Game actions sync through the server reducer; `TICK` (turn timer) stays local.
 - `npm run dev`: rooms are **in-memory** on the Vite process (two tabs work; restart clears rooms).
 - Production: one Cloudflare **Durable Object** per room (`GAME_ROOMS` in `wrangler.toml`). First deploy applies migration `v1-game-rooms`.
+- Room TTL: each join/action refreshes `lastActivityAt` / `expiresAt` (**48h** idle). After host `RESET_GAME`, grace is **2h**, then the DO alarm wipes storage. Stale memory rooms are dropped on access in dev.
 
 ## Security note
 

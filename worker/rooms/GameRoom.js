@@ -1,6 +1,8 @@
 import {
   applyRoomAction,
   createRoomRecord,
+  hydrateRoomLifecycle,
+  isRoomExpired,
   joinRoom,
   releaseSeat,
   publicRoomView,
@@ -9,6 +11,7 @@ import {
 
 /**
  * One Durable Object = one live game room.
+ * Idle rooms expire via storage alarm (see roomCore TTL helpers).
  */
 export class GameRoom {
   constructor(ctx, env) {
@@ -19,11 +22,38 @@ export class GameRoom {
   }
 
   async load() {
-    return (await this.ctx.storage.get('room')) || null;
+    const raw = (await this.ctx.storage.get('room')) || null;
+    return hydrateRoomLifecycle(raw);
   }
 
   async save(room) {
     await this.ctx.storage.put('room', room);
+    await this.scheduleExpiry(room);
+  }
+
+  async scheduleExpiry(room) {
+    if (!room?.expiresAt) return;
+    const at = Date.parse(room.expiresAt);
+    if (!Number.isFinite(at)) return;
+    // DO alarms must be in the future; clamp tiny skew.
+    const when = Math.max(at, Date.now() + 1000);
+    await this.ctx.storage.setAlarm(when);
+  }
+
+  async wipeExpired() {
+    for (const write of [...this.sseWrites]) {
+      this.sseWrites.delete(write);
+    }
+    await this.ctx.storage.deleteAll();
+  }
+
+  async alarm() {
+    const room = await this.load();
+    if (!room || isRoomExpired(room)) {
+      await this.wipeExpired();
+      return;
+    }
+    await this.scheduleExpiry(room);
   }
 
   broadcast(payload) {
@@ -50,13 +80,17 @@ export class GameRoom {
 
       const existing = await this.load();
       if (existing) {
-        return Response.json({
-          ...publicRoomView(existing),
-          hostKey: existing.hostKey,
-          sessionToken: adminSessionFromRoom(existing),
-          role: 'admin',
-          reused: true,
-        });
+        if (isRoomExpired(existing)) {
+          await this.wipeExpired();
+        } else {
+          return Response.json({
+            ...publicRoomView(existing),
+            hostKey: existing.hostKey,
+            sessionToken: adminSessionFromRoom(existing),
+            role: 'admin',
+            reused: true,
+          });
+        }
       }
 
       const room = createRoomRecord(body?.state ?? null);
@@ -71,9 +105,13 @@ export class GameRoom {
       }, { status: 201 });
     }
 
-    const room = await this.load();
+    let room = await this.load();
     if (!room) {
       return Response.json({ error: 'not-found' }, { status: 404 });
+    }
+    if (isRoomExpired(room)) {
+      await this.wipeExpired();
+      return Response.json({ error: 'not-found', expired: true }, { status: 404 });
     }
 
     if (method === 'GET' && path.endsWith('/snapshot')) {
