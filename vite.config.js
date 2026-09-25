@@ -77,22 +77,23 @@ function readCloudSecrets() {
 function resolveServerEnv(mode) {
   const env = loadEnv(mode, process.cwd(), '');
   const fileSecrets = readCloudSecrets();
+  // Process / .env wins over cloud.local.json so CI and Playwright can inject secrets.
   return {
     JSONBIN_BIN_ID:
-      fileSecrets.JSONBIN_BIN_ID ||
       env.JSONBIN_BIN_ID ||
       env.VITE_JSONBIN_BIN_ID ||
+      fileSecrets.JSONBIN_BIN_ID ||
       '',
     JSONBIN_MASTER_KEY:
-      fileSecrets.JSONBIN_MASTER_KEY ||
       env.JSONBIN_MASTER_KEY ||
       env.VITE_JSONBIN_MASTER_KEY ||
+      fileSecrets.JSONBIN_MASTER_KEY ||
       '',
-    ADMIN_PIN: fileSecrets.ADMIN_PIN || env.ADMIN_PIN || env.VITE_ADMIN_PIN || '',
+    ADMIN_PIN: env.ADMIN_PIN || env.VITE_ADMIN_PIN || fileSecrets.ADMIN_PIN || '',
     ROOM_CREATE_SECRET:
-      fileSecrets.ROOM_CREATE_SECRET ||
       env.ROOM_CREATE_SECRET ||
       env.VITE_ROOM_CREATE_SECRET ||
+      fileSecrets.ROOM_CREATE_SECRET ||
       '',
   };
 }
@@ -162,6 +163,23 @@ function cloudApiPlugin(mode) {
 
 export default defineConfig(({ mode }) => ({
   plugins: [react(), cloudApiPlugin(mode), figurinesStaticPlugin()],
+  test: {
+    exclude: ['**/node_modules/**', '**/dist/**', '**/e2e/**'],
+  },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (!id.includes('node_modules')) return undefined;
+          if (id.includes('framer-motion')) return 'motion';
+          if (id.includes('react-dom') || id.includes('/react/') || id.endsWith('/react')) {
+            return 'react-vendor';
+          }
+          return undefined;
+        },
+      },
+    },
+  },
   server: {
     watch: {
       // Binary / locked image drops on Windows throw EBUSY and kill the server.

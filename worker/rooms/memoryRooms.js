@@ -8,6 +8,8 @@ import {
   publicRoomView,
   adminSessionFromRoom,
 } from './roomCore.js';
+import { logRoomEvent, measureMs } from './roomLog.js';
+import { undoStackDepth } from '../../src/sync/undoStack';
 
 /**
  * Process-local rooms for Vite `npm run dev`.
@@ -33,6 +35,12 @@ function purgeIfExpired(roomId) {
   if (!room) return null;
   const hydrated = hydrateRoomLifecycle(room);
   if (isRoomExpired(hydrated)) {
+    logRoomEvent('room_expire', {
+      backend: 'memory',
+      roomId: key,
+      sseListeners: listeners.get(key)?.size || 0,
+      undoDepth: undoStackDepth(hydrated.undoStack),
+    });
     rooms.delete(key);
     listeners.delete(key);
     return null;
@@ -44,6 +52,11 @@ function purgeIfExpired(roomId) {
 export function memoryCreateRoom(initialState) {
   const room = createRoomRecord(initialState);
   rooms.set(room.roomId, room);
+  logRoomEvent('room_create', {
+    backend: 'memory',
+    roomId: room.roomId,
+    players: room.state?.players?.length ?? 0,
+  });
   return room;
 }
 
@@ -92,11 +105,35 @@ export function memoryReleaseSeat(roomId, body) {
 
 export function memoryApplyAction(roomId, action, auth) {
   const key = String(roomId || '').toUpperCase();
+  const started = Date.now();
   const room = purgeIfExpired(key);
-  if (!room) return { ok: false, error: 'not-found' };
+  if (!room) {
+    logRoomEvent('action', {
+      backend: 'memory',
+      roomId: key,
+      actionType: action?.type || null,
+      ok: false,
+      error: 'not-found',
+      durationMs: measureMs(started),
+    });
+    return { ok: false, error: 'not-found' };
+  }
 
   const result = applyRoomAction(room, action, auth);
-  if (!result.ok) return result;
+  if (!result.ok) {
+    logRoomEvent('action', {
+      backend: 'memory',
+      roomId: key,
+      actionType: action?.type || null,
+      ok: false,
+      error: result.error || 'error',
+      durationMs: measureMs(started),
+      seq: room.seq,
+      undoDepth: undoStackDepth(room.undoStack),
+      sseListeners: listeners.get(key)?.size || 0,
+    });
+    return result;
+  }
 
   rooms.set(key, result.room);
   if (!result.noop) {
@@ -124,6 +161,19 @@ export function memoryApplyAction(roomId, action, auth) {
       });
     }
   }
+
+  logRoomEvent('action', {
+    backend: 'memory',
+    roomId: key,
+    actionType: action?.type || null,
+    ok: true,
+    noop: !!result.noop,
+    durationMs: measureMs(started),
+    seq: result.room.seq,
+    undoDepth: undoStackDepth(result.room.undoStack),
+    sseListeners: listeners.get(key)?.size || 0,
+    roomEnded: !!result.roomEnded,
+  });
   return result;
 }
 
@@ -131,10 +181,20 @@ export function memorySubscribe(roomId, callback) {
   const key = String(roomId || '').toUpperCase();
   if (!listeners.has(key)) listeners.set(key, new Set());
   listeners.get(key).add(callback);
+  logRoomEvent('sse_connect', {
+    backend: 'memory',
+    roomId: key,
+    sseListeners: listeners.get(key).size,
+  });
   return () => {
     const set = listeners.get(key);
     if (!set) return;
     set.delete(callback);
+    logRoomEvent('sse_disconnect', {
+      backend: 'memory',
+      roomId: key,
+      sseListeners: set.size,
+    });
     if (set.size === 0) listeners.delete(key);
   };
 }

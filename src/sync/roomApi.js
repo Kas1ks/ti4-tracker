@@ -73,10 +73,21 @@ export async function postRoomAction(roomId, action, auth = {}) {
   return res.json();
 }
 
-export function subscribeRoom(roomId, onMessage) {
+/**
+ * Subscribe to room SSE. Optional onStatus receives:
+ * 'open' | 'reconnecting' | 'closed'
+ */
+export function subscribeRoom(roomId, onMessage, onStatus) {
   const source = new EventSource(`/api/rooms/${encodeURIComponent(roomId)}/events`);
+  let sawOpen = false;
+
+  source.onopen = () => {
+    sawOpen = true;
+    onStatus?.('open');
+  };
 
   source.onmessage = (event) => {
+    if (sawOpen) onStatus?.('open');
     try {
       onMessage(JSON.parse(event.data));
     } catch (err) {
@@ -84,7 +95,19 @@ export function subscribeRoom(roomId, onMessage) {
     }
   };
 
-  return () => source.close();
+  source.onerror = () => {
+    // Browser auto-reconnects; surface "reconnecting" while CONNECTING/CLOSED.
+    if (source.readyState === EventSource.CLOSED) {
+      onStatus?.('closed');
+      return;
+    }
+    onStatus?.('reconnecting');
+  };
+
+  return () => {
+    source.close();
+    onStatus?.('closed');
+  };
 }
 
 export { LOCAL_ONLY_ACTIONS };

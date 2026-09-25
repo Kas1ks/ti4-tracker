@@ -1,4 +1,4 @@
-import { lazy, useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import * as select from './game/selectors';
 import { useSyncedGame } from './sync/useSyncedGame';
 import { verifyHostSecret } from './sync/roomApi';
@@ -16,13 +16,15 @@ import { LazyWhen } from './components/LazyWhen';
 import { RoomHub } from './components/RoomHub';
 import { GuestLobby } from './components/GuestLobby';
 import { SetupScreen } from './components/SetupScreen';
-import { GameBoard } from './components/GameBoard';
-import { PlayerMobileConsole } from './components/PlayerMobileConsole';
 import { StrategyResolutionBanner } from './components/StrategyResolutionBanner';
 import { StartingTechDraftBanner } from './components/StartingTechDraftBanner';
+import { SyncStatusBanner } from './components/SyncStatusBanner';
 import { ROLES } from './sync/permissions';
 import { playersNeedingStartingTechDraft } from './data/technologies';
+import { getTechSession } from './hooks/useTechSession';
 
+const GameBoard = lazy(() => import('./components/GameBoard').then(m => ({ default: m.GameBoard })));
+const PlayerMobileConsole = lazy(() => import('./components/PlayerMobileConsole').then(m => ({ default: m.PlayerMobileConsole })));
 const GameSummaryModal = lazy(() => import('./components/GameSummaryModal').then(m => ({ default: m.GameSummaryModal })));
 const StatsModal = lazy(() => import('./components/StatsModal').then(m => ({ default: m.StatsModal })));
 const StatusPhaseModal = lazy(() => import('./components/StatusPhaseModal').then(m => ({ default: m.StatusPhaseModal })));
@@ -41,6 +43,14 @@ const ProductionCalculatorModal = lazy(() => import('./components/ProductionCalc
 const ExpeditionModal = lazy(() => import('./components/ExpeditionModal').then(m => ({ default: m.ExpeditionModal })));
 const EventLogModal = lazy(() => import('./components/EventLogModal').then(m => ({ default: m.EventLogModal })));
 
+function BoardChunkFallback() {
+  return (
+    <div className="rounded-2xl border border-slate-700/60 bg-slate-900/60 p-8 text-center text-slate-400 text-sm">
+      Загрузка доски…
+    </div>
+  );
+}
+
 function App() {
   const { dialog, close, uiAlert, uiConfirm, uiPrompt, uiForm } = useAppDialog();
   const {
@@ -49,6 +59,8 @@ function App() {
     room,
     roomStatus,
     roomError,
+    syncLink,
+    dismissRoomError,
     startHostRoom,
     joinRoomById,
     releaseSeatById,
@@ -128,37 +140,18 @@ function App() {
     startingTechDraft?.active
     && (perms?.role === ROLES.ADMIN || roomStatus === 'solo')
   );
-  const techResolutionActive = !!(
-    strategyResolution?.active
-    && strategyResolution.cardId === 7
-    && techResearch?.active
-    && techResearch.concurrent
-  );
-  const myTechPending = !!(
-    techResolutionActive
-    && perms?.seatPlayerId != null
-    && strategyResolution.responses?.[perms.seatPlayerId] === 'pending'
-  );
-  const hostTechFocusId = (() => {
-    if (!techResolutionActive) return null;
-    if (ui.techViewPlayerId != null
-      && strategyResolution.responses?.[ui.techViewPlayerId] === 'pending') {
-      return ui.techViewPlayerId;
-    }
-    const pending = players.find(p => strategyResolution.responses?.[p.id] === 'pending');
-    return pending?.id ?? null;
-  })();
-  const techSessionPlayerId = isPlayerClient
-    ? (myTechPending ? perms.seatPlayerId : null)
-    : hostTechFocusId;
-  const techResearchView = techSessionPlayerId != null
-    ? select.techResearchSessionFor(game, techSessionPlayerId)
-    : null;
-  const showTechResearchModal = !!techResearchView && (
-    roomStatus === 'solo'
-    || myTechPending
-    || perms?.role === ROLES.ADMIN
-  );
+  const {
+    techResolutionActive,
+    techResearchView,
+    showTechResearchModal,
+  } = getTechSession({
+    game,
+    players,
+    perms,
+    roomStatus,
+    isPlayerClient,
+    techViewPlayerId: ui.techViewPlayerId,
+  });
   const showTechBrowseModal = !!ui.showTechModal && !techResearch?.active;
   const showTechModal = showTechResearchModal || showTechBrowseModal;
   const expedition = game.expedition;
@@ -403,6 +396,12 @@ function App() {
           : 'min-h-screen px-3 md:px-8'
       }`}
     >
+      <SyncStatusBanner
+        roomError={hasRoomSession ? roomError : null}
+        syncLink={hasRoomSession ? syncLink : 'idle'}
+        onDismissError={dismissRoomError}
+      />
+
       <GameHeader
         isGameActive={isGameActive}
         roundNumber={roundNumber}
@@ -509,48 +508,51 @@ function App() {
         {isGameActive && (
           <>
             {isPlayerClient && (
-              <PlayerMobileConsole
-                me={mySeatPlayer}
-                seatSecret={room?.seatSecret || null}
-                activePlayer={activePlayer}
-                turnOrder={turnOrder}
-                players={players}
-                passed={passed}
-                strategyCards={strategyCards}
-                allStrategiesPlayed={allStrategiesPlayed}
-                strategyActionTaken={!!strategyActionTaken || !!imperialClaim?.active || !!techResearch?.active}
-                strategyResolutionActive={!!strategyResolution?.active || !!imperialClaim?.active || !!techResearch?.active}
-                resolvingCardId={strategyResolution?.cardId ?? null}
-                turnTime={turnTime}
-                onPlayStrategy={dialogs.playStrategyCard}
-                onNextTurn={() => dispatch({ type: 'NEXT_TURN' })}
-                onPassTurn={dialogs.passTurn}
-                getPlayerScore={getPlayerScore}
-                targetScore={targetScore}
-                speakerId={speakerId}
-                objectives={objectives}
-                completions={completions}
-                scoring={objectiveScoring}
-                onSelectPublic={(playerId, objectiveId) => dispatch({ type: 'SELECT_SCORING_PUBLIC', playerId, objectiveId })}
-                onToggleSecret={(playerId) => dispatch({ type: 'TOGGLE_SCORING_SECRET', playerId })}
-                onConfirmScoring={(playerId) => dispatch({ type: 'CONFIRM_OBJECTIVE_SCORING', playerId })}
-                onPassScoring={(playerId) => dispatch({ type: 'PASS_OBJECTIVE_SCORING', playerId })}
-                roundActive={roundActive}
-                canPlay={!!mySeatPlayer && (!perms?.seatPlayerId || activePlayer?.id === perms.seatPlayerId)}
-                canNextTurn={
-                  !!mySeatPlayer
-                  && (!perms?.seatPlayerId || activePlayer?.id === perms.seatPlayerId)
-                  && !strategyResolution?.active
-                  && !imperialClaim?.active
-                  && !techResearch?.active
-                }
-                onOpenProduction={() => ui.setShowProductionCalculator(true)}
-                usePok={usePok}
-                useTe={useTe}
-              />
+              <Suspense fallback={<BoardChunkFallback />}>
+                <PlayerMobileConsole
+                  me={mySeatPlayer}
+                  seatSecret={room?.seatSecret || null}
+                  activePlayer={activePlayer}
+                  turnOrder={turnOrder}
+                  players={players}
+                  passed={passed}
+                  strategyCards={strategyCards}
+                  allStrategiesPlayed={allStrategiesPlayed}
+                  strategyActionTaken={!!strategyActionTaken || !!imperialClaim?.active || !!techResearch?.active}
+                  strategyResolutionActive={!!strategyResolution?.active || !!imperialClaim?.active || !!techResearch?.active}
+                  resolvingCardId={strategyResolution?.cardId ?? null}
+                  turnTime={turnTime}
+                  onPlayStrategy={dialogs.playStrategyCard}
+                  onNextTurn={() => dispatch({ type: 'NEXT_TURN' })}
+                  onPassTurn={dialogs.passTurn}
+                  getPlayerScore={getPlayerScore}
+                  targetScore={targetScore}
+                  speakerId={speakerId}
+                  objectives={objectives}
+                  completions={completions}
+                  scoring={objectiveScoring}
+                  onSelectPublic={(playerId, objectiveId) => dispatch({ type: 'SELECT_SCORING_PUBLIC', playerId, objectiveId })}
+                  onToggleSecret={(playerId) => dispatch({ type: 'TOGGLE_SCORING_SECRET', playerId })}
+                  onConfirmScoring={(playerId) => dispatch({ type: 'CONFIRM_OBJECTIVE_SCORING', playerId })}
+                  onPassScoring={(playerId) => dispatch({ type: 'PASS_OBJECTIVE_SCORING', playerId })}
+                  roundActive={roundActive}
+                  canPlay={!!mySeatPlayer && (!perms?.seatPlayerId || activePlayer?.id === perms.seatPlayerId)}
+                  canNextTurn={
+                    !!mySeatPlayer
+                    && (!perms?.seatPlayerId || activePlayer?.id === perms.seatPlayerId)
+                    && !strategyResolution?.active
+                    && !imperialClaim?.active
+                    && !techResearch?.active
+                  }
+                  onOpenProduction={() => ui.setShowProductionCalculator(true)}
+                  usePok={usePok}
+                  useTe={useTe}
+                />
+              </Suspense>
             )}
             <div className={isPlayerClient ? 'hidden md:block' : undefined}>
-              <GameBoard
+              <Suspense fallback={<BoardChunkFallback />}>
+                <GameBoard
                 turnOrder={turnOrder}
                 passed={passed}
                 activePlayer={activePlayer}
@@ -611,6 +613,7 @@ function App() {
                 isGameActive={isGameActive}
                 perms={perms}
               />
+              </Suspense>
             </div>
           </>
         )}

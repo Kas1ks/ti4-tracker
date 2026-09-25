@@ -8,6 +8,8 @@ import {
   publicRoomView,
   adminSessionFromRoom,
 } from './roomCore.js';
+import { logRoomEvent, measureMs } from './roomLog.js';
+import { undoStackDepth } from '../../src/sync/undoStack';
 
 /**
  * One Durable Object = one live game room.
@@ -41,6 +43,13 @@ export class GameRoom {
   }
 
   async wipeExpired() {
+    const room = await this.load().catch(() => null);
+    logRoomEvent('room_expire', {
+      backend: 'do',
+      roomId: room?.roomId || null,
+      sseListeners: this.sseWrites.size,
+      undoDepth: undoStackDepth(room?.undoStack),
+    });
     for (const write of [...this.sseWrites]) {
       this.sseWrites.delete(write);
     }
@@ -97,6 +106,11 @@ export class GameRoom {
       const namedId = url.searchParams.get('roomId');
       if (namedId) room.roomId = namedId.toUpperCase();
       await this.save(room);
+      logRoomEvent('room_create', {
+        backend: 'do',
+        roomId: room.roomId,
+        players: room.state?.players?.length ?? 0,
+      });
       return Response.json({
         ...publicRoomView(room),
         hostKey: room.hostKey,
@@ -188,11 +202,23 @@ export class GameRoom {
         return Response.json({ error: 'invalid-body' }, { status: 400 });
       }
 
+      const started = Date.now();
       const result = applyRoomAction(room, body?.action, {
         sessionToken: body?.sessionToken,
         hostKey: body?.hostKey,
       });
       if (!result.ok) {
+        logRoomEvent('action', {
+          backend: 'do',
+          roomId: room.roomId,
+          actionType: body?.action?.type || null,
+          ok: false,
+          error: result.error || 'error',
+          durationMs: measureMs(started),
+          seq: room.seq,
+          undoDepth: undoStackDepth(room.undoStack),
+          sseListeners: this.sseWrites.size,
+        });
         const status = result.error === 'unauthorized' || result.error === 'forbidden'
           ? 403
           : 400;
@@ -226,6 +252,19 @@ export class GameRoom {
         }
       }
 
+      logRoomEvent('action', {
+        backend: 'do',
+        roomId: room.roomId,
+        actionType: body?.action?.type || null,
+        ok: true,
+        noop: !!result.noop,
+        durationMs: measureMs(started),
+        seq: result.room.seq,
+        undoDepth: undoStackDepth(result.room.undoStack),
+        sseListeners: this.sseWrites.size,
+        roomEnded: !!result.roomEnded,
+      });
+
       return Response.json({
         seq: result.room.seq,
         state: result.room.state,
@@ -241,6 +280,11 @@ export class GameRoom {
       const write = (text) => writer.write(encoder.encode(text));
 
       this.sseWrites.add(write);
+      logRoomEvent('sse_connect', {
+        backend: 'do',
+        roomId: room.roomId,
+        sseListeners: this.sseWrites.size,
+      });
       write(`data: ${JSON.stringify({ type: 'hello', ...publicRoomView(room) })}\n\n`);
 
       const heartbeat = setInterval(() => {
@@ -253,6 +297,11 @@ export class GameRoom {
       const cleanup = () => {
         clearInterval(heartbeat);
         this.sseWrites.delete(write);
+        logRoomEvent('sse_disconnect', {
+          backend: 'do',
+          roomId: room.roomId,
+          sseListeners: this.sseWrites.size,
+        });
         writer.close().catch(() => {});
       };
       request.signal.addEventListener('abort', cleanup);

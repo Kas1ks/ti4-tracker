@@ -6,7 +6,7 @@ import {
   popUndoSnapshot,
   pushUndoSnapshot,
   undoStackDepth,
-} from '../../src/sync/undoStack.js';
+} from '../../src/sync/undoStack';
 
 export { LOCAL_ONLY_ACTIONS, ROLES };
 

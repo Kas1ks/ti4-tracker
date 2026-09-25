@@ -2,7 +2,19 @@
 
 React/Vite TI4 Companion dashboard. Cloud stats/saves go through a Cloudflare Worker so JSONBin keys never ship in the browser bundle.
 
-## Start
+## Scripts
+
+| Command | Purpose |
+|---------|---------|
+| `npm run dev` | Vite + local `/api` middleware |
+| `npm test` | Vitest unit tests |
+| `npm run test:e2e` | Playwright smoke (memory rooms via Vite) |
+| `npm run typecheck` | TypeScript check (`game` / `sync` / rooms) |
+| `npm run lint` | ESLint |
+| `npm run build` | Production bundle |
+| `npm run deploy` | Build + Wrangler deploy |
+
+CI runs lint → typecheck → test → build → e2e on `main` and `refactor/vite-from-main`.
 
 ```bash
 npm install

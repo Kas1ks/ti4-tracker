@@ -22,6 +22,7 @@ import {
   pushUndoSnapshot,
   undoStackDepth,
 } from './undoStack';
+import { parseRoomActionResult, parseRoomPublicView } from './roomContract';
 
 function syncedReducer(state, action) {
   if (action?.type === '__REPLACE__') return action.state;
@@ -49,6 +50,8 @@ export function useSyncedGame() {
   });
   const [roomStatus, setRoomStatus] = useState(() => (loadRoomSession()?.roomId ? 'connecting' : 'solo'));
   const [roomError, setRoomError] = useState(null);
+  /** SSE link: 'idle' | 'open' | 'reconnecting' | 'closed' */
+  const [syncLink, setSyncLink] = useState('idle');
   const [canUndo, setCanUndo] = useState(false);
   const seqRef = useRef(loadRoomSession()?.seq || 0);
   const roomRef = useRef(null);
@@ -134,9 +137,11 @@ export function useSyncedGame() {
       .then((snap) => {
         if (cancelled) return;
         if (!snap?.state) throw new Error('not-found');
+        const view = parseRoomPublicView(snap);
         seqRef.current = typeof snap.seq === 'number' ? snap.seq : (saved.seq || 0);
         setGame({ type: '__REPLACE__', state: snap.state });
         if (typeof snap.canUndo === 'boolean') setCanUndo(snap.canUndo);
+        else if (view) setCanUndo(view.canUndo);
         setRoom({
           roomId: saved.roomId,
           hostKey: saved.hostKey,
@@ -175,7 +180,9 @@ export function useSyncedGame() {
       setRoomError(message);
     };
 
-    const unsubscribe = subscribeRoom(room.roomId, (msg) => {
+    const unsubscribe = subscribeRoom(
+      room.roomId,
+      (msg) => {
       if (msg.type === 'seats') {
         const current = roomRef.current;
         const kicked = current?.role === ROLES.PLAYER
@@ -229,7 +236,13 @@ export function useSyncedGame() {
           canUndo: typeof msg.canUndo === 'boolean' ? msg.canUndo : undefined,
         });
       }
-    });
+      },
+      (status) => {
+        if (status === 'open') setSyncLink('open');
+        else if (status === 'reconnecting') setSyncLink('reconnecting');
+        else if (status === 'closed') setSyncLink((prev) => (prev === 'reconnecting' ? prev : 'closed'));
+      },
+    );
 
     return unsubscribe;
   }, [room?.roomId, applyAuthoritativeState, clearSoloUndo]);
@@ -313,8 +326,9 @@ export function useSyncedGame() {
       hostKey: current.hostKey,
     })
       .then((result) => {
-        applyAuthoritativeState(result.seq, result.state, {
-          canUndo: typeof result.canUndo === 'boolean' ? result.canUndo : undefined,
+        const parsed = parseRoomActionResult(result) || result;
+        applyAuthoritativeState(parsed.seq, parsed.state, {
+          canUndo: typeof parsed.canUndo === 'boolean' ? parsed.canUndo : undefined,
         });
         setRoomError(null);
       })
@@ -433,8 +447,13 @@ export function useSyncedGame() {
     setRoom(null);
     setRoomStatus('solo');
     setRoomError(null);
+    setSyncLink('idle');
     seqRef.current = 0;
   }, [clearSoloUndo]);
+
+  const dismissRoomError = useCallback(() => {
+    setRoomError(null);
+  }, []);
 
   /** End the live party for everyone, then return this client to the hub. */
   const resetLocalGame = useCallback(async () => {
@@ -471,6 +490,8 @@ export function useSyncedGame() {
     room,
     roomStatus,
     roomError,
+    syncLink,
+    dismissRoomError,
     perms,
     canUndo,
     startHostRoom,

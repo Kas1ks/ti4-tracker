@@ -2,8 +2,9 @@ import { BASE_OBJECTIVES, DEFAULT_OBJECTIVES } from '../data/gameData';
 import { EXPEDITION_SLICE_IDS, emptyExpeditionSlices } from '../data/expedition';
 import { shufflePreferFresh } from '../utils/game';
 import { readRecentObjectiveIds } from './objectiveHistory';
+import { GAME_STATE_VERSION, migrateGameState } from './migrations';
 
-export const GAME_STATE_VERSION = 1;
+export { GAME_STATE_VERSION };
 export const GAME_STATE_KEY = 'ti4_game';
 export const DEFAULT_TARGET_SCORE = 10;
 
@@ -505,7 +506,12 @@ function normalizeGameEvents(value) {
 
 /** Accepts a nested doc, a legacy flat snapshot, or junk, and returns a valid doc. */
 export function normalizeGameState(raw) {
-  const flat = toFlat(raw);
+  // Migrations assume the nested document shape. Flat legacy snapshots skip them —
+  // toFlat() already lifts their fields into the current shape.
+  const nested = raw && typeof raw === 'object'
+    && (raw.meta != null || raw.round != null || raw.draft != null || raw.version != null);
+  const migrated = nested ? migrateGameState(raw) : raw;
+  const flat = toFlat(migrated);
   const players = asArray(flat.players).map(normalizePlayer);
   const draftQueue = asArray(flat.draftQueue);
   const agendas = asArray(flat.agendas, null);
