@@ -55,6 +55,7 @@ function App() {
     leaveRoom,
     resetLocalGame,
     perms,
+    canUndo,
   } = useSyncedGame();
 
   const [soloSetup, setSoloSetup] = useState(false);
@@ -156,6 +157,7 @@ function App() {
   const showTechResearchModal = !!techResearchView && (
     roomStatus === 'solo'
     || myTechPending
+    || perms?.role === ROLES.ADMIN
   );
   const showTechBrowseModal = !!ui.showTechModal && !techResearch?.active;
   const showTechModal = showTechResearchModal || showTechBrowseModal;
@@ -287,7 +289,7 @@ function App() {
   };
 
   const hostSecretErrorMessage = (code) => {
-    if (code === 'forbidden') return 'Неверный секрет хоста.';
+    if (code === 'forbidden') return 'Неверный код доступа.';
     if (code === 'create-secret-not-configured') {
       return 'На сервере не задан ROOM_CREATE_SECRET. Добавьте его в Worker Secrets (не Pages) / .dev.vars.';
     }
@@ -295,20 +297,20 @@ function App() {
   };
 
   /** Prompt + server check for ROOM_CREATE_SECRET. Returns secret or null if cancelled/failed. */
-  const unlockAsHost = async ({ title, message }) => {
+  const unlockAsHost = async ({ title } = {}) => {
     const createSecret = await uiPrompt(
-      message,
+      'Введите код доступа',
       {
-        title,
+        title: title || 'Код доступа',
         inputType: 'password',
-        placeholder: 'Секрет хоста',
+        placeholder: 'Код доступа',
         confirmLabel: 'Продолжить',
         variant: 'info',
       },
     );
     if (createSecret === null) return null;
     if (!String(createSecret).trim()) {
-      await uiAlert('Секрет не может быть пустым.', { title: 'Ошибка', variant: 'danger' });
+      await uiAlert('Код доступа не может быть пустым.', { title: 'Ошибка', variant: 'danger' });
       return null;
     }
     try {
@@ -316,7 +318,7 @@ function App() {
       return String(createSecret);
     } catch (err) {
       const code = String(err.message || err);
-      await uiAlert(hostSecretErrorMessage(code) || `Не удалось проверить секрет: ${code}`, {
+      await uiAlert(hostSecretErrorMessage(code) || `Не удалось проверить код: ${code}`, {
         title: 'Ошибка',
         variant: 'danger',
       });
@@ -326,10 +328,7 @@ function App() {
 
   const handleCreateRoom = async () => {
     setSoloSetup(false);
-    const createSecret = await unlockAsHost({
-      title: 'Создать партию',
-      message: 'Введите секрет хоста (ROOM_CREATE_SECRET). Другие игроки могут только входить по коду.',
-    });
+    const createSecret = await unlockAsHost({ title: 'Создать партию' });
     if (!createSecret) return;
     try {
       const created = await startHostRoom(createSecret);
@@ -352,19 +351,13 @@ function App() {
   };
 
   const handlePlaySolo = async () => {
-    const createSecret = await unlockAsHost({
-      title: 'Играть без комнаты',
-      message: 'Введите секрет хоста (ROOM_CREATE_SECRET), чтобы запустить партию на этом устройстве.',
-    });
+    const createSecret = await unlockAsHost({ title: 'Играть без комнаты' });
     if (!createSecret) return;
     setSoloSetup(true);
   };
 
   const handleImportGameToken = async (saveId) => {
-    const createSecret = await unlockAsHost({
-      title: 'Загрузить партию',
-      message: 'Введите секрет хоста (ROOM_CREATE_SECRET), чтобы загрузить сохранённую партию.',
-    });
+    const createSecret = await unlockAsHost({ title: 'Загрузить партию' });
     if (!createSecret) return;
     return cloud.importGameToken(saveId);
   };
@@ -436,6 +429,8 @@ function App() {
           ui.setTechViewPlayerId(perms?.seatPlayerId ?? activePlayer?.id ?? players[0]?.id ?? null);
           ui.setShowTechModal(true);
         }}
+        onUndoLast={() => dispatch({ type: 'UNDO_LAST' })}
+        canUndo={canUndo}
         turnOrder={turnOrder}
         activePlayer={activePlayer}
         passed={passed}
@@ -455,6 +450,7 @@ function App() {
         roomStatus={roomStatus}
         perms={perms}
         hideTurnBarOnMobile={isPlayerClient}
+        onLeaveRoom={perms?.role === ROLES.VIEWER ? handleLeaveRoom : undefined}
       />
 
       <main
@@ -563,6 +559,13 @@ function App() {
                 players={players}
                 adjustSecrets={(playerId, delta) => dispatch({ type: 'ADJUST_SECRETS', playerId, delta })}
                 adjustMecatol={(playerId, delta) => dispatch({ type: 'ADJUST_MECATOL', playerId, delta })}
+                vpTrack={game.vpTrack}
+                setCustodians={(playerId) => dispatch({ type: 'SET_CUSTODIANS', playerId })}
+                setSupport={(fromPlayerId, holderPlayerId) => dispatch({
+                  type: 'SET_SUPPORT',
+                  fromPlayerId,
+                  holderPlayerId,
+                })}
                 objectives={objectives}
                 completions={completions}
                 toggleCompletion={(playerId, objectiveId) => dispatch({ type: 'TOGGLE_COMPLETION', playerId, objectiveId })}
@@ -790,6 +793,7 @@ function App() {
             allInfluenceLocked={select.allInfluenceLocked(game)}
             perms={perms}
             readOnly={perms.role === 'viewer'}
+            game={game}
           />
         </LazyWhen>
 
@@ -923,8 +927,14 @@ function App() {
             canClaim={canClaimExpedition}
             claimedThisTurn={!!game.round?.expeditionClaimedThisTurn}
             canPickController={canPickTeController}
+            canEdit={roomStatus === 'solo' || perms?.role === ROLES.ADMIN}
             leaders={teLeaders}
             onClaimSlice={(playerId, sliceId) => dispatch({ type: 'CLAIM_EXPEDITION_SLICE', playerId, sliceId })}
+            onSetSlice={(sliceId, playerId) => dispatch({
+              type: 'SET_EXPEDITION_SLICE',
+              sliceId,
+              playerId,
+            })}
             onPickController={(playerId, controllerId) => dispatch({
               type: 'RESOLVE_THUNDERS_EDGE_CONTROL',
               playerId,

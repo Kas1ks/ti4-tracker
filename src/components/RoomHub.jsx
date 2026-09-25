@@ -253,9 +253,6 @@ export function RoomHub({
             TI4 TRACKER
           </h1>
         </div>
-        <p className="text-slate-400 text-base md:text-lg max-w-md mx-auto">
-          Общий стол для партии: хост ведёт фазы, игроки ходят со своих телефонов.
-        </p>
       </div>
 
       <div className="space-y-4">

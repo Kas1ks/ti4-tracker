@@ -17,6 +17,11 @@ import {
   subscribeRoom,
 } from './roomApi';
 import { loadSeatSecret, saveSeatSecret } from './seatSecrets';
+import {
+  popUndoSnapshot,
+  pushUndoSnapshot,
+  undoStackDepth,
+} from './undoStack';
 
 function syncedReducer(state, action) {
   if (action?.type === '__REPLACE__') return action.state;
@@ -44,10 +49,17 @@ export function useSyncedGame() {
   });
   const [roomStatus, setRoomStatus] = useState(() => (loadRoomSession()?.roomId ? 'connecting' : 'solo'));
   const [roomError, setRoomError] = useState(null);
+  const [canUndo, setCanUndo] = useState(false);
   const seqRef = useRef(loadRoomSession()?.seq || 0);
   const roomRef = useRef(null);
   const gameRef = useRef(game);
+  const soloUndoStackRef = useRef([]);
   gameRef.current = game;
+
+  const clearSoloUndo = useCallback(() => {
+    soloUndoStackRef.current = [];
+    setCanUndo(false);
+  }, []);
 
   /** Apply server/SSE state only if seq is not older than what we already have. */
   const applyAuthoritativeState = useCallback((seq, state, extras = {}) => {
@@ -57,6 +69,9 @@ export function useSyncedGame() {
       seqRef.current = seq;
     }
     setGame({ type: '__REPLACE__', state });
+    if (typeof extras.canUndo === 'boolean') {
+      setCanUndo(extras.canUndo);
+    }
     setRoom(prev => (prev ? {
       ...prev,
       seq: typeof seq === 'number' ? seq : prev.seq,
@@ -121,6 +136,7 @@ export function useSyncedGame() {
         if (!snap?.state) throw new Error('not-found');
         seqRef.current = typeof snap.seq === 'number' ? snap.seq : (saved.seq || 0);
         setGame({ type: '__REPLACE__', state: snap.state });
+        if (typeof snap.canUndo === 'boolean') setCanUndo(snap.canUndo);
         setRoom({
           roomId: saved.roomId,
           hostKey: saved.hostKey,
@@ -154,6 +170,7 @@ export function useSyncedGame() {
       clearRoomSession();
       setRoom(null);
       setRoomStatus('solo');
+      clearSoloUndo();
       setGame({ type: 'RESET_GAME' });
       setRoomError(message);
     };
@@ -207,12 +224,15 @@ export function useSyncedGame() {
           return;
         }
 
-        applyAuthoritativeState(msg.seq, msg.state, { claimedSeats: msg.claimedSeats });
+        applyAuthoritativeState(msg.seq, msg.state, {
+          claimedSeats: msg.claimedSeats,
+          canUndo: typeof msg.canUndo === 'boolean' ? msg.canUndo : undefined,
+        });
       }
     });
 
     return unsubscribe;
-  }, [room?.roomId, applyAuthoritativeState]);
+  }, [room?.roomId, applyAuthoritativeState, clearSoloUndo]);
 
   const dispatch = useCallback((action) => {
     if (!action || typeof action !== 'object') return;
@@ -234,6 +254,24 @@ export function useSyncedGame() {
 
     // Solo, or local-only ticks
     if (!current?.roomId || LOCAL_ONLY_ACTIONS.has(stamped.type)) {
+      if (stamped.type === 'UNDO_LAST') {
+        const { stack, state: prev } = popUndoSnapshot(soloUndoStackRef.current);
+        if (!prev) return;
+        soloUndoStackRef.current = stack;
+        setCanUndo(undoStackDepth(stack) > 0);
+        setGame({ type: '__REPLACE__', state: prev });
+        return;
+      }
+      if (stamped.type !== 'TICK') {
+        const before = gameRef.current;
+        const after = reduceGame(before, stamped);
+        if (after !== before) {
+          soloUndoStackRef.current = stamped.type === 'RESET_GAME'
+            ? []
+            : pushUndoSnapshot(soloUndoStackRef.current, before);
+          setCanUndo(undoStackDepth(soloUndoStackRef.current) > 0);
+        }
+      }
       setGame(stamped);
       return;
     }
@@ -265,14 +303,19 @@ export function useSyncedGame() {
       }
     }
 
-    setGame(stamped);
+    // Live undo: wait for server snapshot (no local optimistic reduce).
+    if (stamped.type !== 'UNDO_LAST') {
+      setGame(stamped);
+    }
     const roomId = current.roomId;
     postRoomAction(roomId, stamped, {
       sessionToken: current.sessionToken,
       hostKey: current.hostKey,
     })
       .then((result) => {
-        applyAuthoritativeState(result.seq, result.state);
+        applyAuthoritativeState(result.seq, result.state, {
+          canUndo: typeof result.canUndo === 'boolean' ? result.canUndo : undefined,
+        });
         setRoomError(null);
       })
       .catch((err) => {
@@ -282,6 +325,7 @@ export function useSyncedGame() {
           clearRoomSession();
           setRoom(null);
           setRoomStatus('solo');
+          clearSoloUndo();
           setGame({ type: 'RESET_GAME' });
           setRoomError('Сессия места устарела. Войдите в комнату снова со своим кодом места.');
           return;
@@ -291,11 +335,12 @@ export function useSyncedGame() {
           .then((snap) => {
             applyAuthoritativeState(snap?.seq, snap?.state, {
               claimedSeats: snap?.claimedSeats,
+              canUndo: typeof snap?.canUndo === 'boolean' ? snap.canUndo : undefined,
             });
           })
           .catch(() => {});
       });
-  }, [applyAuthoritativeState]);
+  }, [applyAuthoritativeState, clearSoloUndo]);
 
   const startHostRoom = useCallback(async (createSecret) => {
     setRoomStatus('connecting');
@@ -303,6 +348,8 @@ export function useSyncedGame() {
     try {
       const created = await createRoom(game, { createSecret });
       seqRef.current = created.seq || 0;
+      clearSoloUndo();
+      setCanUndo(typeof created.canUndo === 'boolean' ? created.canUndo : false);
       const next = {
         roomId: created.roomId,
         hostKey: created.hostKey,
@@ -321,7 +368,7 @@ export function useSyncedGame() {
       setRoomError(String(err.message || err));
       throw err;
     }
-  }, [game]);
+  }, [game, clearSoloUndo]);
 
   const joinRoomById = useCallback(async (roomId, { role, seatPlayerId, seatSecret } = {}) => {
     const id = String(roomId || '').trim().toUpperCase();
@@ -337,6 +384,8 @@ export function useSyncedGame() {
       });
       seqRef.current = joined.seq || 0;
       setGame({ type: '__REPLACE__', state: joined.state });
+      clearSoloUndo();
+      setCanUndo(typeof joined.canUndo === 'boolean' ? joined.canUndo : false);
       if (joined.seatSecret && joined.seatPlayerId != null) {
         saveSeatSecret(joined.roomId || id, joined.seatPlayerId, joined.seatSecret);
       }
@@ -359,7 +408,7 @@ export function useSyncedGame() {
       setRoomError(String(err.message || err));
       throw err;
     }
-  }, []);
+  }, [clearSoloUndo]);
 
   const releaseSeatById = useCallback(async (seatPlayerId) => {
     const current = roomRef.current;
@@ -378,16 +427,18 @@ export function useSyncedGame() {
 
   const leaveRoom = useCallback(() => {
     clearRoomSession();
+    clearGameState();
+    clearSoloUndo();
+    setGame({ type: 'RESET_GAME' });
     setRoom(null);
     setRoomStatus('solo');
     setRoomError(null);
     seqRef.current = 0;
-  }, []);
+  }, [clearSoloUndo]);
 
   /** End the live party for everyone, then return this client to the hub. */
   const resetLocalGame = useCallback(async () => {
     const current = roomRef.current;
-    clearGameState();
 
     if (current?.roomId && (current.role === ROLES.ADMIN || current.hostKey)) {
       try {
@@ -400,7 +451,6 @@ export function useSyncedGame() {
       }
     }
 
-    setGame({ type: 'RESET_GAME' });
     leaveRoom();
   }, [leaveRoom]);
 
@@ -422,6 +472,7 @@ export function useSyncedGame() {
     roomStatus,
     roomError,
     perms,
+    canUndo,
     startHostRoom,
     joinRoomById,
     releaseSeatById,

@@ -46,7 +46,7 @@ export function StrategyResolutionBanner({
               <button
                 type="button"
                 onClick={() => onResolve?.('passed')}
-                className="min-h-[44px] rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-100 font-extrabold text-sm border border-slate-600"
+                className="min-h-[44px] rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-extrabold text-sm border border-rose-400 shadow"
               >
                 Пас
               </button>

@@ -198,6 +198,7 @@ export async function handleRoomsApi(request, env) {
       seq: result.room.seq,
       state: result.room.state,
       noop: !!result.noop,
+      canUndo: !!result.canUndo,
     });
   }
 

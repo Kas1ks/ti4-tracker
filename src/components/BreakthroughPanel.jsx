@@ -12,6 +12,8 @@ export function BreakthroughPanel({
   unlocked = false,
   compact = false,
   defaultOpen = false,
+  canToggle = false,
+  onToggle,
 }) {
   const bt = breakthroughByFaction(factionId);
   const [open, setOpen] = useState(defaultOpen);
@@ -90,6 +92,19 @@ export function BreakthroughPanel({
               {TECH_COLOR_META[synergy[1]]?.label || synergy[1]}
               {' '}или наоборот (не оба сразу).
             </p>
+          )}
+          {canToggle && typeof onToggle === 'function' && (
+            <button
+              type="button"
+              onClick={() => onToggle(!unlocked)}
+              className={`mt-3 w-full py-2 rounded-lg text-xs font-bold uppercase border transition ${
+                unlocked
+                  ? 'border-slate-600 bg-slate-900 text-slate-300 hover:border-red-700 hover:text-red-300'
+                  : 'border-amber-700/60 bg-amber-950/40 text-amber-300 hover:border-amber-500'
+              }`}
+            >
+              {unlocked ? 'Снять прорыв (хост)' : 'Выдать прорыв (хост)'}
+            </button>
           )}
         </div>
       )}

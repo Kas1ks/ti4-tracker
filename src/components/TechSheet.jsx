@@ -4,6 +4,7 @@ import {
   techById,
 } from '../data/technologies';
 import { TechPrereqIcons, TechTypeIcon } from './TechTypeIcon';
+import { BreakthroughPanel } from './BreakthroughPanel';
 
 const COLOR_OWNED = {
   green: 'bg-emerald-500/25 border-emerald-400 text-emerald-100',
@@ -71,6 +72,13 @@ export function PlayerTechSheet({ player, usePok, useTe, onClose }) {
         </button>
       </header>
       <div className="flex-1 overflow-y-auto px-4 py-3 space-y-2">
+        {useTe && player?.factionId && (
+          <BreakthroughPanel
+            factionId={player.factionId}
+            unlocked={!!player.breakthrough}
+            defaultOpen={!!player.breakthrough}
+          />
+        )}
         {!list.length && (
           <p className="text-sm text-slate-500 text-center py-10">Пока нет технологий</p>
         )}

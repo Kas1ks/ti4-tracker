@@ -8,8 +8,10 @@ import {
   EMPTY_STARTING_TECH_DRAFT,
   createEmptyGameState,
   normalizeGameState,
+  decksForExpansions,
 } from './gameState';
 import { EXPEDITION_SLICE_IDS, emptyExpeditionSlices } from '../data/expedition';
+import { breakthroughStartsUnlocked } from '../data/breakthroughs';
 import {
   availableTechs,
   canConfirmStartingTech,
@@ -148,6 +150,7 @@ function startNewRound(state) {
       turnStartedAt: null,
       strategyActionTaken: false,
       expeditionClaimedThisTurn: false,
+      expeditionClaimedSliceId: null,
       strategyResolution: { ...EMPTY_STRATEGY_RESOLUTION },
       imperialClaim: { ...EMPTY_IMPERIAL_CLAIM },
       techResearch: { ...EMPTY_TECH_RESEARCH, picks: [], queueIds: [], byPlayer: {} },
@@ -177,6 +180,7 @@ function startRound(state, at = Date.now()) {
     turnStartedAt: at,
     strategyActionTaken: false,
     expeditionClaimedThisTurn: false,
+    expeditionClaimedSliceId: null,
     strategyResolution: { ...EMPTY_STRATEGY_RESOLUTION },
     imperialClaim: { ...EMPTY_IMPERIAL_CLAIM },
     techResearch: { ...EMPTY_TECH_RESEARCH, picks: [], queueIds: [], byPlayer: {} },
@@ -209,6 +213,7 @@ function nextTurn(state, at = Date.now()) {
     turnStartedAt: at,
     strategyActionTaken: false,
     expeditionClaimedThisTurn: false,
+    expeditionClaimedSliceId: null,
     strategyResolution: { ...EMPTY_STRATEGY_RESOLUTION },
     imperialClaim: { ...EMPTY_IMPERIAL_CLAIM },
     techResearch: { ...EMPTY_TECH_RESEARCH, picks: [], queueIds: [], byPlayer: {} },
@@ -467,7 +472,9 @@ function buildFullDraftQueue(draftOrder, seatCount) {
   const cardsPerPlayer = seatCount <= 4 ? 2 : 1;
   const queue = [];
   for (let pick = 0; pick < cardsPerPlayer; pick += 1) {
-    draftOrder.forEach(player => queue.push(player.id));
+    // Official snake for 3–4: second pass is counter-clockwise.
+    const order = pick === 1 ? [...draftOrder].reverse() : draftOrder;
+    order.forEach(player => queue.push(player.id));
   }
   return queue;
 }
@@ -496,7 +503,8 @@ function realignDraftQueueToSpeaker(state) {
 
   const remaining = [];
   for (let pick = 0; pick < cardsPerPlayer; pick += 1) {
-    draftOrder.forEach((player) => {
+    const order = pick === 1 ? [...draftOrder].reverse() : draftOrder;
+    order.forEach((player) => {
       const have = assignedCount.get(player.id) || 0;
       if (have < pick + 1) remaining.push(player.id);
     });
@@ -1102,6 +1110,7 @@ function claimExpeditionSlice(state, playerId, sliceId) {
   const slices = { ...expedition.slices, [sliceId]: playerId };
   let next = withRound(withExpedition(state, { slices }), {
     expeditionClaimedThisTurn: true,
+    expeditionClaimedSliceId: sliceId,
   });
 
   if (!player.breakthrough) {
@@ -1144,6 +1153,102 @@ function resolveThundersEdgeControl(state, pickerId, controllerId) {
     completed: true,
     controllerId,
     awaitingControlPick: false,
+  });
+}
+
+/**
+ * Host correction: set or clear a slice marker, then recompute completion / control.
+ * Does not consume the per-turn claim flag when assigning. Clearing the slice claimed
+ * this turn restores the claim. Breakthrough follows remaining markers (Crimson keeps
+ * the starting unlock).
+ */
+function setExpeditionSlice(state, sliceId, playerId) {
+  if (!state.meta?.useTe || !state.isGameActive) return state;
+  if (!EXPEDITION_SLICE_IDS.includes(sliceId)) return state;
+
+  const expedition = expeditionOf(state);
+  const clear = playerId == null || playerId === '';
+  let ownerId = null;
+  if (!clear) {
+    ownerId = Number(playerId);
+    if (!Number.isFinite(ownerId)) return state;
+    const player = state.players.find(p => p.id === ownerId);
+    if (!player || player.eliminated) return state;
+  }
+
+  const prevOwner = expedition.slices?.[sliceId] ?? null;
+  if (clear && prevOwner == null) return state;
+  if (!clear && prevOwner === ownerId) return state;
+
+  const slices = { ...expedition.slices, [sliceId]: clear ? null : ownerId };
+  let next = state;
+
+  const affectedIds = new Set();
+  if (prevOwner != null) affectedIds.add(prevOwner);
+  if (!clear) affectedIds.add(ownerId);
+
+  affectedIds.forEach((pid) => {
+    const player = next.players.find(p => p.id === pid);
+    if (!player) return;
+    const remains = Object.values(slices).filter(id => id === pid).length;
+    if (remains > 0) {
+      if (!player.breakthrough) {
+        next = patchPlayer(next, pid, () => ({ breakthrough: true }));
+      }
+      return;
+    }
+    if (player.breakthrough && !breakthroughStartsUnlocked(player.factionId)) {
+      next = patchPlayer(next, pid, () => ({ breakthrough: false }));
+    }
+  });
+
+  if (
+    clear
+    && state.round?.expeditionClaimedThisTurn
+    && (
+      state.round?.expeditionClaimedSliceId === sliceId
+      || (
+        state.round?.expeditionClaimedSliceId == null
+        && prevOwner === activePlayer(state)?.id
+      )
+    )
+  ) {
+    next = withRound(next, {
+      expeditionClaimedThisTurn: false,
+      expeditionClaimedSliceId: null,
+    });
+  }
+
+  const count = claimedSliceCount(slices);
+  if (count < EXPEDITION_SLICE_IDS.length) {
+    return withExpedition(next, {
+      slices,
+      completed: false,
+      controllerId: null,
+      placedById: null,
+      awaitingControlPick: false,
+    });
+  }
+
+  const leaders = expeditionLeaders(slices);
+  if (leaders.length === 1) {
+    return withExpedition(next, {
+      slices,
+      completed: true,
+      placedById: clear ? expedition.placedById : ownerId,
+      controllerId: leaders[0],
+      awaitingControlPick: false,
+    });
+  }
+
+  return withExpedition(next, {
+    slices,
+    completed: false,
+    placedById: clear
+      ? (expedition.placedById ?? leaders[0] ?? null)
+      : ownerId,
+    controllerId: null,
+    awaitingControlPick: true,
   });
 }
 
@@ -1202,8 +1307,26 @@ export function gameReducer(state, action) {
     case 'SET_TARGET_SCORE':
       return withMeta(state, { targetScore: action.value });
 
-    case 'SET_EXPANSION':
-      return withMeta(state, { [action.expansion === 'te' ? 'useTe' : 'usePok']: !!action.enabled });
+    case 'SET_EXPANSION': {
+      const isTe = action.expansion === 'te';
+      const enabled = !!action.enabled;
+      let usePok = state.meta.usePok;
+      let useTe = state.meta.useTe;
+      if (isTe) {
+        useTe = enabled;
+        // TE assumes PoK content; turning TE on forces PoK on.
+        if (enabled) usePok = true;
+      } else {
+        // Cannot disable PoK while TE is active.
+        if (!enabled && state.meta.useTe) {
+          return state;
+        }
+        usePok = enabled;
+      }
+      const next = withMeta(state, { usePok, useTe });
+      if (state.isGameActive) return next;
+      return withObjectives(next, decksForExpansions({ usePok, useTe }));
+    }
 
     case 'ADD_PLAYER': {
       if (state.players.length >= 8) return state;
@@ -1254,9 +1377,20 @@ export function gameReducer(state, action) {
 
     case 'START_GAME': {
       const needers = playersNeedingStartingTechDraft(state.players);
+      const usePok = !!state.meta.usePok || !!state.meta.useTe;
+      const useTe = !!state.meta.useTe;
       const next = {
         ...state,
         isGameActive: true,
+        meta: { ...state.meta, usePok, useTe },
+        objectives: {
+          ...state.objectives,
+          ...decksForExpansions({ usePok, useTe }),
+        },
+        vpTrack: {
+          custodiansPlayerId: null,
+          supportHolders: {},
+        },
         expedition: {
           slices: emptyExpeditionSlices(),
           completed: false,
@@ -1363,6 +1497,52 @@ export function gameReducer(state, action) {
       return patchPlayer(state, action.playerId, player => ({
         extra: Math.max(0, player.extra + action.delta),
       }));
+
+    case 'SET_CUSTODIANS': {
+      if (!state.isGameActive) return state;
+      const playerId = action.playerId == null ? null : Number(action.playerId);
+      if (playerId != null && !state.players.some(p => p.id === playerId && !p.eliminated)) {
+        return state;
+      }
+      const current = state.vpTrack?.custodiansPlayerId ?? null;
+      // Toggle off when claiming the same seat again.
+      const nextId = (playerId != null && current === playerId && action.force !== true)
+        ? null
+        : playerId;
+      return {
+        ...state,
+        vpTrack: {
+          ...(state.vpTrack || { supportHolders: {} }),
+          custodiansPlayerId: nextId,
+          supportHolders: { ...(state.vpTrack?.supportHolders || {}) },
+        },
+      };
+    }
+
+    case 'SET_SUPPORT': {
+      if (!state.isGameActive) return state;
+      const fromPlayerId = Number(action.fromPlayerId);
+      const holderPlayerId = action.holderPlayerId == null
+        ? null
+        : Number(action.holderPlayerId);
+      if (!Number.isFinite(fromPlayerId)) return state;
+      if (!state.players.some(p => p.id === fromPlayerId)) return state;
+      if (holderPlayerId != null) {
+        if (!Number.isFinite(holderPlayerId)) return state;
+        if (holderPlayerId === fromPlayerId) return state;
+        if (!state.players.some(p => p.id === holderPlayerId && !p.eliminated)) return state;
+      }
+      const supportHolders = { ...(state.vpTrack?.supportHolders || {}) };
+      if (holderPlayerId == null) delete supportHolders[fromPlayerId];
+      else supportHolders[fromPlayerId] = holderPlayerId;
+      return {
+        ...state,
+        vpTrack: {
+          custodiansPlayerId: state.vpTrack?.custodiansPlayerId ?? null,
+          supportHolders,
+        },
+      };
+    }
 
     case 'SET_INFLUENCE':
       return patchPlayer(state, action.playerId, () => ({
@@ -1513,11 +1693,20 @@ export function gameReducer(state, action) {
     case 'REVOKE_TECH':
       return revokeTech(state, action.playerId, action.techId);
 
+    case 'GRANT_BREAKTHROUGH':
+      return patchPlayer(state, action.playerId, () => ({ breakthrough: true }));
+
+    case 'REVOKE_BREAKTHROUGH':
+      return patchPlayer(state, action.playerId, () => ({ breakthrough: false }));
+
     case 'TOGGLE_TECH':
       return toggleTech(state, action.playerId, action.techId);
 
     case 'CLAIM_EXPEDITION_SLICE':
       return claimExpeditionSlice(state, action.playerId, action.sliceId);
+
+    case 'SET_EXPEDITION_SLICE':
+      return setExpeditionSlice(state, action.sliceId, action.playerId);
 
     case 'RESOLVE_THUNDERS_EDGE_CONTROL':
       return resolveThundersEdgeControl(state, action.playerId, action.controllerId);

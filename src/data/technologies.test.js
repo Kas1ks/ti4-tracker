@@ -34,6 +34,28 @@ describe('technologies catalog', () => {
     expect(sol.some(t => t.id === 'bioplasmosis')).toBe(false);
   });
 
+  it('hides generic unit upgrades replaced by faction versions', () => {
+    const sol = availableTechs({ usePok: false, factionId: 'sol' });
+    expect(sol.some(t => t.id === 'advanced_carrier_2')).toBe(true);
+    expect(sol.some(t => t.id === 'spec_ops_2')).toBe(true);
+    expect(sol.some(t => t.id === 'carrier_2')).toBe(false);
+    expect(sol.some(t => t.id === 'infantry_2')).toBe(false);
+    expect(sol.some(t => t.id === 'cruiser_2')).toBe(true);
+
+    const muaat = availableTechs({ usePok: false, factionId: 'muaat' });
+    expect(muaat.some(t => t.id === 'prototype_war_sun_2')).toBe(true);
+    expect(muaat.some(t => t.id === 'war_sun')).toBe(false);
+
+    const hacan = availableTechs({ usePok: false, factionId: 'hacan' });
+    expect(hacan.some(t => t.id === 'carrier_2')).toBe(true);
+    expect(hacan.some(t => t.id === 'war_sun')).toBe(true);
+  });
+
+  it('War Sun requires 3 red and 1 yellow', () => {
+    expect(techById('war_sun').prereqs).toEqual(['red', 'red', 'red', 'yellow']);
+    expect(techById('prototype_war_sun_2').prereqs).toEqual(['red', 'red', 'red', 'yellow']);
+  });
+
   it('returns fixed starting techs', () => {
     expect(startingTechIds('jolnar')).toEqual([
       'neural_motivator',
@@ -120,6 +142,25 @@ describe('prereq helpers', () => {
       synergyColors: ['red', 'green'],
     })).toBe(true);
     expect(canResearch(bioStims, ['plasma_scoring'])).toBe(false);
+  });
+
+  it('pools synergy colors so mixed prereqs can use either side', () => {
+    // PDS II needs red+yellow; Bastion synergy R/Y with 2 red should work
+    const pds2 = techById('pds_2');
+    expect(canResearch(pds2, ['plasma_scoring', 'magen_defense_grid'], {
+      synergyColors: ['red', 'yellow'],
+    })).toBe(true);
+    expect(canResearch(pds2, ['plasma_scoring', 'magen_defense_grid'])).toBe(false);
+
+    // Cruiser II needs green+yellow+red; 2 green (Y/G synergy) + 1 red
+    const cruiser2 = techById('cruiser_2');
+    expect(cruiser2.prereqs).toEqual(['green', 'yellow', 'red']);
+    expect(canResearch(cruiser2, ['neural_motivator', 'dacxive_animators', 'plasma_scoring'], {
+      synergyColors: ['yellow', 'green'],
+    })).toBe(true);
+    expect(canResearch(cruiser2, ['neural_motivator', 'dacxive_animators'], {
+      synergyColors: ['yellow', 'green'],
+    })).toBe(false);
   });
 
   it('exposes Crimson blue/red synergy when breakthrough is unlocked', () => {

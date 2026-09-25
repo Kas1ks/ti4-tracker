@@ -60,9 +60,9 @@ export function GuestLobby({ room, players, roomError, onLeaveRoom }) {
         <button
           type="button"
           onClick={onLeaveRoom}
-          className="text-sm text-slate-500 hover:text-slate-300 underline underline-offset-4"
+          className="w-full py-3.5 rounded-2xl bg-slate-900 hover:bg-rose-950/40 border border-rose-800/60 text-rose-300 font-bold text-sm transition"
         >
-          Покинуть комнату
+          Выйти
         </button>
       )}
     </div>

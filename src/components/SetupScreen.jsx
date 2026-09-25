@@ -90,8 +90,13 @@ export function SetupScreen({
             <div className="flex gap-4">
               <button
                 type="button"
-                onClick={() => setUsePok(!usePok)}
-                className={`flex-1 py-3 px-4 rounded-xl font-bold text-xs md:text-sm border flex items-center justify-between transition ${usePok ? 'bg-purple-950 border-purple-500 text-purple-300' : 'bg-slate-900 border-slate-800 text-slate-600'}`}
+                onClick={() => {
+                  if (useTe && usePok) return;
+                  setUsePok(!usePok);
+                }}
+                disabled={useTe && usePok}
+                title={useTe ? 'PoK обязателен при Thunder\'s Edge' : undefined}
+                className={`flex-1 py-3 px-4 rounded-xl font-bold text-xs md:text-sm border flex items-center justify-between transition ${usePok ? 'bg-purple-950 border-purple-500 text-purple-300' : 'bg-slate-900 border-slate-800 text-slate-600'} ${useTe && usePok ? 'opacity-80 cursor-not-allowed' : ''}`}
               >
                 <span>Prophecy of Kings</span>
                 <i className={`fa-solid ${usePok ? 'fa-check-circle text-purple-400' : 'fa-circle text-slate-700'}`} />

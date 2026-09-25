@@ -150,6 +150,11 @@ export function StatsModal({ showStatsModal, setShowStatsModal, isStatsLoading, 
                                                                 <div>
                                                                     <span className="font-bold text-white">{g.date}</span>
                                                                     <span className="text-slate-500 ml-2">({g.roundsCount} раунд., цель {g.targetScore} ПО)</span>
+                                                                    {(g.expansions?.pok || g.expansions?.te) && (
+                                                                      <span className="ml-2 text-slate-500">
+                                                                        {[g.expansions.pok && 'PoK', g.expansions.te && 'TE'].filter(Boolean).join(' · ')}
+                                                                      </span>
+                                                                    )}
                                                                 </div>
                                                                 <div className="flex items-center gap-3">
                                                                     <span className="text-amber-400 font-bold">🏆 {g.winner} ({g.winningFaction})</span>
@@ -162,6 +167,25 @@ export function StatsModal({ showStatsModal, setShowStatsModal, isStatsLoading, 
                                                                     </button>
                                                                 </div>
                                                             </div>
+                                                            {(g.teController || g.custodians || (g.objectives && g.objectives.length > 0)) && (
+                                                              <div className="flex flex-wrap gap-2 text-[10px] text-slate-400">
+                                                                {g.teController && (
+                                                                  <span className="px-2 py-0.5 rounded-md bg-amber-950/50 border border-amber-800/60 text-amber-300">
+                                                                    TE: {g.teController.name}
+                                                                  </span>
+                                                                )}
+                                                                {g.custodians && (
+                                                                  <span className="px-2 py-0.5 rounded-md bg-cyan-950/50 border border-cyan-800/60 text-cyan-300">
+                                                                    Хранители: {g.custodians}
+                                                                  </span>
+                                                                )}
+                                                                {(g.objectives || []).filter(o => (o.scoredBy || []).length > 0).slice(0, 4).map(o => (
+                                                                  <span key={o.id} className="px-2 py-0.5 rounded-md bg-slate-950 border border-slate-800 truncate max-w-[160px]" title={o.title}>
+                                                                    {o.title}
+                                                                  </span>
+                                                                ))}
+                                                              </div>
+                                                            )}
                                                             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-[11px]">
                                                                 {(g.players || []).map((p, i) => (
                                                                     <div key={i} className="bg-slate-950 p-1.5 rounded-lg border border-slate-800/50 flex items-center justify-between">

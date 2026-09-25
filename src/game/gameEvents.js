@@ -265,6 +265,33 @@ export function deriveGameEvents(prev, action, next) {
         byHost: true,
       })];
 
+    case 'GRANT_BREAKTHROUGH':
+      return [baseEvent('BREAKTHROUGH_GRANTED', action, {
+        at,
+        playerId: action.playerId,
+        byHost: true,
+      })];
+
+    case 'REVOKE_BREAKTHROUGH':
+      return [baseEvent('BREAKTHROUGH_REVOKED', action, {
+        at,
+        playerId: action.playerId,
+        byHost: true,
+      })];
+
+    case 'SET_CUSTODIANS':
+      return [baseEvent('CUSTODIANS_SET', action, {
+        at,
+        playerId: action.playerId ?? null,
+      })];
+
+    case 'SET_SUPPORT':
+      return [baseEvent('SUPPORT_SET', action, {
+        at,
+        fromPlayerId: action.fromPlayerId,
+        holderPlayerId: action.holderPlayerId ?? null,
+      })];
+
     case 'TOGGLE_TECH': {
       const prevHas = (prev.players?.find(p => p.id === action.playerId)?.techIds || [])
         .includes(action.techId);
@@ -330,6 +357,31 @@ export function deriveGameEvents(prev, action, next) {
         controllerId: next.expedition.controllerId,
         placedById: next.expedition.placedById,
       })];
+    }
+
+    case 'SET_EXPEDITION_SLICE': {
+      if (prev.expedition === next.expedition && prev.players === next.players) return [];
+      const events = [baseEvent('EXPEDITION_SLICE_EDITED', action, {
+        at,
+        sliceId: action.sliceId,
+        playerId: action.playerId ?? null,
+        byHost: true,
+      })];
+      if (next.expedition?.awaitingControlPick && !prev.expedition?.awaitingControlPick) {
+        events.push(baseEvent('EXPEDITION_CONTROL_PENDING', action, {
+          at,
+          playerId: action.playerId,
+          placedById: next.expedition.placedById,
+        }));
+      } else if (next.expedition?.completed && !prev.expedition?.completed) {
+        events.push(baseEvent('EXPEDITION_COMPLETED', action, {
+          at,
+          playerId: action.playerId,
+          controllerId: next.expedition.controllerId,
+          placedById: next.expedition.placedById,
+        }));
+      }
+      return events;
     }
 
     case 'OPEN_DRAFT':
@@ -441,6 +493,18 @@ export function formatGameEvent(event, players = []) {
       return event.byHost
         ? `Хост снял ${techLabel(event.techId)} у ${name(event.playerId)}`
         : `${name(event.playerId)} снял ${techLabel(event.techId)}`;
+    case 'BREAKTHROUGH_GRANTED':
+      return `Хост выдал прорыв → ${name(event.playerId)}`;
+    case 'BREAKTHROUGH_REVOKED':
+      return `Хост снял прорыв у ${name(event.playerId)}`;
+    case 'CUSTODIANS_SET':
+      return event.playerId == null
+        ? 'Токен Хранителей сброшен'
+        : `${name(event.playerId)} взял Хранителей (+1 ПО)`;
+    case 'SUPPORT_SET':
+      return event.holderPlayerId == null
+        ? `Support ${name(event.fromPlayerId)} возвращён`
+        : `${name(event.holderPlayerId)} держит Support ${name(event.fromPlayerId)}`;
     case 'STARTING_TECH_DRAFT_STARTED':
       return 'Начат выбор стартовых технологий';
     case 'STARTING_TECH_CONFIRMED': {
@@ -455,6 +519,10 @@ export function formatGameEvent(event, players = []) {
       const bt = event.breakthrough ? ' · прорыв' : '';
       return `${name(event.playerId)} занял слот экспедиции${bt}`;
     }
+    case 'EXPEDITION_SLICE_EDITED':
+      return event.playerId == null
+        ? `Хост снял метку экспедиции (${event.sliceId || 'слот'})`
+        : `Хост поставил метку экспедиции → ${name(event.playerId)}`;
     case 'EXPEDITION_CONTROL_PENDING':
       return `Экспедиция: ничья — ${name(event.placedById ?? event.playerId)} выбирает контроль`;
     case 'EXPEDITION_COMPLETED':

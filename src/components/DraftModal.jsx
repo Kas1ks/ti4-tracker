@@ -27,6 +27,8 @@ export function DraftModal({
   /** Full card grid only while this client can pick; otherwise compact status. */
   const showCardPicker = draftStep === 'DRAFT' && canPick;
   const showWaitingBoard = draftStep === 'DRAFT' && !canPick;
+  const seatHasPicked = seatId != null
+    && Object.values(draftAssignments || {}).some(ownerId => ownerId === seatId);
 
   const takenCards = STRATEGY_CARDS
     .filter(card => draftAssignments[card.id])
@@ -72,6 +74,11 @@ export function DraftModal({
                                                 <div className="text-xs md:text-sm text-slate-400 font-chakra font-bold uppercase tracking-wider">
                                                     Очередь выбора
                                                 </div>
+                                                {players.length <= 4 && draftQueue.length > players.filter(p => !p.eliminated).length && (
+                                                  <p className="text-[11px] text-slate-500">
+                                                    Snake draft: 2-й круг против часовой
+                                                  </p>
+                                                )}
                                                 <div className="flex flex-wrap gap-2">
                                                     {draftQueue.map((pId, idx) => {
                                                         const player = players.find(p => p.id === pId);
@@ -110,7 +117,9 @@ export function DraftModal({
                                                     {currentPicker?.name || '…'}
                                                   </div>
                                                   <div className="text-xs text-slate-400">
-                                                    Ожидайте — список карт откроется, когда снова будет ваш ход
+                                                    {seatHasPicked
+                                                      ? 'Ожидание выбора других игроков'
+                                                      : 'Ожидайте — список карт откроется, когда снова будет ваш ход'}
                                                   </div>
                                                 </div>
 

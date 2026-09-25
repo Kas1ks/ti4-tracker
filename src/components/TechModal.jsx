@@ -57,6 +57,8 @@ export function TechModal({
   onPass,
   onGrantTech,
   onRevokeTech,
+  onGrantBreakthrough,
+  onRevokeBreakthrough,
   onMinimize,
   onClose,
 }) {
@@ -247,6 +249,11 @@ export function TechModal({
                 factionId={player.factionId}
                 unlocked={!!player.breakthrough}
                 defaultOpen={false}
+                canToggle={!!isHost && typeof onGrantBreakthrough === 'function'}
+                onToggle={(enable) => {
+                  if (enable) onGrantBreakthrough?.(player.id);
+                  else onRevokeBreakthrough?.(player.id);
+                }}
               />
             </div>
           )}

@@ -207,6 +207,7 @@ export class GameRoom {
           state: result.room.state,
           action: result.action,
           claimedSeats: publicRoomView(result.room).claimedSeats,
+          canUndo: !!result.canUndo,
           roomEnded: !!result.roomEnded,
           seatRemoved: !!result.seatRemoved,
           seatPlayerId: result.seatPlayerId ?? null,
@@ -229,6 +230,7 @@ export class GameRoom {
         seq: result.room.seq,
         state: result.room.state,
         noop: !!result.noop,
+        canUndo: !!result.canUndo,
       });
     }
 

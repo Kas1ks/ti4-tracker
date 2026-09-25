@@ -3,6 +3,11 @@ import { isAgendaFullyVoted } from '../utils/game';
 import { useEscapeKey } from '../hooks/useEscapeKey';
 import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
 import { ROLES } from '../sync/permissions';
+import {
+  argentFlightVoteBonus,
+  effectiveVoteAmount,
+  isArgentFlightPlayer,
+} from '../game/selectors';
 
 export function PoliticsModal({
   show,
@@ -33,6 +38,8 @@ export function PoliticsModal({
   allInfluenceLocked = false,
   perms,
   readOnly = false,
+  /** Full game state — used for Argent Zeal vote bonus. */
+  game = null,
 }) {
   const role = perms?.role || ROLES.ADMIN;
   const seatId = perms?.seatPlayerId;
@@ -65,18 +72,24 @@ export function PoliticsModal({
   const voteTotals = (() => {
     if (!currentAgenda?.type) return {};
     const totals = {};
+    const stateForBonus = game || {
+      players: activePlayers,
+      meta: {},
+    };
     Object.entries(currentAgenda.votes).forEach(([playerId, vote]) => {
-      if (
-        currentAgenda.locked[playerId]
-        && vote
-        && vote.choice !== 'abstain'
-        && vote.amount > 0
-      ) {
-        totals[vote.choice] = (totals[vote.choice] || 0) + vote.amount;
+      if (!currentAgenda.locked[playerId] || !vote || vote.choice === 'abstain') return;
+      const player = activePlayers.find(p => String(p.id) === String(playerId));
+      const amount = effectiveVoteAmount(stateForBonus, player, vote);
+      if (amount > 0) {
+        totals[vote.choice] = (totals[vote.choice] || 0) + amount;
       }
     });
     return totals;
   })();
+
+  const argentBonus = game
+    ? argentFlightVoteBonus(game)
+    : activePlayers.filter(p => !p.eliminated).length;
 
   const winningChoice = (() => {
     if (Object.keys(voteTotals).length === 0) return null;
@@ -206,7 +219,7 @@ export function PoliticsModal({
                       ? 'bg-amber-950 border-amber-600 text-amber-300'
                       : 'bg-slate-950 border-slate-700 text-slate-300 hover:border-amber-600'
                   }`}
-                  title="Карта действия: голосование в обратном порядке (спикер всё равно последний)"
+                  title="Обратный порядок от спикера. Серебряная Стая всё равно голосует первой."
                 >
                   {voteReversed ? '↺ Обратный порядок' : '↻ Обычный порядок'}
                 </button>
@@ -217,7 +230,10 @@ export function PoliticsModal({
               Порядок голосования{voteReversed ? ' (обратный)' : ''}:{' '}
               {orderedForVote.map((p, i) => (
                 <span key={p.id} className={p.id === currentVoterId ? 'text-amber-300 font-bold' : ''}>
-                  {i > 0 ? ' → ' : ''}{p.name}{p.id === speakerId ? ' (спикер)' : ''}
+                  {i > 0 ? ' → ' : ''}
+                  {p.name}
+                  {p.factionId === 'argent' ? ' ★' : ''}
+                  {p.id === speakerId ? ' (спикер)' : ''}
                 </span>
               ))}
             </div>
@@ -316,6 +332,13 @@ export function PoliticsModal({
                     const availableInfluence = (p.influence || 0) - votesSpentOnPrevAgendas;
                     const faction = ALL_FACTIONS.find(f => f.id === p.factionId);
                     const canVoteNow = canEditPlayer(p.id) && isCurrent && !isLocked;
+                    const isArgent = isArgentFlightPlayer(p);
+                    const spent = Number(vote.amount) || 0;
+                    const countsToward = !isLocked && vote.choice !== 'abstain' && spent > 0
+                      ? spent + (isArgent ? argentBonus : 0)
+                      : (isLocked
+                        ? effectiveVoteAmount(game || { players: activePlayers }, p, vote)
+                        : 0);
 
                     return (
                       <div
@@ -339,6 +362,12 @@ export function PoliticsModal({
                             </div>
                             {p.id === speakerId && (
                               <div className="text-[10px] text-purple-400 font-bold uppercase">Спикер</div>
+                            )}
+                            {isArgent && (
+                              <div className="text-[10px] text-yellow-400/90 font-bold">
+                                Zeal: +{argentBonus} при ≥1 голосе
+                                {spent > 0 && vote.choice !== 'abstain' ? ` → итог ${countsToward}` : ''}
+                              </div>
                             )}
                           </div>
                           <div className="text-center w-20 max-md:ml-auto">

@@ -178,6 +178,109 @@ describe('roomCore', () => {
     expect(Date.parse(ended.room.expiresAt) - endedAt).toBe(ROOM_ENDED_TTL_MS);
   });
 
+  it('lets the host undo pass and strategy play via UNDO_LAST', () => {
+    let room = createRoomRecord(normalizeGameState({
+      isGameActive: true,
+      players: [
+        {
+          ...player(1, 'A'),
+          cards: [{ id: 1, name: 'Leadership' }],
+          strategyPlayed: true,
+          playedCardIds: [1],
+        },
+        {
+          ...player(2, 'B'),
+          cards: [{ id: 2, name: 'Diplomacy' }],
+          strategyPlayed: false,
+          playedCardIds: [],
+        },
+      ],
+      meta: { ...createEmptyGameState().meta, speakerId: 1 },
+      round: {
+        ...createEmptyGameState().round,
+        active: true,
+        turnOrderIds: [1, 2],
+        activeTurnIdx: 0,
+        passed: {},
+      },
+    }));
+    const auth = { hostKey: room.hostKey };
+
+    const passed = applyRoomAction(room, { type: 'PASS_TURN', playerId: 1 }, auth);
+    expect(passed.ok).toBe(true);
+    expect(passed.noop).toBe(false);
+    expect(passed.canUndo).toBe(true);
+    expect(passed.room.state.round.passed[1]).toBe(true);
+    room = passed.room;
+
+    const undone = applyRoomAction(room, { type: 'UNDO_LAST' }, auth);
+    expect(undone.ok).toBe(true);
+    expect(undone.noop).toBe(false);
+    expect(undone.room.state.round.passed[1]).toBeFalsy();
+    expect(undone.room.state.round.activeTurnIdx).toBe(0);
+    expect(undone.canUndo).toBe(false);
+    room = undone.room;
+
+    const empty = applyRoomAction(room, { type: 'UNDO_LAST' }, auth);
+    expect(empty.ok).toBe(true);
+    expect(empty.noop).toBe(true);
+
+    // Strategy play must also be undoable.
+    room = createRoomRecord(normalizeGameState({
+      isGameActive: true,
+      players: [
+        {
+          ...player(1, 'A'),
+          cards: [{ id: 1, name: 'Leadership' }],
+          strategyPlayed: false,
+          playedCardIds: [],
+        },
+        {
+          ...player(2, 'B'),
+          cards: [{ id: 2, name: 'Diplomacy' }],
+          strategyPlayed: false,
+          playedCardIds: [],
+        },
+      ],
+      meta: { ...createEmptyGameState().meta, speakerId: 1 },
+      round: {
+        ...createEmptyGameState().round,
+        active: true,
+        turnOrderIds: [1, 2],
+        activeTurnIdx: 0,
+        passed: {},
+        strategyActionTaken: false,
+      },
+    }));
+    const played = applyRoomAction(room, { type: 'PLAY_STRATEGY', playerId: 1, cardId: 1 }, { hostKey: room.hostKey });
+    expect(played.ok).toBe(true);
+    expect(played.noop).toBe(false);
+    expect(played.canUndo).toBe(true);
+    expect(played.room.state.round.strategyActionTaken).toBe(true);
+
+    const undoPlay = applyRoomAction(played.room, { type: 'UNDO_LAST' }, { hostKey: room.hostKey });
+    expect(undoPlay.ok).toBe(true);
+    expect(undoPlay.room.state.round.strategyActionTaken).toBe(false);
+    const restored = undoPlay.room.state.players.find(p => p.id === 1);
+    expect(restored.strategyPlayed).toBe(false);
+    expect(restored.playedCardIds || []).not.toContain(1);
+  });
+
+  it('forbids players from UNDO_LAST', () => {
+    let room = createRoomRecord(normalizeGameState({
+      isGameActive: true,
+      players: [player(1, 'A'), player(2, 'B')],
+    }));
+    const joined = joinRoom(room, { role: ROLES.PLAYER, seatPlayerId: 1 });
+    expect(joined.ok).toBe(true);
+    room = joined.room;
+    // Seed undo stack with a host action first
+    room = applyRoomAction(room, { type: 'ADJUST_SECRETS', playerId: 1, delta: 1 }, { hostKey: room.hostKey }).room;
+    const denied = applyRoomAction(room, { type: 'UNDO_LAST' }, { sessionToken: joined.sessionToken });
+    expect(denied.ok).toBe(false);
+    expect(denied.error).toBe('forbidden');
+  });
+
   it('hydrates legacy rooms and detects expiry', () => {
     const legacy = {
       roomId: 'ABCDEF',

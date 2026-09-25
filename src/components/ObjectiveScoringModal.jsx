@@ -388,7 +388,15 @@ function ScoringBody({
       )}
 
       {stages.map(({ stage, title, color }) => {
-        const list = objectives.filter(o => o.stage === stage);
+        const list = objectives.filter((o) => {
+          if (o.stage !== stage) return false;
+          if (!displayPlayer) return true;
+          const alreadyOwned = !!completions[`${displayPlayer.id}_${o.id}`];
+          const scoredThisWindow = displayResponse?.publicId === o.id;
+          // Hide goals the player already scored in a previous round/window.
+          if (alreadyOwned && !scoredThisWindow) return false;
+          return true;
+        });
         if (!list.length) return null;
         return (
           <section key={stage} className="space-y-2">
@@ -400,14 +408,13 @@ function ScoringBody({
                 ? !!completions[`${displayPlayer.id}_${obj.id}`]
                 : false;
               const scoredThisWindow = displayResponse?.publicId === obj.id;
-              const ownedBefore = mine && !scoredThisWindow;
-              const interactive = canActOnCurrent && displayPlayer && !ownedBefore;
+              const interactive = canActOnCurrent && displayPlayer;
 
               return (
                 <div
                   key={obj.id}
                   className={`rounded-2xl border ${dense ? 'p-3' : 'p-4'} ${
-                    mine
+                    mine || scoredThisWindow
                       ? 'border-emerald-600/60 bg-emerald-950/30'
                       : 'border-slate-800 bg-slate-900'
                   }`}
@@ -420,11 +427,11 @@ function ScoringBody({
                       className={`mt-0.5 rounded-lg border flex items-center justify-center flex-shrink-0 transition ${
                         dense ? 'w-6 h-6 text-xs' : 'w-7 h-7 text-sm'
                       } ${
-                        mine
+                        mine || scoredThisWindow
                           ? 'bg-emerald-500 border-emerald-400 text-black'
                           : 'border-slate-600 text-transparent'
                       } ${interactive ? 'active:scale-95 cursor-pointer' : 'cursor-default'}`}
-                      aria-label={mine ? 'Снять отметку' : 'Отметить цель'}
+                      aria-label={mine || scoredThisWindow ? 'Снять отметку' : 'Отметить цель'}
                     >
                       ✓
                     </button>
@@ -435,18 +442,12 @@ function ScoringBody({
                         onClick={() => interactive && onSelectPublic(displayPlayer.id, obj.id)}
                         className={`w-full text-left font-bold leading-snug ${
                           dense ? 'text-sm' : 'text-base'
-                        } ${mine ? 'text-emerald-200' : 'text-slate-100'} ${
+                        } ${mine || scoredThisWindow ? 'text-emerald-200' : 'text-slate-100'} ${
                           interactive ? 'cursor-pointer' : 'cursor-default'
                         }`}
                       >
                         {obj.desc}
                       </button>
-
-                      {ownedBefore && (
-                        <div className="text-[11px] text-slate-500 mt-1.5 font-bold uppercase">
-                          Уже засчитано ранее
-                        </div>
-                      )}
                     </div>
                   </div>
                 </div>

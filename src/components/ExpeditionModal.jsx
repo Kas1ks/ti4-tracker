@@ -33,18 +33,25 @@ export function ExpeditionModal({
   canClaim = false,
   claimedThisTurn = false,
   canPickController = false,
+  canEdit = false,
   leaders = [],
   onClaimSlice,
+  onSetSlice,
   onPickController,
   onMinimize,
   onClose,
 }) {
   const isMobile = useIsMobileDock();
+  const [hostEditOpen, setHostEditOpen] = useState(false);
   useBodyScrollLock(show && !minimized && isMobile);
   useEscapeKey(() => {
     if (isMobile) onClose?.();
     else onMinimize?.();
   }, show && !minimized);
+
+  useEffect(() => {
+    if (!show || minimized) setHostEditOpen(false);
+  }, [show, minimized]);
 
   if (!show) return null;
 
@@ -53,6 +60,7 @@ export function ExpeditionModal({
   const playerById = (id) => players.find(p => p.id === id) || null;
   const factionOf = (p) => (p ? ALL_FACTIONS.find(f => f.id === p.factionId) : null);
   const showPlanet = !!expedition?.completed;
+  const showHostEdit = canEdit && typeof onSetSlice === 'function';
 
   if (minimized) {
     return (
@@ -105,6 +113,17 @@ export function ExpeditionModal({
               </p>
             </div>
             <div className="flex items-center gap-0.5 flex-shrink-0">
+              {showHostEdit && (
+                <button
+                  type="button"
+                  onClick={() => setHostEditOpen(v => !v)}
+                  className={`text-slate-500 hover:text-amber-300 transition p-2 ${hostEditOpen ? 'text-amber-400' : ''}`}
+                  aria-label={hostEditOpen ? 'Скрыть правку слотов' : 'Править слоты'}
+                  title={hostEditOpen ? 'Скрыть правку' : 'Править слоты'}
+                >
+                  <i className="fa-solid fa-pen-to-square text-sm" aria-hidden="true" />
+                </button>
+              )}
               {onMinimize && (
                 <button
                   type="button"
@@ -230,6 +249,66 @@ export function ExpeditionModal({
                 );
               })()}
             </p>
+          )}
+
+          {showHostEdit && hostEditOpen && (
+            <section className="rounded-xl border border-amber-700/40 bg-amber-950/15 p-3 space-y-2">
+              <h3 className="font-orbitron font-bold text-[10px] uppercase text-amber-400/90">
+                Правка слотов
+              </h3>
+              <ul className="space-y-1.5">
+                {EXPEDITION_SLICES.map((slice) => {
+                  const ownerId = slices[slice.id];
+                  const owner = ownerId != null ? playerById(ownerId) : null;
+                  const ownerFaction = factionOf(owner);
+                  return (
+                    <li
+                      key={slice.id}
+                      className="rounded-lg border border-slate-800 bg-slate-900/80 px-2 py-1.5 flex items-center gap-2"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="text-[11px] font-bold text-slate-200 truncate">{slice.label}</div>
+                        <div className="text-[10px] text-slate-500 truncate">{slice.hint}</div>
+                      </div>
+                      {owner && ownerFaction && (
+                        <span
+                          className="w-6 h-6 rounded-full border p-0.5 bg-black flex-shrink-0"
+                          style={{ borderColor: owner.color || '#64748b' }}
+                          title={owner.name}
+                        >
+                          <img src={ownerFaction.iconUrl} alt="" className="w-full h-full object-contain" />
+                        </span>
+                      )}
+                      <select
+                        value={ownerId ?? ''}
+                        onChange={(e) => {
+                          const raw = e.target.value;
+                          onSetSlice(slice.id, raw === '' ? null : Number(raw));
+                        }}
+                        className="max-w-[7.5rem] bg-slate-950 border border-slate-700 rounded-md text-[11px] text-slate-200 px-1.5 py-1"
+                        aria-label={`Владелец слота ${slice.label}`}
+                      >
+                        <option value="">— пусто —</option>
+                        {players.filter(p => !p.eliminated).map(p => (
+                          <option key={p.id} value={p.id}>{p.name}</option>
+                        ))}
+                      </select>
+                      {ownerId != null && (
+                        <button
+                          type="button"
+                          onClick={() => onSetSlice(slice.id, null)}
+                          className="w-7 h-7 rounded-md border border-slate-700 text-slate-400 hover:text-red-300 hover:border-red-700 flex items-center justify-center flex-shrink-0"
+                          title="Снять метку"
+                          aria-label={`Снять метку ${slice.label}`}
+                        >
+                          <i className="fa-solid fa-xmark text-xs" aria-hidden="true" />
+                        </button>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+            </section>
           )}
 
           <section>

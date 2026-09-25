@@ -581,7 +581,14 @@ function ObjectivesTab({
       )}
 
       {stages.map(({ stage, title, color }) => {
-        const list = objectives.filter(o => o.stage === stage);
+        const list = objectives.filter((o) => {
+          if (o.stage !== stage) return false;
+          if (!scoringActive) return true;
+          const alreadyOwned = !!completions[`${me.id}_${o.id}`];
+          const scoredThisWindow = myResponse?.publicId === o.id;
+          if (alreadyOwned && !scoredThisWindow) return false;
+          return true;
+        });
         if (!list.length) return null;
         return (
           <section key={stage} className="space-y-2">
@@ -591,6 +598,7 @@ function ObjectivesTab({
               const scoredThisWindow = myResponse?.publicId === obj.id;
               const ownedBefore = mine && !scoredThisWindow;
               const interactive = canScore && !ownedBefore;
+              const selectedNow = canScore && scoredThisWindow;
               const isCompletedByAll = activeSeats.length > 0
                 && activeSeats.every(p => !!completions[`${p.id}_${obj.id}`]);
               const canCollapse = mine || isCompletedByAll;
@@ -614,17 +622,17 @@ function ObjectivesTab({
                   className={`rounded-2xl border transition-all duration-300 ${
                     isCompletedByAll
                       ? 'border-emerald-500/40 bg-emerald-950/10 p-3'
-                      : mine
+                      : mine || selectedNow
                         ? 'border-emerald-600/60 bg-emerald-950/30 p-3'
                         : 'border-slate-800 bg-slate-900 p-3'
-                  } ${ownedBefore && !isCompletedByAll ? 'opacity-80' : ''} ${
+                  } ${
                     interactive ? 'active:scale-[0.99] cursor-pointer' : ''
                   }`}
                 >
                   <div className="flex items-start gap-3">
                     <span
                       className={`mt-0.5 w-6 h-6 rounded-lg border flex items-center justify-center text-xs flex-shrink-0 ${
-                        mine
+                        mine || selectedNow
                           ? 'bg-emerald-500 border-emerald-400 text-black'
                           : 'border-slate-600 text-transparent'
                       }`}

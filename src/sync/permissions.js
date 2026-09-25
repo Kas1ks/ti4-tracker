@@ -203,6 +203,9 @@ export function authorizeAction({ role, seatPlayerId, action, state }) {
 
     case 'GRANT_TECH':
     case 'REVOKE_TECH':
+    case 'GRANT_BREAKTHROUGH':
+    case 'REVOKE_BREAKTHROUGH':
+    case 'SET_EXPEDITION_SLICE':
       return { ok: false, error: 'forbidden' };
 
     case 'CLAIM_EXPEDITION_SLICE': {
@@ -295,9 +298,14 @@ export function can(role, capability) {
     case 'scoreAny':
     case 'secrets':
     case 'mecatol':
+    case 'custodians':
+    case 'support':
+    case 'breakthrough':
+    case 'expeditionAdmin':
     case 'objectivesAdmin':
     case 'endGame':
     case 'export':
+    case 'undo':
       return false;
     case 'draftPick':
     case 'playTurn':

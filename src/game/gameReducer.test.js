@@ -5,9 +5,11 @@ import { createEmptyGameState, normalizeGameState } from './gameState';
 import {
   activePlayer,
   activeStrategyCard,
+  argentFlightVoteBonus,
   canStartRound,
   currentAgenda,
   currentDraftPlayerId,
+  effectiveVoteAmount,
   playerScore,
   playersForBoard,
   turnOrder,
@@ -175,7 +177,8 @@ describe('strategy card draft', () => {
       gameWith(fourPlayers, { meta: { ...createEmptyGameState().meta, speakerId: 3 } }),
       { type: 'OPEN_DRAFT' },
     );
-    expect(state.draft.queue).toEqual([3, 4, 1, 2, 3, 4, 1, 2]);
+    // Snake: round 1 CW from speaker, round 2 CCW.
+    expect(state.draft.queue).toEqual([3, 4, 1, 2, 2, 1, 4, 3]);
     expect(state.draft.showModal).toBe(true);
   });
 
@@ -191,7 +194,8 @@ describe('strategy card draft', () => {
       { type: 'OPEN_DRAFT' },
     );
     // Picks per player follow the seat count, so eliminating someone does not change it.
-    expect(state.draft.queue).toEqual([2, 3, 2, 3]);
+    // 3 seats → snake: [2,3, 3,2]
+    expect(state.draft.queue).toEqual([2, 3, 3, 2]);
     expect(state.meta.speakerId).toBe(2);
   });
 
@@ -215,7 +219,7 @@ describe('strategy card draft', () => {
   it('walks the queue and asks for confirmation after the last pick', () => {
     const twoPlayers = [player(1, 'A'), player(2, 'B')];
     let state = dispatch(gameWith(twoPlayers), { type: 'OPEN_DRAFT' });
-    expect(state.draft.queue).toEqual([1, 2, 1, 2]);
+    expect(state.draft.queue).toEqual([1, 2, 2, 1]);
 
     [1, 2, 3, 4].forEach(cardId => {
       expect(currentDraftPlayerId(state)).toBe(state.draft.queue[state.draft.currentQueueIndex]);
@@ -223,7 +227,7 @@ describe('strategy card draft', () => {
     });
 
     expect(state.draft.step).toBe('CONFIRM');
-    expect(state.draft.assignments).toEqual({ 1: 1, 2: 2, 3: 1, 4: 2 });
+    expect(state.draft.assignments).toEqual({ 1: 1, 2: 2, 3: 2, 4: 1 });
   });
 
   it('ignores a card that is already taken', () => {
@@ -263,9 +267,9 @@ describe('strategy card draft', () => {
       { type: 'CONFIRM_DRAFT' },
     ]);
 
-    expect(state.players[0].cards.map(c => c.id)).toEqual([4, 7]);
+    expect(state.players[0].cards.map(c => c.id)).toEqual([4, 8]);
     expect(state.players[0].lastMinInitiative).toBe(4);
-    expect(state.players[1].cards.map(c => c.id)).toEqual([3, 8]);
+    expect(state.players[1].cards.map(c => c.id)).toEqual([3, 7]);
     expect(state.players[1].lastMinInitiative).toBe(3);
 
     expect(state.draft.strategyCardBonuses[4]).toBe(0);
@@ -296,15 +300,17 @@ describe('strategy card draft', () => {
       gameWith(fourPlayers, { meta: { ...createEmptyGameState().meta, speakerId: 1 } }),
       { type: 'OPEN_DRAFT' },
     );
-    expect(state.draft.queue).toEqual([1, 2, 3, 4, 1, 2, 3, 4]);
+    expect(state.draft.queue).toEqual([1, 2, 3, 4, 4, 3, 2, 1]);
     state = dispatch(state, { type: 'PICK_CARD', cardId: 1 });
     state = dispatch(state, { type: 'PICK_CARD', cardId: 2 });
     expect(state.draft.currentQueueIndex).toBe(2);
 
     state = dispatch(state, { type: 'SET_SPEAKER', playerId: 3 });
     expect(state.meta.speakerId).toBe(3);
-    // Completed picks kept; remaining follow new speaker order.
-    expect(state.draft.queue).toEqual([1, 2, 3, 4, 3, 4, 1, 2]);
+    // Completed picks kept; remaining follow new speaker snake order.
+    // Speakers 3 CW: [3,4,1,2] then CCW [2,1,4,3]. After 1 and 2 have their
+    // first pick, remaining first-round: 3,4; second round still needs all.
+    expect(state.draft.queue).toEqual([1, 2, 3, 4, 2, 1, 4, 3]);
     expect(state.draft.currentQueueIndex).toBe(2);
     expect(currentDraftPlayerId(state)).toBe(3);
   });
@@ -328,6 +334,47 @@ describe('agenda voting order', () => {
 
     const reversed = gameReducer(state, { type: 'TOGGLE_VOTE_REVERSED' });
     expect(votingOrder(reversed).map(p => p.id)).toEqual([1, 4, 3, 2]);
+  });
+
+  it('puts Argent Flight first even when reverse is on', () => {
+    const state = normalizeGameState({
+      isGameActive: true,
+      players: [
+        player(1, 'A', { factionId: 'sol' }),
+        player(2, 'B', { factionId: 'hacan' }),
+        player(3, 'Argent', { factionId: 'argent' }),
+        player(4, 'D', { factionId: 'xxcha' }),
+      ],
+      speakerId: 2,
+      politicsStep: 'VOTE',
+      agendas: [{ type: 'FOR_AGAINST', votes: {}, locked: {} }],
+    });
+    // Normal: after speaker 2 → 3,4,1,2 but Argent(3) pulled to front → 3,4,1,2
+    expect(votingOrder(state).map(p => p.id)).toEqual([3, 4, 1, 2]);
+
+    const reversed = gameReducer(state, { type: 'TOGGLE_VOTE_REVERSED' });
+    // Reverse: after speaker 2 → 1,4,3,2; Argent(3) first → 3,1,4,2
+    expect(votingOrder(reversed).map(p => p.id)).toEqual([3, 1, 4, 2]);
+  });
+
+  it('Argent Zeal adds player-count bonus when ≥1 vote is spent', () => {
+    const state = normalizeGameState({
+      isGameActive: true,
+      players: [
+        player(1, 'Argent', { factionId: 'argent' }),
+        player(2, 'B', { factionId: 'sol' }),
+        player(3, 'C', { factionId: 'hacan' }),
+        player(4, 'D', { factionId: 'xxcha' }),
+      ],
+      speakerId: 2,
+    });
+    expect(argentFlightVoteBonus(state)).toBe(4);
+    const argent = state.players[0];
+    expect(effectiveVoteAmount(state, argent, { choice: 'for', amount: 0 })).toBe(0);
+    expect(effectiveVoteAmount(state, argent, { choice: 'abstain', amount: 2 })).toBe(0);
+    expect(effectiveVoteAmount(state, argent, { choice: 'for', amount: 1 })).toBe(5);
+    expect(effectiveVoteAmount(state, argent, { choice: 'for', amount: 3 })).toBe(7);
+    expect(effectiveVoteAmount(state, state.players[1], { choice: 'for', amount: 3 })).toBe(3);
   });
 
   it('updates voting order when the speaker changes', () => {
@@ -893,6 +940,7 @@ describe("Thunder's Edge expedition", () => {
       ...state.round,
       activeTurnIdx: state.round.turnOrderIds.indexOf(playerId),
       expeditionClaimedThisTurn: false,
+      expeditionClaimedSliceId: null,
     },
   });
 
@@ -969,6 +1017,75 @@ describe("Thunder's Edge expedition", () => {
       placedById: 2,
       awaitingControlPick: false,
     });
+  });
+
+  it('lets the host set and clear expedition markers', () => {
+    let state = withTe([player(1, 'A'), player(2, 'B')]);
+    state = dispatch(state, { type: 'SET_EXPEDITION_SLICE', sliceId: 'resources', playerId: 2 });
+    expect(state.expedition.slices.resources).toBe(2);
+    expect(state.players.find(p => p.id === 2).breakthrough).toBe(true);
+    expect(state.round.expeditionClaimedThisTurn).toBe(false);
+
+    state = dispatch(state, { type: 'SET_EXPEDITION_SLICE', sliceId: 'resources', playerId: null });
+    expect(state.expedition.slices.resources).toBeNull();
+    expect(state.players.find(p => p.id === 2).breakthrough).toBe(false);
+  });
+
+  it('revokes breakthrough only when the player has no expedition markers left', () => {
+    let state = withTe([player(1, 'A'), player(2, 'B')]);
+    state = dispatch(state, { type: 'SET_EXPEDITION_SLICE', sliceId: 'resources', playerId: 2 });
+    state = dispatch(state, { type: 'SET_EXPEDITION_SLICE', sliceId: 'influence', playerId: 2 });
+    expect(state.players.find(p => p.id === 2).breakthrough).toBe(true);
+
+    state = dispatch(state, { type: 'SET_EXPEDITION_SLICE', sliceId: 'resources', playerId: null });
+    expect(state.players.find(p => p.id === 2).breakthrough).toBe(true);
+
+    state = dispatch(state, { type: 'SET_EXPEDITION_SLICE', sliceId: 'influence', playerId: null });
+    expect(state.players.find(p => p.id === 2).breakthrough).toBe(false);
+  });
+
+  it('keeps Crimson starting breakthrough when host clears their last marker', () => {
+    let state = withTe([
+      { ...player(1, 'Crimson'), factionId: 'crimson', breakthrough: true },
+      player(2, 'B'),
+    ]);
+    state = dispatch(state, { type: 'SET_EXPEDITION_SLICE', sliceId: 'resources', playerId: 1 });
+    state = dispatch(state, { type: 'SET_EXPEDITION_SLICE', sliceId: 'resources', playerId: null });
+    expect(state.players.find(p => p.id === 1).breakthrough).toBe(true);
+  });
+
+  it('restores the per-turn expedition claim when host clears that claim', () => {
+    let state = withTe([player(1, 'A'), player(2, 'B')]);
+    state = asTurn(state, 1);
+    state = dispatch(state, { type: 'CLAIM_EXPEDITION_SLICE', playerId: 1, sliceId: 'resources' });
+    expect(state.round.expeditionClaimedThisTurn).toBe(true);
+    expect(state.round.expeditionClaimedSliceId).toBe('resources');
+    expect(state.players.find(p => p.id === 1).breakthrough).toBe(true);
+
+    state = dispatch(state, { type: 'SET_EXPEDITION_SLICE', sliceId: 'resources', playerId: null });
+    expect(state.expedition.slices.resources).toBeNull();
+    expect(state.round.expeditionClaimedThisTurn).toBe(false);
+    expect(state.round.expeditionClaimedSliceId).toBeNull();
+    expect(state.players.find(p => p.id === 1).breakthrough).toBe(false);
+
+    state = dispatch(state, { type: 'CLAIM_EXPEDITION_SLICE', playerId: 1, sliceId: 'influence' });
+    expect(state.expedition.slices.influence).toBe(1);
+    expect(state.round.expeditionClaimedThisTurn).toBe(true);
+  });
+
+  it('reopens a completed expedition when the host clears a slice', () => {
+    let state = withTe([player(1, 'A'), player(2, 'B')]);
+    const owners = [1, 1, 1, 1, 2, 1];
+    owners.forEach((pid, i) => {
+      state = asTurn(state, pid);
+      state = dispatch(state, { type: 'CLAIM_EXPEDITION_SLICE', playerId: pid, sliceId: slices[i] });
+    });
+    expect(state.expedition.completed).toBe(true);
+
+    state = dispatch(state, { type: 'SET_EXPEDITION_SLICE', sliceId: 'tradeGoods', playerId: null });
+    expect(state.expedition.completed).toBe(false);
+    expect(state.expedition.controllerId).toBeNull();
+    expect(state.expedition.slices.tradeGoods).toBeNull();
   });
 });
 
@@ -1211,6 +1328,29 @@ describe('Technology research (card 7)', () => {
     });
     expect(state.players.find(p => p.id === 1).techIds).toContain('gravity_drive');
   });
+
+  it('breakthrough synergy pools colors for mixed unit-upgrade prereqs', () => {
+    let state = gameWith([
+      player(1, 'Bastion', {
+        factionId: 'bastion',
+        cards: [STRATEGY_CARDS[6]],
+        lastMinInitiative: 1,
+        techIds: ['plasma_scoring', 'magen_defense_grid'],
+        breakthrough: true,
+      }),
+      player(2, 'B', { cards: [STRATEGY_CARDS[0]], lastMinInitiative: 2 }),
+    ], {
+      meta: { ...createEmptyGameState().meta, speakerId: 1, useTe: true, usePok: true },
+    });
+    state = dispatch(state, { type: 'START_ROUND' });
+    state = dispatch(state, { type: 'PLAY_STRATEGY', cardId: 7 });
+    state = dispatch(state, {
+      type: 'RESEARCH_TECH',
+      playerId: 1,
+      techId: 'pds_2',
+    });
+    expect(state.players.find(p => p.id === 1).techIds).toContain('pds_2');
+  });
 });
 
 describe('Starting tech draft', () => {
@@ -1414,5 +1554,62 @@ describe('whole-document actions', () => {
     expect(state.isGameActive).toBe(false);
     expect(state.players).toEqual([]);
     expect(state.meta.roundNumber).toBe(1);
+  });
+});
+
+describe('expansion objective decks', () => {
+  it('excludes PoK public objectives when PoK is off', () => {
+    let state = createEmptyGameState();
+    expect(state.objectives.stage1Deck.every(o => o.exp !== 'pok')).toBe(true);
+    expect(state.objectives.stage2Deck.every(o => o.exp !== 'pok')).toBe(true);
+
+    state = dispatch(state, { type: 'SET_EXPANSION', expansion: 'pok', enabled: true });
+    expect(state.meta.usePok).toBe(true);
+    expect(state.objectives.stage1Deck.some(o => o.exp === 'pok')).toBe(true);
+  });
+
+  it('forces PoK on when TE is enabled and rebuilds decks', () => {
+    let state = createEmptyGameState();
+    state = dispatch(state, { type: 'SET_EXPANSION', expansion: 'te', enabled: true });
+    expect(state.meta).toMatchObject({ useTe: true, usePok: true });
+    expect(state.objectives.stage1Deck.some(o => o.exp === 'pok')).toBe(true);
+
+    const blocked = dispatch(state, { type: 'SET_EXPANSION', expansion: 'pok', enabled: false });
+    expect(blocked.meta.usePok).toBe(true);
+  });
+});
+
+describe('custodians and support VP', () => {
+  it('awards custodians and Support for the Throne in the score', () => {
+    let state = gameWith([player(1, 'A'), player(2, 'B')], { isGameActive: true });
+    expect(playerScore(state, 1)).toBe(0);
+
+    state = dispatch(state, { type: 'SET_CUSTODIANS', playerId: 1 });
+    expect(state.vpTrack.custodiansPlayerId).toBe(1);
+    expect(playerScore(state, 1)).toBe(1);
+
+    state = dispatch(state, { type: 'SET_SUPPORT', fromPlayerId: 2, holderPlayerId: 1 });
+    expect(playerScore(state, 1)).toBe(2);
+    expect(playerScore(state, 2)).toBe(0);
+
+    state = dispatch(state, { type: 'SET_CUSTODIANS', playerId: 1 });
+    expect(state.vpTrack.custodiansPlayerId).toBeNull();
+    expect(playerScore(state, 1)).toBe(1);
+  });
+});
+
+describe('host breakthrough grant', () => {
+  it('lets the host grant and revoke breakthrough', () => {
+    let state = gameWith([player(1, 'A')], {
+      isGameActive: true,
+      meta: { ...createEmptyGameState().meta, useTe: true, usePok: true },
+    });
+    expect(state.players[0].breakthrough).toBe(false);
+
+    state = dispatch(state, { type: 'GRANT_BREAKTHROUGH', playerId: 1 });
+    expect(state.players[0].breakthrough).toBe(true);
+
+    state = dispatch(state, { type: 'REVOKE_BREAKTHROUGH', playerId: 1 });
+    expect(state.players[0].breakthrough).toBe(false);
   });
 });

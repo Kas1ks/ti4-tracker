@@ -13,6 +13,9 @@ export function GameBoard({
   players,
   adjustSecrets,
   adjustMecatol,
+  vpTrack,
+  setCustodians,
+  setSupport,
   objectives,
   completions,
   toggleCompletion,
@@ -43,17 +46,27 @@ export function GameBoard({
   const seatId = perms?.seatPlayerId;
   const scoringActive = !!scoring?.active;
   const [playerActionsId, setPlayerActionsId] = useState(null);
+  const [supportPickOpen, setSupportPickOpen] = useState(false);
+  const [custodiansNotice, setCustodiansNotice] = useState(null);
   const playerActionsRef = useRef(null);
+
+  const custodiansPlayerId = vpTrack?.custodiansPlayerId ?? null;
+  const supportHolders = vpTrack?.supportHolders || {};
 
   useEffect(() => {
     if (playerActionsId == null) return undefined;
     const onPointerDown = (event) => {
       if (playerActionsRef.current && !playerActionsRef.current.contains(event.target)) {
         setPlayerActionsId(null);
+        setSupportPickOpen(false);
       }
     };
     const onKeyDown = (event) => {
-      if (event.key === 'Escape') setPlayerActionsId(null);
+      if (event.key === 'Escape') {
+        setPlayerActionsId(null);
+        setSupportPickOpen(false);
+        setCustodiansNotice(null);
+      }
     };
     document.addEventListener('pointerdown', onPointerDown);
     document.addEventListener('keydown', onKeyDown);
@@ -62,6 +75,23 @@ export function GameBoard({
       document.removeEventListener('keydown', onKeyDown);
     };
   }, [playerActionsId]);
+
+  const claimCustodiansFor = (player) => {
+    if (!canAdminBoard || typeof setCustodians !== 'function') return false;
+    if (custodiansPlayerId != null) return false;
+    if (!player || player.eliminated) return false;
+    setCustodians(player.id);
+    setCustodiansNotice({ playerName: player.name });
+    return true;
+  };
+
+  const onMecatolPlus = (player) => {
+    if (custodiansPlayerId == null && typeof setCustodians === 'function') {
+      claimCustodiansFor(player);
+      return;
+    }
+    adjustMecatol(player.id, 1);
+  };
 
   const canToggleFor = (playerId) => {
     // During the status-phase scoring window, use ObjectiveScoringModal only.
@@ -76,6 +106,39 @@ export function GameBoard({
 
   return (
                             <div className="space-y-8">
+                                {custodiansNotice && (
+                                  <div className="fixed inset-0 z-[80] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4" role="presentation">
+                                    <div
+                                      role="dialog"
+                                      aria-modal="true"
+                                      aria-labelledby="custodians-notice-title"
+                                      className="bg-slate-900 border border-cyan-600/50 rounded-2xl max-w-sm w-full p-5 shadow-2xl space-y-3"
+                                    >
+                                      <div className="flex items-center gap-3">
+                                        <span className="w-11 h-11 rounded-xl bg-cyan-950 border border-cyan-600 flex items-center justify-center text-cyan-300 text-xl">
+                                          <i className="fa-solid fa-globe" aria-hidden="true" />
+                                        </span>
+                                        <div>
+                                          <h3 id="custodians-notice-title" className="font-orbitron font-bold text-cyan-300 text-sm uppercase">
+                                            Хранители Мекатола
+                                          </h3>
+                                          <p className="text-xs text-slate-400 mt-0.5">+1 ПО за захват Мекатола Rex</p>
+                                        </div>
+                                      </div>
+                                      <p className="text-sm text-slate-200 leading-relaxed">
+                                        <span className="font-bold text-white">{custodiansNotice.playerName}</span>
+                                        {' '}получил токен Хранителей. Очко учтено в счёте; у игрока появится значок планеты.
+                                      </p>
+                                      <button
+                                        type="button"
+                                        onClick={() => setCustodiansNotice(null)}
+                                        className="w-full py-2.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-slate-950 font-bold text-sm transition"
+                                      >
+                                        Понятно
+                                      </button>
+                                    </div>
+                                  </div>
+                                )}
 
                                 {/* ПАНЕЛЬ ОЧЕРЕДНОСТИ ХОДОВ */}
                                 {turnOrder.length > 0 && (
@@ -183,15 +246,21 @@ export function GameBoard({
                                                 const showRelease = canReleaseSeat && seatClaimed;
                                                 const showSetSpeaker = canSetSpeaker && !p.eliminated && p.id !== speakerId;
                                                 const showOpenTech = canOpenTech && !p.eliminated;
-                                                const hasPlayerActions = showEliminate || showRelease || showSetSpeaker || showOpenTech;
+                                                const showVpEdit = canAdminBoard && !p.eliminated && typeof setSupport === 'function';
+                                                const hasPlayerActions = showEliminate || showRelease || showSetSpeaker || showOpenTech || showVpEdit;
                                                 const actionsOpen = playerActionsId === p.id;
+                                                const heldSupportCount = Object.values(supportHolders).filter(id => id === p.id).length;
+                                                const hasCustodians = custodiansPlayerId === p.id;
+                                                const mecatolShown = (p.extra || 0) + (hasCustodians ? 1 : 0);
 
                                                 return (
                                                     <motion.div
                                                         key={p.id}
                                                         layout
                                                         transition={{ type: "spring", stiffness: 300, damping: 28 }}
-                                                        className={`relative p-3 rounded-2xl border flex items-center justify-between gap-3 max-md:flex-col max-md:items-stretch shadow-md overflow-hidden ${isWinner
+                                                        className={`relative p-3 rounded-2xl border flex items-center justify-between gap-3 max-md:flex-col max-md:items-stretch shadow-md ${
+                                                          actionsOpen ? 'overflow-visible z-40' : 'overflow-hidden'
+                                                        } ${isWinner
                                                             ? 'bg-amber-950/60 border-amber-500 shadow-amber-500/20'
                                                             : p.eliminated
                                                             ? 'bg-slate-950/70 border-slate-800 opacity-60 grayscale'
@@ -226,10 +295,14 @@ export function GameBoard({
                                                                     <div className="flex items-center gap-1.5 min-w-0">
                                                                         <div
                                                                             className={`font-extrabold text-base md:text-lg text-white truncate leading-tight flex items-center gap-1.5 min-w-0 ${hasPlayerActions ? 'cursor-pointer select-none' : ''}`}
-                                                                            onClick={hasPlayerActions ? () => setPlayerActionsId(actionsOpen ? null : p.id) : undefined}
+                                                                            onClick={hasPlayerActions ? () => {
+                                                                              setSupportPickOpen(false);
+                                                                              setPlayerActionsId(actionsOpen ? null : p.id);
+                                                                            } : undefined}
                                                                             onKeyDown={hasPlayerActions ? (event) => {
                                                                                 if (event.key === 'Enter' || event.key === ' ') {
                                                                                     event.preventDefault();
+                                                                                    setSupportPickOpen(false);
                                                                                     setPlayerActionsId(actionsOpen ? null : p.id);
                                                                                 }
                                                                             } : undefined}
@@ -246,19 +319,69 @@ export function GameBoard({
                                                                                 </span>
                                                                             )}
                                                                             {p.id === speakerId && !p.eliminated && (
-                                                                                <span title="Спикер" className="text-[10px] font-orbitron font-bold uppercase bg-purple-950 text-purple-300 border border-purple-700 px-2 py-0.5 rounded-md flex-shrink-0">
-                                                                                    Speaker
+                                                                                <span
+                                                                                  title="Спикер"
+                                                                                  className="w-6 h-6 rounded-md bg-purple-950 text-purple-300 border border-purple-700 flex items-center justify-center flex-shrink-0"
+                                                                                >
+                                                                                    <i className="fa-solid fa-gavel text-[11px]" aria-hidden="true" />
+                                                                                    <span className="sr-only">Спикер</span>
                                                                                 </span>
                                                                             )}
+                                                                            {hasCustodians && (
+                                                                                <span
+                                                                                  title="Хранители Мекатола (+1 ПО за захват)"
+                                                                                  className="w-6 h-6 rounded-md bg-cyan-950 text-cyan-300 border border-cyan-700 flex items-center justify-center flex-shrink-0"
+                                                                                >
+                                                                                    <i className="fa-solid fa-globe text-[11px]" aria-hidden="true" />
+                                                                                    <span className="sr-only">Хранители</span>
+                                                                                </span>
+                                                                            )}
+                                                                            {heldSupportCount > 0 && (() => {
+                                                                                const fromIds = Object.entries(supportHolders)
+                                                                                  .filter(([, holderId]) => holderId === p.id)
+                                                                                  .map(([fromId]) => Number(fromId));
+                                                                                return (
+                                                                                  <span
+                                                                                    title={`Support for the Throne ×${heldSupportCount} (+${heldSupportCount} ПО)`}
+                                                                                    className="inline-flex items-center gap-1 h-6 pl-1.5 pr-1 rounded-md bg-emerald-950 text-emerald-300 border border-emerald-700 flex-shrink-0"
+                                                                                  >
+                                                                                    <i className="fa-solid fa-scroll text-[10px]" aria-hidden="true" />
+                                                                                    <span className="inline-flex items-center -space-x-1.5">
+                                                                                      {fromIds.map(fromId => {
+                                                                                        const donor = players.find(x => x.id === fromId);
+                                                                                        const donorFaction = ALL_FACTIONS.find(f => f.id === donor?.factionId);
+                                                                                        const donorColor = donor?.color || donorFaction?.color || '#64748b';
+                                                                                        return (
+                                                                                          <span
+                                                                                            key={fromId}
+                                                                                            title={donor ? `Support от ${donor.name}` : 'Support'}
+                                                                                            className="w-5 h-5 rounded-md bg-slate-950 border flex items-center justify-center p-0.5"
+                                                                                            style={{ borderColor: donorColor }}
+                                                                                          >
+                                                                                            {donorFaction?.iconUrl ? (
+                                                                                              <img src={donorFaction.iconUrl} alt="" className="w-full h-full object-contain" />
+                                                                                            ) : (
+                                                                                              <span className="text-[8px] font-bold text-slate-500">?</span>
+                                                                                            )}
+                                                                                          </span>
+                                                                                        );
+                                                                                      })}
+                                                                                    </span>
+                                                                                    <span className="sr-only">Support ×{heldSupportCount}</span>
+                                                                                  </span>
+                                                                                );
+                                                                            })()}
                                                                         </div>
                                                                     </div>
                                                                     {hasPlayerActions && actionsOpen && (
-                                                                        <div className="mt-1.5 flex flex-wrap items-center gap-1">
+                                                                        <div className="mt-1.5 space-y-1.5">
+                                                                          <div className="flex flex-wrap items-center gap-1">
                                                                             {showOpenTech && (
                                                                                 <button
                                                                                     type="button"
                                                                                     onClick={() => {
                                                                                         setPlayerActionsId(null);
+                                                                                        setSupportPickOpen(false);
                                                                                         onOpenPlayerTech(p.id);
                                                                                     }}
                                                                                     className="text-slate-400 hover:text-sky-300 text-[11px] px-2 py-1 rounded-lg border border-slate-700/80 bg-slate-950/70 hover:bg-sky-950/40 transition inline-flex items-center gap-1.5"
@@ -273,6 +396,7 @@ export function GameBoard({
                                                                                     type="button"
                                                                                     onClick={() => {
                                                                                         setPlayerActionsId(null);
+                                                                                        setSupportPickOpen(false);
                                                                                         setSpeaker(p.id);
                                                                                     }}
                                                                                     className="text-slate-400 hover:text-purple-300 text-[11px] px-2 py-1 rounded-lg border border-slate-700/80 bg-slate-950/70 hover:bg-purple-950/40 transition inline-flex items-center gap-1.5"
@@ -282,11 +406,27 @@ export function GameBoard({
                                                                                     <span className="font-semibold">Спикер</span>
                                                                                 </button>
                                                                             )}
+                                                                            {showVpEdit && typeof setSupport === 'function' && (
+                                                                                <button
+                                                                                    type="button"
+                                                                                    onClick={() => setSupportPickOpen(v => !v)}
+                                                                                    className={`text-[11px] px-2 py-1 rounded-lg border transition inline-flex items-center gap-1.5 ${
+                                                                                      heldSupportCount > 0 || supportPickOpen
+                                                                                        ? 'border-emerald-600 bg-emerald-950/50 text-emerald-300'
+                                                                                        : 'border-slate-700/80 bg-slate-950/70 text-slate-400 hover:text-emerald-300 hover:bg-emerald-950/40'
+                                                                                    }`}
+                                                                                    title="Support for the Throne"
+                                                                                >
+                                                                                    <i className="fa-solid fa-scroll" />
+                                                                                    <span className="font-semibold">Support{heldSupportCount > 0 ? ` · ${heldSupportCount}` : ''}</span>
+                                                                                </button>
+                                                                            )}
                                                                             {showEliminate && (
                                                                                 <button
                                                                                     type="button"
                                                                                     onClick={() => {
                                                                                         setPlayerActionsId(null);
+                                                                                        setSupportPickOpen(false);
                                                                                         eliminatePlayer(p.id);
                                                                                     }}
                                                                                     className="text-slate-400 hover:text-red-400 text-[11px] px-2 py-1 rounded-lg border border-slate-700/80 bg-slate-950/70 hover:bg-red-950/40 transition inline-flex items-center gap-1.5"
@@ -301,6 +441,7 @@ export function GameBoard({
                                                                                     type="button"
                                                                                     onClick={() => {
                                                                                         setPlayerActionsId(null);
+                                                                                        setSupportPickOpen(false);
                                                                                         releaseSeat(p.id);
                                                                                     }}
                                                                                     className="text-slate-400 hover:text-amber-400 text-[11px] px-2 py-1 rounded-lg border border-slate-700/80 bg-slate-950/70 hover:bg-amber-950/30 transition inline-flex items-center gap-1.5"
@@ -310,6 +451,59 @@ export function GameBoard({
                                                                                     <span className="font-semibold">С места</span>
                                                                                 </button>
                                                                             )}
+                                                                          </div>
+                                                                          {supportPickOpen && typeof setSupport === 'function' && (
+                                                                            <div className="rounded-xl border border-emerald-700/50 bg-slate-950 p-2 space-y-1 max-w-xs">
+                                                                              <div className="px-1.5 py-1 text-[10px] text-slate-500 uppercase font-bold tracking-wide">
+                                                                                Держит Support от
+                                                                              </div>
+                                                                              {players.filter(o => o.id !== p.id && !o.eliminated).map(o => {
+                                                                                const holds = supportHolders[o.id] === p.id;
+                                                                                const oFaction = ALL_FACTIONS.find(f => f.id === o.factionId);
+                                                                                const oColor = o.color || oFaction?.color || '#64748b';
+                                                                                return (
+                                                                                  <label
+                                                                                    key={o.id}
+                                                                                    className={`flex items-center gap-2.5 w-full px-2 py-1.5 rounded-lg cursor-pointer transition ${
+                                                                                      holds
+                                                                                        ? 'bg-emerald-950/60 border border-emerald-700/60'
+                                                                                        : 'border border-transparent hover:bg-slate-900'
+                                                                                    }`}
+                                                                                  >
+                                                                                    <input
+                                                                                      type="checkbox"
+                                                                                      checked={holds}
+                                                                                      onChange={() => setSupport(o.id, holds ? null : p.id)}
+                                                                                      className="sr-only"
+                                                                                    />
+                                                                                    <span
+                                                                                      className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 text-[9px] ${
+                                                                                        holds
+                                                                                          ? 'bg-emerald-500 border-emerald-400 text-slate-950'
+                                                                                          : 'border-slate-600 bg-slate-900'
+                                                                                      }`}
+                                                                                      aria-hidden="true"
+                                                                                    >
+                                                                                      {holds ? <i className="fa-solid fa-check" /> : null}
+                                                                                    </span>
+                                                                                    <span
+                                                                                      className="w-7 h-7 rounded-lg bg-slate-900 border flex items-center justify-center p-0.5 flex-shrink-0"
+                                                                                      style={{ borderColor: oColor }}
+                                                                                    >
+                                                                                      {oFaction?.iconUrl ? (
+                                                                                        <img src={oFaction.iconUrl} alt="" className="w-full h-full object-contain" />
+                                                                                      ) : (
+                                                                                        <span className="text-[9px] font-bold text-slate-500">?</span>
+                                                                                      )}
+                                                                                    </span>
+                                                                                    <span className={`min-w-0 flex-1 truncate text-xs font-bold ${holds ? 'text-emerald-200' : 'text-slate-300'}`}>
+                                                                                      {o.name}
+                                                                                    </span>
+                                                                                  </label>
+                                                                                );
+                                                                              })}
+                                                                            </div>
+                                                                          )}
                                                                         </div>
                                                                     )}
                                                                 </div>
@@ -364,26 +558,54 @@ export function GameBoard({
                                                                     </div>
                                                                 </div>
 
-                                                                <div className="flex items-center justify-between bg-slate-950 px-2.5 py-1 rounded-xl border border-slate-700/80 shadow-sm w-[125px]">
+                                                                <div className="flex items-center justify-between bg-slate-950 px-2.5 py-1 rounded-xl border border-slate-700/80 shadow-sm w-[125px] max-md:w-auto max-md:min-w-[110px]">
                                                                     <div className="text-[10px] font-bold text-slate-300 uppercase w-[45px] flex-shrink-0">
                                                                         Мек
                                                                     </div>
 
-                                                                    <div className="flex items-center gap-1">
+                                                                    <div className="flex items-center gap-1 flex-shrink-0">
                                                                         {canAdminBoard ? (
                                                                           <>
                                                                         <button
+                                                                            type="button"
                                                                             onClick={() => adjustMecatol(p.id, -1)}
-                                                                            className="w-5 h-5 max-md:w-8 max-md:h-8 bg-slate-800 hover:bg-slate-700 active:bg-slate-600 text-slate-200 font-bold rounded flex items-center justify-center transition border border-slate-700"
+                                                                            disabled={p.extra <= 0}
+                                                                            className="w-5 h-5 max-md:w-8 max-md:h-8 bg-slate-800 hover:bg-slate-700 active:bg-slate-600 text-slate-200 font-bold rounded flex items-center justify-center transition border border-slate-700 disabled:opacity-40"
                                                                         >–</button>
-                                                                        <span className="font-sans font-extrabold text-purple-300 w-4 text-center text-sm">{p.extra}</span>
                                                                         <button
-                                                                            onClick={() => adjustMecatol(p.id, 1)}
+                                                                            type="button"
+                                                                            onClick={() => {
+                                                                              if (custodiansPlayerId == null) {
+                                                                                claimCustodiansFor(p);
+                                                                              }
+                                                                            }}
+                                                                            title={
+                                                                              hasCustodians
+                                                                                ? 'Хранители Мекатола получены'
+                                                                                : custodiansPlayerId == null
+                                                                                  ? 'Нажмите: отметить захват Мекатола (Хранители)'
+                                                                                  : 'Счётчик Мекатола'
+                                                                            }
+                                                                            className={`font-sans font-extrabold w-4 h-5 max-md:h-8 flex-shrink-0 text-center text-sm transition p-0 ${
+                                                                              hasCustodians
+                                                                                ? 'text-cyan-300'
+                                                                                : custodiansPlayerId == null
+                                                                                  ? 'text-purple-300 hover:text-cyan-300 cursor-pointer'
+                                                                                  : 'text-purple-300 cursor-default'
+                                                                            }`}
+                                                                        >
+                                                                            {mecatolShown}
+                                                                        </button>
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() => onMecatolPlus(p)}
                                                                             className="w-5 h-5 max-md:w-8 max-md:h-8 bg-slate-800 hover:bg-slate-700 active:bg-slate-600 text-cyan-400 font-bold rounded flex items-center justify-center transition border border-slate-700"
                                                                         >+</button>
                                                                           </>
                                                                         ) : (
-                                                                        <span className="font-sans font-extrabold text-purple-300 w-4 text-center text-sm">{p.extra}</span>
+                                                                        <span className={`font-sans font-extrabold w-4 text-center text-sm ${hasCustodians ? 'text-cyan-300' : 'text-purple-300'}`}>
+                                                                            {mecatolShown}
+                                                                        </span>
                                                                         )}
                                                                     </div>
                                                                 </div>

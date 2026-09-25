@@ -90,14 +90,18 @@ export function StrategyResolutionModal({
             </div>
             {seats.map((p) => {
               const status = resolution?.responses?.[p.id] || 'pending';
-              const done = status === 'played' || status === 'passed';
+              const played = status === 'played';
+              const passed = status === 'passed';
+              const done = played || passed;
               return (
                 <div
                   key={p.id}
                   className={`flex flex-wrap items-center justify-between gap-2 rounded-xl border px-3 md:px-4 py-2.5 md:py-3 ${
-                    done
+                    played
                       ? 'bg-emerald-950/40 border-emerald-600/70'
-                      : 'bg-slate-900/80 border-slate-700'
+                      : passed
+                        ? 'bg-rose-950/40 border-rose-600/70'
+                        : 'bg-slate-900/80 border-slate-700'
                   }`}
                 >
                   <div className="min-w-0 flex items-center gap-2">
@@ -105,7 +109,9 @@ export function StrategyResolutionModal({
                       className="w-2.5 h-2.5 rounded-full flex-shrink-0"
                       style={{ backgroundColor: p.color || '#64748b' }}
                     />
-                    <span className={`font-bold truncate md:text-lg ${done ? 'text-emerald-200' : 'text-slate-300'}`}>
+                    <span className={`font-bold truncate md:text-lg ${
+                      played ? 'text-emerald-200' : passed ? 'text-rose-200' : 'text-slate-300'
+                    }`}>
                       {p.name}
                     </span>
                     {p.id === resolution?.playerId && (
@@ -116,7 +122,7 @@ export function StrategyResolutionModal({
                   </div>
                   <div className="flex items-center gap-2 flex-shrink-0">
                     <span className={`text-xs md:text-sm font-bold uppercase tracking-wide ${
-                      done ? 'text-emerald-300' : 'text-slate-500'
+                      played ? 'text-emerald-300' : passed ? 'text-rose-300' : 'text-slate-500'
                     }`}>
                       {statusLabel(status)}
                     </span>
@@ -132,7 +138,7 @@ export function StrategyResolutionModal({
                         <button
                           type="button"
                           onClick={() => onResolve?.(p.id, 'passed')}
-                          className="text-[11px] md:text-xs font-bold px-2 md:px-3 py-1 md:py-1.5 rounded-lg bg-slate-800 border border-slate-600 text-slate-200 hover:bg-slate-700"
+                          className="text-[11px] md:text-xs font-bold px-2 md:px-3 py-1 md:py-1.5 rounded-lg bg-rose-900/60 border border-rose-700 text-rose-200 hover:bg-rose-800/70"
                         >
                           Пас
                         </button>

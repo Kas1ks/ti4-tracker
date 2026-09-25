@@ -2,6 +2,11 @@ import { createEmptyGameState, normalizeGameState } from '../../src/game/gameSta
 import { reduceGame } from '../../src/game/gameEvents.js';
 import { LOCAL_ONLY_ACTIONS } from '../../src/sync/constants.js';
 import { authorizeAction, makeSessionToken, ROLES } from '../../src/sync/permissions.js';
+import {
+  popUndoSnapshot,
+  pushUndoSnapshot,
+  undoStackDepth,
+} from '../../src/sync/undoStack.js';
 
 export { LOCAL_ONLY_ACTIONS, ROLES };
 
@@ -87,6 +92,7 @@ export function createRoomRecord(initialState = null) {
     hostKey,
     seq: 0,
     state,
+    undoStack: [],
     sessions: {
       [sessionToken]: { role: ROLES.ADMIN, seatPlayerId: null },
     },
@@ -257,6 +263,33 @@ export function applyRoomAction(room, action, auth = {}) {
   const gate = authorizeAction({ role, seatPlayerId, action, state: room.state });
   if (!gate.ok) return gate;
 
+  // Host global undo: restore previous snapshot (works for pass, strategy play, etc.).
+  if (action.type === 'UNDO_LAST') {
+    const { stack, state: prevState } = popUndoSnapshot(room.undoStack);
+    if (!prevState) {
+      return {
+        ok: true,
+        room: touchRoomActivity(room),
+        action,
+        noop: true,
+        canUndo: false,
+      };
+    }
+    const nextRoom = touchRoomActivity({
+      ...room,
+      seq: room.seq + 1,
+      state: prevState,
+      undoStack: stack,
+    });
+    return {
+      ok: true,
+      room: nextRoom,
+      action,
+      noop: false,
+      canUndo: undoStackDepth(stack) > 0,
+    };
+  }
+
   const CLOCK_ACTIONS = new Set([
     'START_ROUND',
     'NEXT_TURN',
@@ -277,13 +310,19 @@ export function applyRoomAction(room, action, auth = {}) {
       room: touchRoomActivity(room),
       action: stamped,
       noop: true,
+      canUndo: undoStackDepth(room.undoStack) > 0,
     };
   }
+
+  const undoStack = stamped.type === 'RESET_GAME'
+    ? []
+    : pushUndoSnapshot(room.undoStack, room.state);
 
   let nextRoom = touchRoomActivity({
     ...room,
     seq: room.seq + 1,
     state: nextState,
+    undoStack,
   });
 
   // Ending the party: wipe seats so every guest must return to the hub.
@@ -297,6 +336,7 @@ export function applyRoomAction(room, action, auth = {}) {
       sessions,
       seatClaims: {},
       seatSecrets: {},
+      undoStack: [],
     }, { ended: true });
     return {
       ok: true,
@@ -304,6 +344,7 @@ export function applyRoomAction(room, action, auth = {}) {
       action: stamped,
       noop: false,
       roomEnded: true,
+      canUndo: false,
     };
   }
 
@@ -345,6 +386,7 @@ export function applyRoomAction(room, action, auth = {}) {
       seatRemoved: true,
       seatPlayerId: stamped.playerId,
       revokedSessionToken: claimToken,
+      canUndo: undoStackDepth(undoStack) > 0,
     };
   }
 
@@ -354,6 +396,7 @@ export function applyRoomAction(room, action, auth = {}) {
     action: stamped,
     noop: false,
     roomEnded: false,
+    canUndo: undoStackDepth(undoStack) > 0,
   };
 }
 
@@ -372,5 +415,6 @@ export function publicRoomView(room) {
     lastActivityAt: room.lastActivityAt || null,
     expiresAt: room.expiresAt || null,
     claimedSeats,
+    canUndo: undoStackDepth(room.undoStack) > 0,
   };
 }

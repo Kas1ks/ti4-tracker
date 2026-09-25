@@ -15,7 +15,12 @@ export function playerScore(state, playerId) {
     state.objectives.completions[`${playerId}_${objective.id}`] ? sum + objective.points : sum
   ), 0);
 
-  return player.secrets + player.extra + fromObjectives;
+  const track = state.vpTrack || {};
+  const fromCustodians = track.custodiansPlayerId === playerId ? 1 : 0;
+  const holders = track.supportHolders || {};
+  const fromSupport = Object.values(holders).filter(holderId => holderId === playerId).length;
+
+  return player.secrets + player.extra + fromObjectives + fromCustodians + fromSupport;
 }
 
 export function activePlayers(state) {
@@ -274,7 +279,7 @@ export function currentAgenda(state) {
 
 /**
  * Agenda voting order: clockwise (or reverse) from the seat after the speaker,
- * with the speaker always last.
+ * with the speaker always last. Argent Flight (Zeal) always votes first.
  */
 export function votingOrder(state) {
   const seats = activePlayers(state);
@@ -292,7 +297,36 @@ export function votingOrder(state) {
       : (speakerIdx + i) % seats.length;
     others.push(seats[idx]);
   }
-  return [...others, seats[speakerIdx]];
+  let order = [...others, seats[speakerIdx]];
+
+  // Zeal: Argent Flight always votes first (even when order is reversed).
+  const argentIdx = order.findIndex(p => p.factionId === 'argent');
+  if (argentIdx > 0) {
+    const [argent] = order.splice(argentIdx, 1);
+    order = [argent, ...order];
+  }
+  return order;
+}
+
+/** Extra votes Argent casts when they spend ≥1 influence on a choice (player count). */
+export function argentFlightVoteBonus(state) {
+  return activePlayers(state).length;
+}
+
+export function isArgentFlightPlayer(player) {
+  return player?.factionId === 'argent';
+}
+
+/**
+ * Votes that count toward the outcome for a locked ballot.
+ * Argent: spent amount + playerCount when amount ≥ 1 and not abstaining.
+ */
+export function effectiveVoteAmount(state, player, vote) {
+  if (!vote || vote.choice === 'abstain') return 0;
+  const spent = Number(vote.amount) || 0;
+  if (spent <= 0) return 0;
+  if (isArgentFlightPlayer(player)) return spent + argentFlightVoteBonus(state);
+  return spent;
 }
 
 /** First player in voting order who has not locked their vote on the current agenda. */

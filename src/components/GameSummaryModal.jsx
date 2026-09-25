@@ -46,6 +46,21 @@ export function GameSummaryModal({ show, onClose }) {
             <div className="text-sm text-slate-400">Победитель</div>
             <div className="font-orbitron font-black text-3xl text-amber-400">{summary.winner}</div>
             <div className="font-bold text-lg text-slate-300">{summary.winningFaction}</div>
+            {(summary.expansions?.pok || summary.expansions?.te || summary.teController || summary.custodians) && (
+              <div className="mt-2 flex flex-wrap justify-center gap-2 text-[11px] text-slate-400">
+                {(summary.expansions?.pok || summary.expansions?.te) && (
+                  <span>
+                    {[summary.expansions.pok && 'PoK', summary.expansions.te && 'TE'].filter(Boolean).join(' · ')}
+                  </span>
+                )}
+                {summary.teController && (
+                  <span className="text-amber-400/90">TE контроль: {summary.teController.name}</span>
+                )}
+                {summary.custodians && (
+                  <span className="text-cyan-400/90">Хранители: {summary.custodians}</span>
+                )}
+              </div>
+            )}
           </div>
           <div className="bg-slate-950 p-4 rounded-xl border border-slate-800">
             <table className="w-full text-left text-sm">

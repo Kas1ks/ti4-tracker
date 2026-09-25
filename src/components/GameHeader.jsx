@@ -86,6 +86,8 @@ export function GameHeader({
   onOpenEventLog,
   onOpenExpedition,
   onOpenTech,
+  onUndoLast,
+  canUndo = false,
   turnOrder,
   activePlayer,
   passed,
@@ -105,13 +107,16 @@ export function GameHeader({
   roomStatus,
   perms,
   hideTurnBarOnMobile = false,
+  onLeaveRoom,
 }) {
   const role = perms?.role || ROLES.ADMIN;
   const isAdmin = role === ROLES.ADMIN;
+  const isViewer = role === ROLES.VIEWER;
   const canPhases = isAdmin;
   const canExport = isAdmin;
   const canEndGame = isAdmin;
   const canCombat = isAdmin;
+  const canUndoLast = isAdmin && typeof onUndoLast === 'function';
   const canPlayTurn = isAdmin || role === ROLES.PLAYER;
   const canNextTurn = isAdmin || role === ROLES.PLAYER;
 
@@ -121,7 +126,34 @@ export function GameHeader({
   const showTurnBar = isGameActive && turnOrder.length > 0 && activePlayer && !passed[activePlayer.id]
     && (isAdmin || canPlayTurn || role === ROLES.VIEWER);
 
-  const hasMoreItems = canPhases || canExport || canEndGame;
+  const hasMoreItems = canPhases || canExport || canEndGame || canUndoLast;
+  const leaveButton = typeof onLeaveRoom === 'function' && isViewer ? (
+    <button
+      type="button"
+      onClick={onLeaveRoom}
+      className={`${CTRL} bg-slate-950 hover:bg-rose-950/60 border-rose-800/70 text-rose-300`}
+      title="Покинуть комнату"
+    >
+      <i className="fa-solid fa-right-from-bracket" aria-hidden="true" />
+      <span>Выйти</span>
+    </button>
+  ) : null;
+  const undoButton = canUndoLast ? (
+    <button
+      type="button"
+      onClick={onUndoLast}
+      disabled={!canUndo}
+      title={canUndo ? 'Отменить последнее действие' : 'Нечего отменять'}
+      className={`${CTRL} ${
+        canUndo
+          ? 'bg-slate-950 hover:bg-orange-950/50 border-orange-800/70 text-orange-300'
+          : 'bg-slate-900 border-slate-800 text-slate-600 cursor-not-allowed'
+      }`}
+    >
+      <i className="fa-solid fa-rotate-left" aria-hidden="true" />
+      <span className="max-md:hidden">Отменить</span>
+    </button>
+  ) : null;
 
   return (
     <header
@@ -219,6 +251,7 @@ export function GameHeader({
                     onOpenExpedition={onOpenExpedition}
                   />
                 )}
+                {undoButton}
                 {!hasMoreItems && onOpenTech && (
                   <button
                     type="button"
@@ -241,10 +274,28 @@ export function GameHeader({
                     <span className="max-md:hidden">Журнал</span>
                   </button>
                 )}
+                {leaveButton}
               </div>
 
               {/* Mobile: full classic controls (unchanged layout) */}
               <div className="flex md:hidden items-center gap-2 flex-nowrap justify-end">
+                {leaveButton}
+                {canUndoLast && (
+                  <button
+                    type="button"
+                    onClick={onUndoLast}
+                    disabled={!canUndo}
+                    title={canUndo ? 'Отменить последнее действие' : 'Нечего отменять'}
+                    aria-label="Отменить"
+                    className={`inline-flex items-center justify-center h-9 w-9 rounded-xl border transition shadow ${
+                      canUndo
+                        ? 'bg-slate-950 hover:bg-orange-950/50 border-orange-800/70 text-orange-300'
+                        : 'bg-slate-900 border-slate-800 text-slate-600 cursor-not-allowed'
+                    }`}
+                  >
+                    <i className="fa-solid fa-rotate-left" aria-hidden="true" />
+                  </button>
+                )}
                 {canPhases && (
                   <div className="flex items-center gap-2 bg-slate-950 border border-slate-800 px-3 py-1.5 rounded-xl">
                     <span className={`font-bold text-xs uppercase ${isPoliticsActive ? 'text-purple-400' : 'text-slate-500'}`}>

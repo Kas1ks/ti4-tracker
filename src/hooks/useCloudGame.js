@@ -2,6 +2,7 @@ import { useRef, useState } from 'react';
 import { isCloudConfigured } from '../config';
 import { ALL_FACTIONS } from '../data/gameData';
 import { stampGameState } from '../game/gameState';
+import { rememberObjectiveIds } from '../game/objectiveHistory';
 import {
   clearCloudStats,
   createCloudSave,
@@ -87,6 +88,8 @@ export function useCloudGame({ game, dispatch, getPlayerScore, uiAlert, uiConfir
     const targetScore = meta.targetScore;
     const roundNumber = meta.roundNumber || 0;
 
+    rememberObjectiveIds((current?.objectives?.active || []).map(o => o.id));
+
     const gameRecord = {
       id: Date.now(),
       date: new Date().toLocaleDateString('ru-RU'),
@@ -96,6 +99,42 @@ export function useCloudGame({ game, dispatch, getPlayerScore, uiAlert, uiConfir
       winningFaction: winnerPlayer
         ? (ALL_FACTIONS.find(f => f.id === winnerPlayer.factionId)?.name || '')
         : '',
+      expansions: {
+        pok: !!meta.usePok,
+        te: !!meta.useTe,
+      },
+      objectives: (current?.objectives?.active || []).map(o => ({
+        id: o.id,
+        title: o.title,
+        stage: o.stage,
+        points: o.points,
+        scoredBy: players
+          .filter(p => current?.objectives?.completions?.[`${p.id}_${o.id}`])
+          .map(p => p.name),
+      })),
+      teController: (() => {
+        if (!meta.useTe || !current?.expedition?.completed) return null;
+        const ctrl = players.find(p => p.id === current.expedition.controllerId);
+        if (!ctrl) return null;
+        return {
+          name: ctrl.name,
+          faction: ALL_FACTIONS.find(f => f.id === ctrl.factionId)?.name || ctrl.factionId,
+        };
+      })(),
+      custodians: (() => {
+        const id = current?.vpTrack?.custodiansPlayerId;
+        if (id == null) return null;
+        const p = players.find(x => x.id === id);
+        return p ? p.name : null;
+      })(),
+      supports: Object.entries(current?.vpTrack?.supportHolders || {}).map(([fromId, holderId]) => {
+        const from = players.find(p => p.id === Number(fromId));
+        const holder = players.find(p => p.id === Number(holderId));
+        return {
+          from: from?.name || String(fromId),
+          holder: holder?.name || String(holderId),
+        };
+      }),
       players: players.map(p => ({
         name: p.name,
         damageDealt: p.damageDealt || 0,
@@ -104,6 +143,7 @@ export function useCloudGame({ game, dispatch, getPlayerScore, uiAlert, uiConfir
         totalTime: p.totalTime || 0,
         avgTurnTime: roundNumber > 0 ? Math.round((p.totalTime || 0) / roundNumber) : 0,
         isWinner: winnerPlayer ? p.id === winnerPlayer.id : false,
+        breakthrough: !!p.breakthrough,
       })),
     };
 

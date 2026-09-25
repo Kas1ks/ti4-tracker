@@ -1,6 +1,7 @@
 import { BASE_OBJECTIVES, DEFAULT_OBJECTIVES } from '../data/gameData';
 import { EXPEDITION_SLICE_IDS, emptyExpeditionSlices } from '../data/expedition';
-import { shuffleArray } from '../utils/game';
+import { shufflePreferFresh } from '../utils/game';
+import { readRecentObjectiveIds } from './objectiveHistory';
 
 export const GAME_STATE_VERSION = 1;
 export const GAME_STATE_KEY = 'ti4_game';
@@ -91,11 +92,46 @@ export const EMPTY_STARTING_TECH_DRAFT = Object.freeze({
   responses: Object.freeze({}),
 });
 
-export const freshStage1Deck = () =>
-  shuffleArray(BASE_OBJECTIVES.filter(obj => obj.stage === 1));
+/** Which expansion pool an objective belongs to (`base` | `pok` | `te`). */
+export function objectiveExp(obj) {
+  if (obj?.exp) return obj.exp;
+  const id = String(obj?.id || '');
+  if (/_p\d+$/.test(id) || id.includes('_p')) return 'pok';
+  if (/_t\d+$/.test(id) || id.includes('_t')) return 'te';
+  return 'base';
+}
 
-export const freshStage2Deck = () =>
-  shuffleArray(BASE_OBJECTIVES.filter(obj => obj.stage === 2));
+/** True if this public objective belongs in the deal for the chosen expansions. */
+export function objectiveInPool(obj, { usePok = false, useTe = false } = {}) {
+  const exp = objectiveExp(obj);
+  if (exp === 'pok') return !!usePok;
+  if (exp === 'te') return !!useTe;
+  return true;
+}
+
+export const freshStage1Deck = (opts = {}) => {
+  const pool = BASE_OBJECTIVES.filter(obj => obj.stage === 1 && objectiveInPool(obj, opts));
+  return shufflePreferFresh(pool, readRecentObjectiveIds());
+};
+
+export const freshStage2Deck = (opts = {}) => {
+  const pool = BASE_OBJECTIVES.filter(obj => obj.stage === 2 && objectiveInPool(obj, opts));
+  return shufflePreferFresh(pool, readRecentObjectiveIds());
+};
+
+export function decksForExpansions({ usePok = false, useTe = false } = {}) {
+  return {
+    stage1Deck: freshStage1Deck({ usePok, useTe }),
+    stage2Deck: freshStage2Deck({ usePok, useTe }),
+  };
+}
+
+/** Named VP outside secrets / public objs / free-form `extra` (Мек). */
+export const EMPTY_VP_TRACK = Object.freeze({
+  custodiansPlayerId: null,
+  /** fromPlayerId → holderPlayerId (who holds that seat's Support for the Throne). */
+  supportHolders: Object.freeze({}),
+});
 
 const emptyAgendas = () => [{ type: null, votes: {}, locked: {} }];
 
@@ -130,8 +166,11 @@ export function createEmptyGameState() {
     objectives: {
       active: DEFAULT_OBJECTIVES,
       completions: {},
-      stage1Deck: freshStage1Deck(),
-      stage2Deck: freshStage2Deck(),
+      ...decksForExpansions({ usePok: false, useTe: false }),
+    },
+    vpTrack: {
+      custodiansPlayerId: null,
+      supportHolders: {},
     },
     round: {
       active: false,
@@ -142,6 +181,7 @@ export function createEmptyGameState() {
       turnStartedAt: null,
       strategyActionTaken: false,
       expeditionClaimedThisTurn: false,
+      expeditionClaimedSliceId: null,
       strategyResolution: { ...EMPTY_STRATEGY_RESOLUTION },
       imperialClaim: { ...EMPTY_IMPERIAL_CLAIM },
       techResearch: { ...EMPTY_TECH_RESEARCH, picks: [], queueIds: [], byPlayer: {} },
@@ -214,6 +254,7 @@ function toFlat(raw) {
     completions: objectives.completions,
     stage1Deck: objectives.stage1Deck,
     stage2Deck: objectives.stage2Deck,
+    vpTrack: raw.vpTrack,
     roundActive: round.active,
     turnOrderIds: round.turnOrderIds,
     activeTurnIdx: round.activeTurnIdx,
@@ -222,6 +263,7 @@ function toFlat(raw) {
     turnStartedAt: round.turnStartedAt,
     strategyActionTaken: round.strategyActionTaken,
     expeditionClaimedThisTurn: !!round.expeditionClaimedThisTurn,
+    expeditionClaimedSliceId: round.expeditionClaimedSliceId ?? null,
     strategyResolution: round.strategyResolution,
     imperialClaim: round.imperialClaim,
     techResearch: round.techResearch,
@@ -433,6 +475,23 @@ function normalizeExpedition(value) {
   };
 }
 
+function normalizeVpTrack(value) {
+  const raw = asRecord(value);
+  const custodiansRaw = raw.custodiansPlayerId;
+  const custodiansPlayerId = custodiansRaw == null || custodiansRaw === ''
+    ? null
+    : (Number.isFinite(Number(custodiansRaw)) ? Number(custodiansRaw) : null);
+  const supportHolders = {};
+  Object.entries(asRecord(raw.supportHolders)).forEach(([fromId, holderId]) => {
+    const from = Number(fromId);
+    const holder = Number(holderId);
+    if (!Number.isFinite(from) || !Number.isFinite(holder)) return;
+    if (from === holder) return;
+    supportHolders[from] = holder;
+  });
+  return { custodiansPlayerId, supportHolders };
+}
+
 function normalizeGameEvents(value) {
   return asArray(value)
     .filter(entry => entry && typeof entry === 'object' && typeof entry.type === 'string')
@@ -467,9 +526,16 @@ export function normalizeGameState(raw) {
     objectives: {
       active: normalizeObjectives(flat.objectives),
       completions: asRecord(flat.completions),
-      stage1Deck: asArray(flat.stage1Deck, null) ?? freshStage1Deck(),
-      stage2Deck: asArray(flat.stage2Deck, null) ?? freshStage2Deck(),
+      stage1Deck: asArray(flat.stage1Deck, null) ?? freshStage1Deck({
+        usePok: !!flat.usePok,
+        useTe: !!flat.useTe,
+      }),
+      stage2Deck: asArray(flat.stage2Deck, null) ?? freshStage2Deck({
+        usePok: !!flat.usePok,
+        useTe: !!flat.useTe,
+      }),
     },
+    vpTrack: normalizeVpTrack(flat.vpTrack),
     round: {
       active: !!flat.roundActive,
       turnOrderIds: normalizeTurnOrderIds(flat, players),
@@ -479,6 +545,7 @@ export function normalizeGameState(raw) {
       turnStartedAt: Number.isFinite(flat.turnStartedAt) ? flat.turnStartedAt : null,
       strategyActionTaken: !!flat.strategyActionTaken,
       expeditionClaimedThisTurn: !!flat.expeditionClaimedThisTurn,
+      expeditionClaimedSliceId: flat.expeditionClaimedSliceId ?? null,
       strategyResolution: normalizeStrategyResolution(flat.strategyResolution),
       imperialClaim: normalizeImperialClaim(flat.imperialClaim),
       techResearch: normalizeTechResearch(flat.techResearch),

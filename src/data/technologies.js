@@ -11,6 +11,7 @@
  * @property {TechColor[]} prereqs
  * @property {TechSource} source
  * @property {string} [factionId]
+ * @property {string} [replaces] Generic unit upgrade id this faction card replaces
  * @property {boolean} [omega]
  * @property {string} [text]
  */
@@ -86,14 +87,14 @@ const GENERIC = [
 /** @type {Tech[]} */
 const UNIT_UPGRADES = [
   { id: 'carrier_2', name: 'Carrier II', color: null, kind: 'unit', prereqs: ['blue', 'blue'], source: 'base' },
-  { id: 'cruiser_2', name: 'Cruiser II', color: null, kind: 'unit', prereqs: ['green', 'yellow'], source: 'base' },
+  { id: 'cruiser_2', name: 'Cruiser II', color: null, kind: 'unit', prereqs: ['green', 'yellow', 'red'], source: 'base' },
   { id: 'destroyer_2', name: 'Destroyer II', color: null, kind: 'unit', prereqs: ['red', 'red'], source: 'base' },
   { id: 'dreadnought_2', name: 'Dreadnought II', color: null, kind: 'unit', prereqs: ['blue', 'blue', 'yellow'], source: 'base' },
   { id: 'fighter_2', name: 'Fighter II', color: null, kind: 'unit', prereqs: ['green', 'blue'], source: 'base' },
   { id: 'infantry_2', name: 'Infantry II', color: null, kind: 'unit', prereqs: ['green', 'green'], source: 'base' },
   { id: 'pds_2', name: 'PDS II', color: null, kind: 'unit', prereqs: ['red', 'yellow'], source: 'base' },
   { id: 'space_dock_2', name: 'Space Dock II', color: null, kind: 'unit', prereqs: ['yellow', 'yellow'], source: 'base' },
-  { id: 'war_sun', name: 'War Sun', color: null, kind: 'unit', prereqs: ['red', 'red', 'yellow', 'yellow'], source: 'base' },
+  { id: 'war_sun', name: 'War Sun', color: null, kind: 'unit', prereqs: ['red', 'red', 'red', 'yellow'], source: 'base' },
 ];
 
 /** @type {Tech[]} */
@@ -106,7 +107,7 @@ const FACTION_TECHS = [
   },
   {
     id: 'letani_warrior_2', name: 'Letani Warrior II', color: null, kind: 'unit',
-    prereqs: ['green', 'green'], source: 'base', factionId: 'arborec',
+    prereqs: ['green', 'green'], source: 'base', factionId: 'arborec', replaces: 'infantry_2',
     text: 'Production 2. После уничтожения — бросок: на 6+ положите юнит на эту карту. В начале следующего хода разместите каждый юнит с карты на планету под контролем в домашней системе.',
   },
   {
@@ -126,7 +127,7 @@ const FACTION_TECHS = [
   },
   {
     id: 'floating_factory_2', name: 'Floating Factory II', color: null, kind: 'unit',
-    prereqs: ['yellow', 'yellow'], source: 'base', factionId: 'saar',
+    prereqs: ['yellow', 'yellow'], source: 'base', factionId: 'saar', replaces: 'space_dock_2',
     text: 'Space Dock в космосе (не на планете). Может двигаться и отступать как корабль. При блокаде уничтожается. Production 7, Move 2, Capacity 5.',
   },
   {
@@ -136,7 +137,7 @@ const FACTION_TECHS = [
   },
   {
     id: 'prototype_war_sun_2', name: 'Prototype War Sun II', color: null, kind: 'unit',
-    prereqs: ['red', 'red', 'yellow', 'yellow'], source: 'base', factionId: 'muaat',
+    prereqs: ['red', 'red', 'red', 'yellow'], source: 'base', factionId: 'muaat', replaces: 'war_sun',
     text: 'Чужие юниты в этой системе теряют Planetary Shield. Sustain Damage, Bombardment 3×3. Cost 10, Combat 3, Move 3, Capacity 6.',
   },
   {
@@ -151,12 +152,12 @@ const FACTION_TECHS = [
   },
   {
     id: 'spec_ops_2', name: 'Spec Ops II', color: null, kind: 'unit',
-    prereqs: ['green', 'green'], source: 'base', factionId: 'sol',
+    prereqs: ['green', 'green'], source: 'base', factionId: 'sol', replaces: 'infantry_2',
     text: 'После уничтожения — бросок: на 5+ положите юнит на эту карту. В начале следующего хода разместите каждый юнит с карты на планету под контролем в домашней системе. Cost 1, Combat 6.',
   },
   {
     id: 'advanced_carrier_2', name: 'Advanced Carrier II', color: null, kind: 'unit',
-    prereqs: ['blue', 'blue'], source: 'base', factionId: 'sol',
+    prereqs: ['blue', 'blue'], source: 'base', factionId: 'sol', replaces: 'carrier_2',
     text: 'Sustain Damage. Cost 3, Combat 9, Move 2, Capacity 8.',
   },
   {
@@ -176,7 +177,7 @@ const FACTION_TECHS = [
   },
   {
     id: 'super_dreadnought_2', name: 'Super-Dreadnought II', color: null, kind: 'unit',
-    prereqs: ['blue', 'blue', 'yellow'], source: 'base', factionId: 'l1z1x',
+    prereqs: ['blue', 'blue', 'yellow'], source: 'base', factionId: 'l1z1x', replaces: 'dreadnought_2',
     text: '«Direct Hit» больше не действует на этот тип корабля. Sustain Damage, Bombardment 4. Cost 4, Combat 4, Move 2, Capacity 2.',
   },
   {
@@ -196,7 +197,7 @@ const FACTION_TECHS = [
   },
   {
     id: 'hybrid_crystal_fighter_2', name: 'Hybrid Crystal Fighter II', color: null, kind: 'unit',
-    prereqs: ['green', 'blue'], source: 'base', factionId: 'naalu',
+    prereqs: ['green', 'blue'], source: 'base', factionId: 'naalu', replaces: 'fighter_2',
     text: 'Может двигаться без транспорта. Истребители сверх capacity считаются за ½ корабля против fleet pool. Cost 1, Combat 7, Move 2.',
   },
   {
@@ -211,7 +212,7 @@ const FACTION_TECHS = [
   },
   {
     id: 'exotrireme_2', name: 'Exotrireme II', color: null, kind: 'unit',
-    prereqs: ['blue', 'blue', 'yellow'], source: 'base', factionId: 'saardakk',
+    prereqs: ['blue', 'blue', 'yellow'], source: 'base', factionId: 'saardakk', replaces: 'dreadnought_2',
     text: 'После раунда космического боя можете уничтожить этот юнит, чтобы уничтожить до 2 кораблей в системе. «Direct Hit» не действует. Sustain Damage, Bombardment 4×2. Cost 4, Combat 5, Move 2, Capacity 1.',
   },
   {
@@ -278,7 +279,7 @@ const FACTION_TECHS = [
   },
   {
     id: 'strike_wing_alpha_2', name: 'Strike Wing Alpha II', color: null, kind: 'unit',
-    prereqs: ['red', 'red'], source: 'pok', factionId: 'argent',
+    prereqs: ['red', 'red'], source: 'pok', factionId: 'argent', replaces: 'destroyer_2',
     text: 'При Anti-Fighter Barrage каждый результат 9–10 также уничтожает 1 чужую пехоту в космосе активной системы. AFB 6×3. Cost 1, Combat 7, Move 2, Capacity 1.',
   },
   {
@@ -298,7 +299,7 @@ const FACTION_TECHS = [
   },
   {
     id: 'crimson_legionnaire_2', name: 'Crimson Legionnaire II', color: null, kind: 'unit',
-    prereqs: ['green', 'green'], source: 'pok', factionId: 'mahact',
+    prereqs: ['green', 'green'], source: 'pok', factionId: 'mahact', replaces: 'infantry_2',
     text: 'После уничтожения — 1 commodity или конвертировать 1 commodity в ТГ; затем положите юнит на эту карту. В начале следующего хода разместите каждый юнит с карты на планету под контролем в домашней системе. Cost 1, Combat 7.',
   },
   {
@@ -323,17 +324,17 @@ const FACTION_TECHS = [
   },
   {
     id: 'saturn_engine_2', name: 'Saturn Engine II', color: null, kind: 'unit',
-    prereqs: ['green', 'yellow'], source: 'pok', factionId: 'titans',
+    prereqs: ['green', 'yellow', 'red'], source: 'pok', factionId: 'titans', replaces: 'cruiser_2',
     text: 'Cruiser II Титанов. Sustain Damage. Cost 2, Combat 6, Move 3, Capacity 2.',
   },
   {
     id: 'hel_titan_2', name: 'Hel-Titan II', color: null, kind: 'unit',
-    prereqs: ['red', 'yellow'], source: 'pok', factionId: 'titans',
+    prereqs: ['red', 'yellow'], source: 'pok', factionId: 'titans', replaces: 'pds_2',
     text: 'Считается структурой и наземным отрядом; нельзя транспортировать. Planetary Shield, Space Cannon 5, Sustain Damage, Production 1. Space Cannon можно использовать против кораблей в смежных системах. Combat 6.',
   },
   {
     id: 'dimensional_tear_2', name: 'Dimensional Tear II', color: null, kind: 'unit',
-    prereqs: ['yellow', 'yellow'], source: 'pok', factionId: 'vuilraith',
+    prereqs: ['yellow', 'yellow'], source: 'pok', factionId: 'vuilraith', replaces: 'space_dock_2',
     text: 'Система — gravity rift (ваши корабли не бросают за него). До 12 истребителей не считают против capacity. Production 7.',
   },
   {
@@ -707,12 +708,23 @@ export function techById(id) {
 
 /**
  * Techs visible for a seat given expansions and faction.
+ * Faction unit upgrades hide the generic upgrade they replace.
  */
 export function availableTechs({ usePok = false, useTe = false, factionId = null } = {}) {
+  const replaced = new Set();
+  if (factionId) {
+    for (const tech of ALL_TECHNOLOGIES) {
+      if (tech.factionId === factionId && tech.replaces) {
+        replaced.add(tech.replaces);
+      }
+    }
+  }
+
   return ALL_TECHNOLOGIES.filter(tech => {
     if (tech.source === 'pok' && !usePok) return false;
     if (tech.source === 'te' && !useTe) return false;
     if (tech.factionId && tech.factionId !== factionId) return false;
+    if (!tech.factionId && replaced.has(tech.id)) return false;
     return true;
   });
 }
@@ -744,12 +756,29 @@ function colorDeficit(need, counts) {
   return missing;
 }
 
-function withSynergyRemap(counts, from, to) {
-  return {
-    ...counts,
-    [from]: 0,
-    [to]: (counts[from] || 0) + (counts[to] || 0),
-  };
+/**
+ * Breakthrough synergy: each owned tech of either synergy color may count as
+ * either color. Other colors stay fixed. Equivalent to pooling the pair.
+ */
+function colorDeficitWithSynergy(need, counts, synergyColors) {
+  if (!synergyColors || synergyColors.length !== 2) {
+    return colorDeficit(need, counts);
+  }
+  const [a, b] = synergyColors;
+  if (!TECH_COLORS.includes(a) || !TECH_COLORS.includes(b) || a === b) {
+    return colorDeficit(need, counts);
+  }
+
+  let missing = 0;
+  for (const color of TECH_COLORS) {
+    if (color === a || color === b) continue;
+    const gap = (need[color] || 0) - (counts[color] || 0);
+    if (gap > 0) missing += gap;
+  }
+  const needPair = (need[a] || 0) + (need[b] || 0);
+  const havePair = (counts[a] || 0) + (counts[b] || 0);
+  if (needPair > havePair) missing += needPair - havePair;
+  return missing;
 }
 
 /**
@@ -765,15 +794,8 @@ export function canResearch(tech, ownedIds, opts = {}) {
   const ignoreCount = Math.max(0, Number(opts.ignoreCount) || 0);
   const need = prereqNeed(tech.prereqs);
   const baseCounts = ownedColorCounts(ownedIds);
-  const synergy = opts.synergyColors;
-
-  if (colorDeficit(need, baseCounts) <= ignoreCount) return true;
-  if (!synergy || synergy.length !== 2) return false;
-
-  const [a, b] = synergy;
-  if (colorDeficit(need, withSynergyRemap(baseCounts, a, b)) <= ignoreCount) return true;
-  if (colorDeficit(need, withSynergyRemap(baseCounts, b, a)) <= ignoreCount) return true;
-  return false;
+  const missing = colorDeficitWithSynergy(need, baseCounts, opts.synergyColors);
+  return missing <= ignoreCount;
 }
 
 /** Human-readable gap for UI error when research is blocked. */
@@ -784,21 +806,36 @@ export function prereqGapMessage(tech, ownedIds, opts = {}) {
   const need = prereqNeed(tech.prereqs);
   const counts = ownedColorCounts(ownedIds);
   const synergy = opts.synergyColors;
-  let best = counts;
+  const missing = [];
+
   if (synergy?.length === 2) {
     const [a, b] = synergy;
-    const c1 = withSynergyRemap(counts, a, b);
-    const c2 = withSynergyRemap(counts, b, a);
-    best = colorDeficit(need, c1) <= colorDeficit(need, c2) ? c1 : c2;
-  }
-  const missing = [];
-  for (const color of TECH_COLORS) {
-    const gap = (need[color] || 0) - (best[color] || 0);
-    if (gap > 0) {
-      const label = TECH_COLOR_META[color]?.label || color;
-      missing.push(`${gap}× ${label}`);
+    for (const color of TECH_COLORS) {
+      if (color === a || color === b) continue;
+      const gap = (need[color] || 0) - (counts[color] || 0);
+      if (gap > 0) {
+        const label = TECH_COLOR_META[color]?.label || color;
+        missing.push(`${gap}× ${label}`);
+      }
+    }
+    const needPair = (need[a] || 0) + (need[b] || 0);
+    const havePair = (counts[a] || 0) + (counts[b] || 0);
+    const pairGap = needPair - havePair;
+    if (pairGap > 0) {
+      const la = TECH_COLOR_META[a]?.label || a;
+      const lb = TECH_COLOR_META[b]?.label || b;
+      missing.push(`${pairGap}× (${la}/${lb} synergy)`);
+    }
+  } else {
+    for (const color of TECH_COLORS) {
+      const gap = (need[color] || 0) - (counts[color] || 0);
+      if (gap > 0) {
+        const label = TECH_COLOR_META[color]?.label || color;
+        missing.push(`${gap}× ${label}`);
+      }
     }
   }
+
   if (!missing.length) return '';
   return `Не хватает пререквизитов: ${missing.join(', ')}`;
 }
