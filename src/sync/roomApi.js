@@ -105,8 +105,11 @@ export function subscribeRoom(roomId, onMessage, onStatus) {
   };
 
   return () => {
+    source.onerror = null;
+    source.onmessage = null;
+    source.onopen = null;
     source.close();
-    onStatus?.('closed');
+    // Do not emit 'closed' on intentional unsubscribe — leaveRoom sets idle itself.
   };
 }
 

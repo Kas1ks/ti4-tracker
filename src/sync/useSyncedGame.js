@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 import { clearGameState, loadGameState, saveGameState, stampGameState } from '../game/gameState';
 import { reduceGame } from '../game/gameEvents';
-import { can, ROLES } from './permissions';
+import { can, ROLES, authorizeAction } from './permissions';
 import {
   clearRoomSession,
   loadRoomSession,
@@ -27,6 +27,23 @@ import { parseRoomActionResult, parseRoomPublicView } from './roomContract';
 function syncedReducer(state, action) {
   if (action?.type === '__REPLACE__') return action.state;
   return reduceGame(state, action);
+}
+
+function playerGateMessage(error) {
+  switch (error) {
+    case 'not-your-turn':
+      return 'Сейчас не ваш ход.';
+    case 'strategy-required':
+      return 'Сначала нужно сыграть все карты стратегий.';
+    case 'strategy-resolving':
+      return 'Сначала завершите розыгрыш стратегии.';
+    case 'imperial-claim':
+      return 'Сначала завершите заявку Imperial.';
+    case 'forbidden':
+      return 'Это действие сейчас недоступно.';
+    default:
+      return error ? String(error) : 'Действие отклонено.';
+  }
 }
 
 /**
@@ -57,6 +74,8 @@ export function useSyncedGame() {
   const roomRef = useRef(null);
   const gameRef = useRef(game);
   const soloUndoStackRef = useRef([]);
+  /** Bumped on leave / reset so in-flight join/restore cannot reattach. */
+  const sessionGenRef = useRef(0);
   gameRef.current = game;
 
   const clearSoloUndo = useCallback(() => {
@@ -67,6 +86,7 @@ export function useSyncedGame() {
   /** Apply server/SSE state only if seq is not older than what we already have. */
   const applyAuthoritativeState = useCallback((seq, state, extras = {}) => {
     if (!state) return false;
+    if (!roomRef.current?.roomId) return false;
     if (typeof seq === 'number') {
       if (seq < seqRef.current) return false;
       seqRef.current = seq;
@@ -130,19 +150,22 @@ export function useSyncedGame() {
     const saved = loadRoomSession();
     if (!saved?.roomId) return undefined;
 
+    const gen = sessionGenRef.current;
     let cancelled = false;
     setRoomStatus('connecting');
 
     fetchRoomSnapshot(saved.roomId)
       .then((snap) => {
-        if (cancelled) return;
+        if (cancelled || sessionGenRef.current !== gen) return;
+        const still = loadRoomSession();
+        if (!still?.roomId || still.roomId !== saved.roomId) return;
         if (!snap?.state) throw new Error('not-found');
         const view = parseRoomPublicView(snap);
         seqRef.current = typeof snap.seq === 'number' ? snap.seq : (saved.seq || 0);
         setGame({ type: '__REPLACE__', state: snap.state });
         if (typeof snap.canUndo === 'boolean') setCanUndo(snap.canUndo);
         else if (view) setCanUndo(view.canUndo);
-        setRoom({
+        const next = {
           roomId: saved.roomId,
           hostKey: saved.hostKey,
           sessionToken: saved.sessionToken,
@@ -151,15 +174,19 @@ export function useSyncedGame() {
           seatSecret: loadSeatSecret(saved.roomId, saved.seatPlayerId),
           seq: seqRef.current,
           claimedSeats: snap.claimedSeats || [],
-        });
+        };
+        roomRef.current = next;
+        setRoom(next);
         setRoomStatus('live');
         setRoomError(null);
       })
       .catch((err) => {
-        if (cancelled) return;
+        if (cancelled || sessionGenRef.current !== gen) return;
         clearRoomSession();
+        roomRef.current = null;
         setRoom(null);
         setRoomStatus('solo');
+        setGame({ type: 'RESET_GAME' });
         setRoomError(`Комната недоступна: ${err.message || err}`);
       });
 
@@ -172,12 +199,15 @@ export function useSyncedGame() {
     if (!room?.roomId) return undefined;
 
     const ejectStaleSession = (message) => {
+      sessionGenRef.current += 1;
+      roomRef.current = null;
       clearRoomSession();
       setRoom(null);
       setRoomStatus('solo');
       clearSoloUndo();
       setGame({ type: 'RESET_GAME' });
       setRoomError(message);
+      setSyncLink('idle');
     };
 
     const unsubscribe = subscribeRoom(
@@ -238,9 +268,11 @@ export function useSyncedGame() {
       }
       },
       (status) => {
+        // Ignore link events after leave (cleanup close) or mid-reattach.
+        if (!roomRef.current?.roomId) return;
         if (status === 'open') setSyncLink('open');
         else if (status === 'reconnecting') setSyncLink('reconnecting');
-        else if (status === 'closed') setSyncLink((prev) => (prev === 'reconnecting' ? prev : 'closed'));
+        else if (status === 'closed') setSyncLink('closed');
       },
     );
 
@@ -295,7 +327,8 @@ export function useSyncedGame() {
       return;
     }
 
-    // Soft client gate (server still enforces)
+    // Soft client gate (server still enforces) + mirror authorizeAction to avoid
+    // optimistic UI flashes for forbidden PASS_TURN / SET_SPEAKER / etc.
     if (current.role === ROLES.PLAYER) {
       const soft = [
         'PICK_CARD', 'UNDO_PICK', 'PLAY_STRATEGY', 'RESOLVE_STRATEGY', 'PASS_TURN', 'NEXT_TURN',
@@ -312,6 +345,16 @@ export function useSyncedGame() {
       ];
       if (!soft.includes(stamped.type)) {
         setRoomError('Только админ может это сделать');
+        return;
+      }
+      const gate = authorizeAction({
+        role: current.role,
+        seatPlayerId: current.seatPlayerId,
+        action: stamped,
+        state: gameRef.current,
+      });
+      if (!gate.ok) {
+        setRoomError(playerGateMessage(gate.error));
         return;
       }
     }
@@ -336,12 +379,15 @@ export function useSyncedGame() {
         console.error('[room] action failed', err);
         const message = String(err.message || err);
         if (message === 'unauthorized' || message.includes('unauthorized')) {
+          sessionGenRef.current += 1;
+          roomRef.current = null;
           clearRoomSession();
           setRoom(null);
           setRoomStatus('solo');
           clearSoloUndo();
           setGame({ type: 'RESET_GAME' });
           setRoomError('Сессия места устарела. Войдите в комнату снова со своим кодом места.');
+          setSyncLink('idle');
           return;
         }
         setRoomError(message);
@@ -357,10 +403,12 @@ export function useSyncedGame() {
   }, [applyAuthoritativeState, clearSoloUndo]);
 
   const startHostRoom = useCallback(async (createSecret) => {
+    const gen = sessionGenRef.current;
     setRoomStatus('connecting');
     setRoomError(null);
     try {
       const created = await createRoom(game, { createSecret });
+      if (sessionGenRef.current !== gen) return created;
       seqRef.current = created.seq || 0;
       clearSoloUndo();
       setCanUndo(typeof created.canUndo === 'boolean' ? created.canUndo : false);
@@ -373,11 +421,13 @@ export function useSyncedGame() {
         seatPlayerId: null,
         claimedSeats: created.claimedSeats || [],
       };
+      roomRef.current = next;
       setRoom(next);
       saveRoomSession(next);
       setRoomStatus('live');
       return created;
     } catch (err) {
+      if (sessionGenRef.current !== gen) throw err;
       setRoomStatus('error');
       setRoomError(String(err.message || err));
       throw err;
@@ -388,6 +438,7 @@ export function useSyncedGame() {
     const id = String(roomId || '').trim().toUpperCase();
     if (!id) throw new Error('missing-room');
     const joinRole = role === ROLES.VIEWER ? ROLES.VIEWER : ROLES.PLAYER;
+    const gen = sessionGenRef.current;
     setRoomStatus('connecting');
     setRoomError(null);
     try {
@@ -396,6 +447,7 @@ export function useSyncedGame() {
         seatPlayerId: joinRole === ROLES.PLAYER ? seatPlayerId : undefined,
         seatSecret: joinRole === ROLES.PLAYER ? seatSecret : undefined,
       });
+      if (sessionGenRef.current !== gen) return joined;
       seqRef.current = joined.seq || 0;
       setGame({ type: '__REPLACE__', state: joined.state });
       clearSoloUndo();
@@ -413,11 +465,13 @@ export function useSyncedGame() {
         seatSecret: joined.seatSecret || null,
         claimedSeats: joined.claimedSeats || [],
       };
+      roomRef.current = next;
       setRoom(next);
       saveRoomSession(next);
       setRoomStatus('live');
       return joined;
     } catch (err) {
+      if (sessionGenRef.current !== gen) throw err;
       setRoomStatus('error');
       setRoomError(String(err.message || err));
       throw err;
@@ -440,6 +494,8 @@ export function useSyncedGame() {
   }, []);
 
   const leaveRoom = useCallback(() => {
+    sessionGenRef.current += 1;
+    roomRef.current = null;
     clearRoomSession();
     clearGameState();
     clearSoloUndo();

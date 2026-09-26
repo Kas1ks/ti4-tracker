@@ -92,6 +92,7 @@ export function useCloudGame({ game, dispatch, getPlayerScore, uiAlert, uiConfir
 
     const gameRecord = {
       id: Date.now(),
+      schemaVersion: 2,
       date: new Date().toLocaleDateString('ru-RU'),
       targetScore,
       roundsCount: roundNumber,
@@ -112,6 +113,15 @@ export function useCloudGame({ game, dispatch, getPlayerScore, uiAlert, uiConfir
           .filter(p => current?.objectives?.completions?.[`${p.id}_${o.id}`])
           .map(p => p.name),
       })),
+      strategyPicks: (Array.isArray(meta.strategyPickHistory) ? meta.strategyPickHistory : []).map((pick) => {
+        const seat = players.find(p => p.id === pick.playerId);
+        return {
+          round: pick.round,
+          cardId: pick.cardId,
+          playerId: pick.playerId,
+          player: seat?.name || String(pick.playerId),
+        };
+      }),
       teController: (() => {
         if (!meta.useTe || !current?.expedition?.completed) return null;
         const ctrl = players.find(p => p.id === current.expedition.controllerId);
@@ -138,12 +148,15 @@ export function useCloudGame({ game, dispatch, getPlayerScore, uiAlert, uiConfir
       players: players.map(p => ({
         name: p.name,
         damageDealt: p.damageDealt || 0,
+        factionId: p.factionId || null,
         faction: ALL_FACTIONS.find(f => f.id === p.factionId)?.name || p.factionId,
         score: getPlayerScore(p.id),
         totalTime: p.totalTime || 0,
         avgTurnTime: roundNumber > 0 ? Math.round((p.totalTime || 0) / roundNumber) : 0,
         isWinner: winnerPlayer ? p.id === winnerPlayer.id : false,
         breakthrough: !!p.breakthrough,
+        eliminated: !!p.eliminated,
+        eliminatedRound: p.eliminated && Number.isFinite(p.eliminatedRound) ? p.eliminatedRound : null,
       })),
     };
 

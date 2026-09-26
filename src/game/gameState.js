@@ -162,6 +162,7 @@ export function createEmptyGameState() {
       speakerId: null,
       isPoliticsActive: false,
       isAgendaPhasePending: false,
+      strategyPickHistory: [],
     },
     players: [],
     objectives: {
@@ -250,6 +251,7 @@ function toFlat(raw) {
     speakerId: meta.speakerId,
     isPoliticsActive: meta.isPoliticsActive,
     isAgendaPhasePending: meta.isAgendaPhasePending,
+    strategyPickHistory: meta.strategyPickHistory,
     players: raw.players,
     objectives: objectives.active,
     completions: objectives.completions,
@@ -437,12 +439,16 @@ function normalizePlayer(player) {
     : !!player.strategyPlayed;
   const techIds = asArray(player.techIds).filter(id => typeof id === 'string');
   const startingTechIds = asArray(player.startingTechIds).filter(id => typeof id === 'string');
+  const eliminated = !!player.eliminated;
+  const elimRound = Number(player.eliminatedRound);
   return {
     ...player,
     cards,
     playedCardIds,
     strategyPlayed,
     breakthrough: !!player.breakthrough,
+    eliminated,
+    eliminatedRound: eliminated && Number.isFinite(elimRound) && elimRound > 0 ? elimRound : null,
     techIds,
     startingTechIds,
   };
@@ -504,6 +510,20 @@ function normalizeGameEvents(value) {
     .slice(-200);
 }
 
+function normalizeStrategyPickHistory(value) {
+  return asArray(value)
+    .map((entry) => {
+      if (!entry || typeof entry !== 'object') return null;
+      const round = Number(entry.round);
+      const playerId = Number(entry.playerId);
+      const cardId = Number(entry.cardId);
+      if (!Number.isFinite(round) || round < 1) return null;
+      if (!Number.isFinite(playerId) || !Number.isFinite(cardId)) return null;
+      return { round, playerId, cardId };
+    })
+    .filter(Boolean);
+}
+
 /** Accepts a nested doc, a legacy flat snapshot, or junk, and returns a valid doc. */
 export function normalizeGameState(raw) {
   // Migrations assume the nested document shape. Flat legacy snapshots skip them —
@@ -527,6 +547,7 @@ export function normalizeGameState(raw) {
       speakerId: flat.speakerId ?? null,
       isPoliticsActive: !!flat.isPoliticsActive,
       isAgendaPhasePending: !!flat.isAgendaPhasePending,
+      strategyPickHistory: normalizeStrategyPickHistory(flat.strategyPickHistory),
     },
     players,
     objectives: {

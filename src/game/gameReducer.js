@@ -231,7 +231,12 @@ function passTurn(state, playerId, at = Date.now()) {
 function eliminatePlayer(state, playerId, at = Date.now()) {
   if (!state.players.some(p => p.id === playerId)) return state;
 
-  let next = patchPlayer(state, playerId, () => ({ eliminated: true }));
+  let next = patchPlayer(state, playerId, (p) => ({
+    eliminated: true,
+    eliminatedRound: Number.isFinite(p.eliminatedRound) && p.eliminatedRound > 0
+      ? p.eliminatedRound
+      : (state.meta?.roundNumber || 1),
+  }));
   next = withRound(next, { passed: { ...next.round.passed, [playerId]: true } });
 
   const resolution = next.round?.strategyResolution;
@@ -566,7 +571,14 @@ function confirmDraft(state) {
     cardsByPlayer.set(playerId, owned);
   });
 
-  const next = mapPlayers(state, player => {
+  const round = state.meta?.roundNumber || 1;
+  const newPicks = Object.entries(state.draft.assignments).map(([cardId, playerId]) => ({
+    round,
+    playerId: Number(playerId),
+    cardId: Number(cardId),
+  })).filter((p) => Number.isFinite(p.playerId) && Number.isFinite(p.cardId));
+
+  const nextPlayers = mapPlayers(state, player => {
     const cardIds = (cardsByPlayer.get(player.id) || []).sort((a, b) => a - b);
     return {
       ...player,
@@ -585,7 +597,14 @@ function confirmDraft(state) {
       : (strategyCardBonuses[card.id] || 0) + 1;
   });
 
-  return withDraft(next, { ...clearedDraft, strategyCardBonuses });
+  const prevHistory = Array.isArray(state.meta?.strategyPickHistory)
+    ? state.meta.strategyPickHistory
+    : [];
+
+  return withMeta(
+    withDraft(nextPlayers, { ...clearedDraft, strategyCardBonuses }),
+    { strategyPickHistory: [...prevHistory, ...newPicks] },
+  );
 }
 
 function confirmStatusPhase(state) {
@@ -1136,6 +1155,7 @@ export function gameReducer(state, action) {
           totalTime: 0,
           damageDealt: 0,
           eliminated: false,
+          eliminatedRound: null,
           breakthrough: false,
           techIds: [],
           startingTechIds: [],
@@ -1566,7 +1586,8 @@ export function gameReducer(state, action) {
 
     // --- Whole-document changes ---
     case 'LOAD_STATE':
-      return { ...normalizeGameState(action.state), isGameActive: true };
+      // Preserve active/lobby flag from the snapshot (do not force a started game).
+      return normalizeGameState(action.state);
 
     case 'RESET_GAME':
       return createEmptyGameState();

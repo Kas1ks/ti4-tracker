@@ -711,6 +711,8 @@ function App() {
             onPass={(playerId) => dispatch({ type: 'PASS_TECH_RESEARCH', playerId })}
             onGrantTech={(playerId, techId) => dispatch({ type: 'GRANT_TECH', playerId, techId })}
             onRevokeTech={(playerId, techId) => dispatch({ type: 'REVOKE_TECH', playerId, techId })}
+            onGrantBreakthrough={(playerId) => dispatch({ type: 'GRANT_BREAKTHROUGH', playerId })}
+            onRevokeBreakthrough={(playerId) => dispatch({ type: 'REVOKE_BREAKTHROUGH', playerId })}
             onMinimize={() => {
               if (showTechResearchModal) ui.toggleMinimize('techResearch');
               else ui.setShowTechModal(false);

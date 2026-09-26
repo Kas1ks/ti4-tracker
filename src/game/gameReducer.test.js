@@ -276,6 +276,44 @@ describe('strategy card draft', () => {
     expect(state.draft.strategyCardBonuses[1]).toBe(1);
     expect(state.draft.queue).toEqual([]);
     expect(state.draft.showModal).toBe(false);
+    expect(state.meta.strategyPickHistory).toEqual(
+      expect.arrayContaining([
+        { round: 1, playerId: 1, cardId: 4 },
+        { round: 1, playerId: 2, cardId: 3 },
+        { round: 1, playerId: 1, cardId: 8 },
+        { round: 1, playerId: 2, cardId: 7 },
+      ]),
+    );
+    expect(state.meta.strategyPickHistory).toHaveLength(4);
+  });
+
+  it('appends strategy picks across rounds into meta history', () => {
+    let state = gameWith([player(1, 'A'), player(2, 'B')]);
+    state = play(state, [
+      { type: 'OPEN_DRAFT' },
+      { type: 'PICK_CARD', cardId: 1 },
+      { type: 'PICK_CARD', cardId: 2 },
+      { type: 'PICK_CARD', cardId: 3 },
+      { type: 'PICK_CARD', cardId: 4 },
+      { type: 'CONFIRM_DRAFT' },
+    ]);
+    // Simulate next round setup (cards cleared, round bumped) so draft can reopen.
+    state = {
+      ...state,
+      meta: { ...state.meta, roundNumber: 2 },
+      players: state.players.map((p) => ({ ...p, cards: [], strategyPlayed: false, playedCardIds: [] })),
+      round: { ...state.round, active: false, turnOrderIds: [] },
+    };
+    state = play(state, [
+      { type: 'OPEN_DRAFT' },
+      { type: 'PICK_CARD', cardId: 5 },
+      { type: 'PICK_CARD', cardId: 6 },
+      { type: 'PICK_CARD', cardId: 7 },
+      { type: 'PICK_CARD', cardId: 8 },
+      { type: 'CONFIRM_DRAFT' },
+    ]);
+    expect(state.meta.strategyPickHistory).toHaveLength(8);
+    expect(state.meta.strategyPickHistory.filter((p) => p.round === 2)).toHaveLength(4);
   });
 
   it('keeps stacking the bonus over rounds a card is skipped', () => {
@@ -667,8 +705,16 @@ describe('eliminating a player', () => {
   it('passes them and moves the turn on if it was theirs', () => {
     const state = dispatch(running(), { type: 'ELIMINATE_PLAYER', playerId: 1 });
     expect(state.players.find(p => p.id === 1).eliminated).toBe(true);
+    expect(state.players.find(p => p.id === 1).eliminatedRound).toBe(1);
     expect(state.round.passed[1]).toBe(true);
     expect(activePlayer(state).id).toBe(2);
+  });
+
+  it('records the current round number on elimination', () => {
+    let state = running();
+    state = { ...state, meta: { ...state.meta, roundNumber: 4 } };
+    state = dispatch(state, { type: 'ELIMINATE_PLAYER', playerId: 2 });
+    expect(state.players.find(p => p.id === 2).eliminatedRound).toBe(4);
   });
 
   it('leaves the turn alone when someone else is eliminated', () => {
@@ -1536,16 +1582,22 @@ describe('Starting tech draft', () => {
 });
 
 describe('whole-document actions', () => {
-  it('loads a snapshot and marks the game active', () => {
-    const state = dispatch(createEmptyGameState(), {
+  it('loads a snapshot and preserves isGameActive from the document', () => {
+    const lobby = dispatch(createEmptyGameState(), {
       type: 'LOAD_STATE',
-      state: { players: [player(1, 'A')], roundNumber: 6, targetScore: 12 },
+      state: { players: [player(1, 'A')], roundNumber: 6, targetScore: 12, isGameActive: false },
     });
-    expect(state).toMatchObject({
-      isGameActive: true,
+    expect(lobby).toMatchObject({
+      isGameActive: false,
       meta: expect.objectContaining({ roundNumber: 6, targetScore: 12 }),
     });
-    expect(state.players).toHaveLength(1);
+    expect(lobby.players).toHaveLength(1);
+
+    const active = dispatch(createEmptyGameState(), {
+      type: 'LOAD_STATE',
+      state: { players: [player(1, 'A')], roundNumber: 2, isGameActive: true },
+    });
+    expect(active.isGameActive).toBe(true);
   });
 
   it('resets to an empty game', () => {

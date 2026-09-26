@@ -8,17 +8,23 @@ export function SyncStatusBanner({
   onDismissError,
 }) {
   const reconnecting = syncLink === 'reconnecting';
-  if (!roomError && !reconnecting) return null;
+  const closed = syncLink === 'closed';
+  if (!roomError && !reconnecting && !closed) return null;
 
-  const isError = !!roomError;
+  const isError = !!roomError || closed;
   const tone = isError
     ? 'border-red-500/70 bg-red-950/95 text-red-100'
     : 'border-amber-500/70 bg-amber-950/95 text-amber-100';
   const icon = isError ? 'fa-triangle-exclamation' : 'fa-wifi';
-  const title = isError ? 'Синхронизация' : 'Переподключение…';
-  const body = isError
-    ? roomError
-    : 'Связь с комнатой прервалась. Ждём восстановление потока…';
+  const title = roomError
+    ? 'Синхронизация'
+    : closed
+      ? 'Связь потеряна'
+      : 'Переподключение…';
+  const body = roomError
+    || (closed
+      ? 'Поток комнаты закрыт. Обновите страницу или зайдите снова.'
+      : 'Связь с комнатой прервалась. Ждём восстановление потока…');
 
   return (
     <div
@@ -40,7 +46,7 @@ export function SyncStatusBanner({
             </div>
             <p className="text-sm leading-snug whitespace-pre-wrap">{body}</p>
           </div>
-          {isError && typeof onDismissError === 'function' ? (
+          {roomError && typeof onDismissError === 'function' ? (
             <button
               type="button"
               onClick={onDismissError}
