@@ -194,28 +194,42 @@ export function joinRoom(room, { role, seatPlayerId, seatSecret } = {}) {
 }
 
 /**
- * Host frees a seat so the next join does not need the old secret.
+ * Free a claimed seat (host can free any; player can free only their own).
+ * Clears claim + seat secret so the next join starts fresh.
  */
 export function releaseSeat(room, seatPlayerId, auth = {}) {
   let role = null;
+  let sessionSeatId = null;
   if (auth.sessionToken && room.sessions?.[auth.sessionToken]) {
     role = room.sessions[auth.sessionToken].role;
+    sessionSeatId = room.sessions[auth.sessionToken].seatPlayerId;
   } else if (auth.hostKey && auth.hostKey === room.hostKey) {
     role = ROLES.ADMIN;
   } else {
     return { ok: false, error: 'unauthorized' };
   }
-  if (role !== ROLES.ADMIN) {
-    return { ok: false, error: 'forbidden' };
-  }
 
   const seat = room.state.players.find(p => String(p.id) === String(seatPlayerId));
   if (!seat) return { ok: false, error: 'unknown-seat' };
+
+  const isAdmin = role === ROLES.ADMIN;
+  const isSelf = role === ROLES.PLAYER
+    && sessionSeatId != null
+    && String(sessionSeatId) === String(seat.id)
+    && room.seatClaims?.[seat.id] === auth.sessionToken;
+
+  if (!isAdmin && !isSelf) {
+    return { ok: false, error: 'forbidden' };
+  }
 
   const previousToken = room.seatClaims?.[seat.id] ?? null;
   const sessions = { ...(room.sessions || {}) };
   if (previousToken && sessions[previousToken]) {
     delete sessions[previousToken];
+  }
+  // Also drop the caller's session if it differs (should not for self-release).
+  if (auth.sessionToken && sessions[auth.sessionToken]) {
+    delete sessions[auth.sessionToken];
   }
 
   const seatClaims = { ...(room.seatClaims || {}) };

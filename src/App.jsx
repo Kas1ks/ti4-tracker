@@ -383,9 +383,9 @@ function App() {
     }
   };
 
-  const handleLeaveRoom = () => {
+  const handleLeaveRoom = async () => {
     setSoloSetup(false);
-    leaveRoom();
+    await leaveRoom();
   };
 
   return (

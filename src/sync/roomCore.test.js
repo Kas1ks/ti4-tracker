@@ -129,6 +129,31 @@ describe('roomCore', () => {
     expect(again.seatSecret).not.toBe(joined.seatSecret);
   });
 
+  it('lets a player release their own seat on leave', () => {
+    let room = createRoomRecord(normalizeGameState({
+      players: [player(1, 'A'), player(2, 'B')],
+    }));
+    const a = joinRoom(room, { role: ROLES.PLAYER, seatPlayerId: 1 });
+    room = a.room;
+    const b = joinRoom(room, { role: ROLES.PLAYER, seatPlayerId: 2 });
+    room = b.room;
+
+    const denied = releaseSeat(room, 1, { sessionToken: b.sessionToken });
+    expect(denied.ok).toBe(false);
+    expect(denied.error).toBe('forbidden');
+
+    const self = releaseSeat(room, 1, { sessionToken: a.sessionToken });
+    expect(self.ok).toBe(true);
+    expect(self.room.seatClaims[1]).toBeUndefined();
+    expect(self.room.seatSecrets[1]).toBeUndefined();
+    expect(self.room.sessions[a.sessionToken]).toBeUndefined();
+    expect(self.room.seatClaims[2]).toBe(b.sessionToken);
+
+    const reclaim = joinRoom(self.room, { role: ROLES.PLAYER, seatPlayerId: 1 });
+    expect(reclaim.ok).toBe(true);
+    expect(reclaim.reclaimed).toBe(false);
+  });
+
   it('ends the party for everyone and clears seat claims on RESET_GAME', () => {
     let room = createRoomRecord(normalizeGameState({
       isGameActive: true,

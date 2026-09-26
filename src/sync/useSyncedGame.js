@@ -16,7 +16,7 @@ import {
   releaseSeat as releaseSeatApi,
   subscribeRoom,
 } from './roomApi';
-import { loadSeatSecret, saveSeatSecret } from './seatSecrets';
+import { loadSeatSecret, saveSeatSecret, clearSeatSecret } from './seatSecrets';
 import {
   popUndoSnapshot,
   pushUndoSnapshot,
@@ -493,7 +493,27 @@ export function useSyncedGame() {
     return result;
   }, []);
 
-  const leaveRoom = useCallback(() => {
+  const leaveRoom = useCallback(async () => {
+    const current = roomRef.current;
+
+    // Player leave must free the seat so the host stops seeing "online".
+    if (
+      current?.roomId
+      && current.role === ROLES.PLAYER
+      && current.seatPlayerId != null
+      && current.sessionToken
+    ) {
+      try {
+        await releaseSeatApi(current.roomId, {
+          seatPlayerId: current.seatPlayerId,
+          sessionToken: current.sessionToken,
+        });
+      } catch (err) {
+        console.error('[room] release seat on leave failed', err);
+      }
+      clearSeatSecret(current.roomId, current.seatPlayerId);
+    }
+
     sessionGenRef.current += 1;
     roomRef.current = null;
     clearRoomSession();
