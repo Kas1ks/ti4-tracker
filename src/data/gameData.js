@@ -26,10 +26,10 @@ export const ALL_FACTIONS = [
   { id: 'keleres_argent', name: 'Совет Келерес (Аргенты)', color: '#38bdf8', exp: 'te', iconUrl: '/factions/council-keleres-argent.webp' },
   { id: 'keleres_mentak', name: 'Совет Келерес (Ментак)', color: '#38bdf8', exp: 'te', iconUrl: '/factions/council-keleres-mentak.webp' },
   { id: 'keleres_xxcha', name: 'Совет Келерес (Ззча)', color: '#38bdf8', exp: 'te', iconUrl: '/factions/council-keleres-xxcha.webp' },
-  { id: 'crimson', name: 'Багряное Восстание', color: '#dc2626', exp: 'te', iconUrl: '/factions/crimson-rebellion.webp' },
-  { id: 'deepwrought', name: 'Школа Глубин', color: '#0284c7', exp: 'te', iconUrl: '/factions/deepwrought-scholarate.webp' },
-  { id: 'firmament', name: 'Твердь Небесная', color: '#475569', exp: 'te', iconUrl: '/factions/firmament-obsidian.webp' },
-  { id: 'bastion', name: 'Последний Оплот', color: '#ca8a04', exp: 'te', iconUrl: '/factions/last-bastion.webp' },
+  { id: 'crimson', name: 'Алое Восстание', color: '#dc2626', exp: 'te', iconUrl: '/factions/crimson-rebellion.webp' },
+  { id: 'deepwrought', name: 'Школа Витой Бездны', color: '#0284c7', exp: 'te', iconUrl: '/factions/deepwrought-scholarate.webp' },
+  { id: 'firmament', name: 'Небесная твердь', color: '#475569', exp: 'te', iconUrl: '/factions/firmament-obsidian.webp' },
+  { id: 'bastion', name: 'Последний Бастион', color: '#ca8a04', exp: 'te', iconUrl: '/factions/last-bastion.webp' },
   { id: 'ralnel', name: 'Консорциум Рал-Нель', color: '#2563eb', exp: 'te', iconUrl: '/factions/ral-nel-consortium.webp' },
 ];
 
