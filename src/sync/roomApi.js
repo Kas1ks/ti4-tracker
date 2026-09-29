@@ -76,10 +76,12 @@ export async function postRoomAction(roomId, action, auth = {}) {
 /**
  * Subscribe to room SSE. Optional onStatus receives:
  * 'open' | 'reconnecting' | 'closed'
+ * Returns an unsubscribe function.
  */
 export function subscribeRoom(roomId, onMessage, onStatus) {
   const source = new EventSource(`/api/rooms/${encodeURIComponent(roomId)}/events`);
   let sawOpen = false;
+  let intentionalClose = false;
 
   source.onopen = () => {
     sawOpen = true;
@@ -96,6 +98,7 @@ export function subscribeRoom(roomId, onMessage, onStatus) {
   };
 
   source.onerror = () => {
+    if (intentionalClose) return;
     // Browser auto-reconnects; surface "reconnecting" while CONNECTING/CLOSED.
     if (source.readyState === EventSource.CLOSED) {
       onStatus?.('closed');
@@ -105,6 +108,7 @@ export function subscribeRoom(roomId, onMessage, onStatus) {
   };
 
   return () => {
+    intentionalClose = true;
     source.onerror = null;
     source.onmessage = null;
     source.onopen = null;

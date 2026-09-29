@@ -1,4 +1,6 @@
 import { STRATEGY_CARDS } from '../data/gameData';
+import { useElapsedSeconds } from '../hooks/useTurnTimer';
+import { formatTime } from '../utils/game';
 
 /**
  * Sticky prompt for seated players during strategy-card resolution.
@@ -8,9 +10,11 @@ export function StrategyResolutionBanner({
   show,
   cardId,
   myStatus,
+  startedAt = null,
   onResolve,
 }) {
   const pending = myStatus === 'pending' || myStatus == null;
+  const elapsed = useElapsedSeconds(startedAt, !!show && pending && Number.isFinite(startedAt));
   if (!show || !pending) return null;
 
   const card = STRATEGY_CARDS.find(c => c.id === cardId) || null;
@@ -27,13 +31,20 @@ export function StrategyResolutionBanner({
             />
           )}
           <div className="min-w-0 flex-1 flex flex-col justify-center gap-2">
-            <div>
-              <div className="text-[10px] font-bold uppercase tracking-wider text-amber-400/90">
-                Розыгрыш стратегии
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0">
+                <div className="text-[10px] font-bold uppercase tracking-wider text-amber-400/90">
+                  Розыгрыш стратегии
+                </div>
+                <div className="font-orbitron font-extrabold text-sm text-white leading-tight truncate">
+                  {card?.name || `Карта #${cardId}`}
+                </div>
               </div>
-              <div className="font-orbitron font-extrabold text-sm text-white leading-tight truncate">
-                {card?.name || `Карта #${cardId}`}
-              </div>
+              {Number.isFinite(startedAt) && (
+                <div className="font-orbitron font-black text-amber-300 text-base tabular-nums flex-shrink-0">
+                  {formatTime(elapsed)}
+                </div>
+              )}
             </div>
             <div className="grid grid-cols-2 gap-2">
               <button

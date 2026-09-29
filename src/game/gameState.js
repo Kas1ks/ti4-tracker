@@ -41,7 +41,9 @@ export const EMPTY_STRATEGY_RESOLUTION = Object.freeze({
   active: false,
   cardId: null,
   playerId: null,
+  startedAt: null,
   responses: {},
+  resolvedAt: Object.freeze({}),
 });
 
 /** Imperial (card 8) primary: Mecatol VP or secret, plus one public — applied on confirm. */
@@ -181,6 +183,7 @@ export function createEmptyGameState() {
       passed: {},
       turnTime: 0,
       turnStartedAt: null,
+      turnPausedAccum: 0,
       strategyActionTaken: false,
       expeditionClaimedThisTurn: false,
       expeditionClaimedSliceId: null,
@@ -196,6 +199,7 @@ export function createEmptyGameState() {
       pickOrder: [],
       showModal: false,
       strategyCardBonuses: {},
+      pickStartedAt: null,
     },
     politics: {
       showModal: false,
@@ -204,6 +208,8 @@ export function createEmptyGameState() {
       currentAgendaIndex: 0,
       influenceLocked: {},
       voteReversed: false,
+      /** Lasting law: each seat casts exactly 1 vote; skip influence SETUP. */
+      oneVoteLaw: false,
     },
     statusPhase: {
       show: false,
@@ -264,6 +270,7 @@ function toFlat(raw) {
     passed: round.passed,
     turnTime: round.turnTime,
     turnStartedAt: round.turnStartedAt,
+    turnPausedAccum: round.turnPausedAccum,
     strategyActionTaken: round.strategyActionTaken,
     expeditionClaimedThisTurn: !!round.expeditionClaimedThisTurn,
     expeditionClaimedSliceId: round.expeditionClaimedSliceId ?? null,
@@ -277,12 +284,14 @@ function toFlat(raw) {
     draftPickOrder: draft.pickOrder,
     showDraftModal: draft.showModal,
     strategyCardBonuses: draft.strategyCardBonuses,
+    draftPickStartedAt: draft.pickStartedAt,
     showPoliticsModal: politics.showModal,
     politicsStep: politics.step,
     agendas: politics.agendas,
     currentAgendaIndex: politics.currentAgendaIndex,
     influenceLocked: politics.influenceLocked,
     voteReversed: politics.voteReversed,
+    oneVoteLaw: politics.oneVoteLaw,
     showStatusPhase: statusPhase.show,
     statusPhaseChecks: statusPhase.checks,
     objectiveScoring: statusPhase.scoring,
@@ -347,13 +356,23 @@ function normalizeStrategyResolution(value) {
     if (!Number.isFinite(key)) return;
     responses[key] = status === 'played' || status === 'passed' ? status : 'pending';
   });
+  const resolvedAt = {};
+  Object.entries(asRecord(raw.resolvedAt)).forEach(([playerId, ts]) => {
+    const key = typeof playerId === 'number' ? playerId : Number(playerId);
+    const at = Number(ts);
+    if (!Number.isFinite(key) || !Number.isFinite(at)) return;
+    resolvedAt[key] = at;
+  });
   const cardId = Number(raw.cardId);
   const playerId = Number(raw.playerId);
+  const startedAt = Number(raw.startedAt);
   return {
     active: true,
     cardId: Number.isFinite(cardId) ? cardId : null,
     playerId: Number.isFinite(playerId) ? playerId : null,
+    startedAt: Number.isFinite(startedAt) ? startedAt : null,
     responses,
+    resolvedAt,
   };
 }
 
@@ -570,6 +589,7 @@ export function normalizeGameState(raw) {
       passed: asRecord(flat.passed),
       turnTime: asNumber(flat.turnTime, 0),
       turnStartedAt: Number.isFinite(flat.turnStartedAt) ? flat.turnStartedAt : null,
+      turnPausedAccum: Math.max(0, asNumber(flat.turnPausedAccum, 0)),
       strategyActionTaken: !!flat.strategyActionTaken,
       expeditionClaimedThisTurn: !!flat.expeditionClaimedThisTurn,
       expeditionClaimedSliceId: flat.expeditionClaimedSliceId ?? null,
@@ -586,14 +606,18 @@ export function normalizeGameState(raw) {
       // An empty queue means there is nothing to resume.
       showModal: draftQueue.length > 0 && flat.showDraftModal !== false,
       strategyCardBonuses: asRecord(flat.strategyCardBonuses),
+      pickStartedAt: Number.isFinite(flat.draftPickStartedAt) ? flat.draftPickStartedAt : null,
     },
     politics: {
       showModal: !!flat.showPoliticsModal,
-      step: flat.politicsStep === 'VOTE' ? 'VOTE' : 'SETUP',
+      step: flat.politicsStep === 'VOTE' || flat.politicsStep === 'SPEAKER'
+        ? flat.politicsStep
+        : 'SETUP',
       agendas: agendas && agendas.length > 0 ? agendas : emptyAgendas(),
       currentAgendaIndex: asNumber(flat.currentAgendaIndex, 0),
       influenceLocked: asRecord(flat.influenceLocked),
       voteReversed: !!flat.voteReversed,
+      oneVoteLaw: !!flat.oneVoteLaw,
     },
     statusPhase: {
       show: !!flat.showStatusPhase,

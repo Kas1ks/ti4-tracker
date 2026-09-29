@@ -415,6 +415,21 @@ describe('agenda voting order', () => {
     expect(effectiveVoteAmount(state, state.players[1], { choice: 'for', amount: 3 })).toBe(3);
   });
 
+  it('oneVoteLaw forces exactly 1 vote and disables Argent Zeal', () => {
+    const state = normalizeGameState({
+      isGameActive: true,
+      players: [
+        player(1, 'Argent', { factionId: 'argent' }),
+        player(2, 'B', { factionId: 'sol' }),
+      ],
+      politics: { oneVoteLaw: true },
+    });
+    const argent = state.players[0];
+    expect(effectiveVoteAmount(state, argent, { choice: 'for', amount: 99 })).toBe(1);
+    expect(effectiveVoteAmount(state, argent, { choice: 'abstain', amount: 1 })).toBe(0);
+    expect(effectiveVoteAmount(state, state.players[1], { choice: 'against', amount: 5 })).toBe(1);
+  });
+
   it('updates voting order when the speaker changes', () => {
     let state = normalizeGameState({
       isGameActive: true,
@@ -589,7 +604,7 @@ describe('round and turn order', () => {
     expect(state.round.strategyResolution.cardId).toBe(8);
   });
 
-  it('Imperial secret is available instead of Mecatol and applies on confirm', () => {
+  it('Imperial secret is a draw reminder and does not award secret VP', () => {
     let state = gameWith([
       player(1, 'Imp', { cards: [STRATEGY_CARDS[7]], lastMinInitiative: 1, secrets: 1 }),
       player(2, 'B', { cards: [STRATEGY_CARDS[0]], lastMinInitiative: 2 }),
@@ -607,7 +622,7 @@ describe('round and turn order', () => {
     state = dispatch(state, { type: 'TOGGLE_IMPERIAL_MECATOL', playerId: 1 });
     state = dispatch(state, { type: 'TOGGLE_IMPERIAL_SECRET', playerId: 1 });
     state = dispatch(state, { type: 'CONFIRM_IMPERIAL_CLAIM', playerId: 1 });
-    expect(state.players.find(p => p.id === 1).secrets).toBe(2);
+    expect(state.players.find(p => p.id === 1).secrets).toBe(1);
     expect(state.players.find(p => p.id === 1).extra).toBe(0);
   });
 
@@ -640,6 +655,61 @@ describe('round and turn order', () => {
     state = dispatch(state, { type: 'TICK' });
     expect(state.round.turnTime).toBe(2);
     expect(state.players.find(p => p.id === 2).totalTime).toBe(0);
+  });
+
+  it('pauses the active turn clock during strategy resolution and bills each seat until answer', () => {
+    const t0 = 4_000_000;
+    let state = dispatch(drafted(), { type: 'START_ROUND', at: t0 });
+    // Active is player 2 (Leadership). Advance 10s then open resolution.
+    state = dispatch(state, { type: 'PLAY_STRATEGY', at: t0 + 10_000 });
+    expect(state.round.strategyResolution.active).toBe(true);
+    expect(state.round.strategyResolution.startedAt).toBe(t0 + 10_000);
+    expect(state.round.turnStartedAt).toBeNull();
+    expect(state.round.turnPausedAccum).toBe(10);
+
+    // Player 3 answers after 5s of resolution; player 1 after 8s; player 2 after 12s.
+    state = dispatch(state, {
+      type: 'RESOLVE_STRATEGY', playerId: 3, choice: 'passed', at: t0 + 15_000,
+    });
+    expect(state.players.find(p => p.id === 3).totalTime).toBe(5);
+    expect(state.round.strategyResolution.active).toBe(true);
+    expect(state.round.turnStartedAt).toBeNull();
+
+    state = dispatch(state, {
+      type: 'RESOLVE_STRATEGY', playerId: 1, choice: 'passed', at: t0 + 18_000,
+    });
+    expect(state.players.find(p => p.id === 1).totalTime).toBe(8);
+
+    state = dispatch(state, {
+      type: 'RESOLVE_STRATEGY', playerId: 2, choice: 'played', at: t0 + 22_000,
+    });
+    expect(state.round.strategyResolution.active).toBe(false);
+    expect(state.players.find(p => p.id === 2).totalTime).toBe(12);
+    // Turn clock resumes; paused accum (10s) is kept for later banking.
+    expect(state.round.turnStartedAt).toBe(t0 + 22_000);
+    expect(state.round.turnPausedAccum).toBe(10);
+
+    state = dispatch(state, { type: 'NEXT_TURN', at: t0 + 27_000 });
+    // 10 paused + 5 live after resume = 15 banked for active player 2
+    // (plus the 12s already billed for resolution).
+    expect(state.players.find(p => p.id === 2).totalTime).toBe(12 + 15);
+  });
+
+  it('banks draft pick time into totalTime', () => {
+    const t0 = 5_000_000;
+    let state = dispatch(
+      gameWith([player(1, 'A'), player(2, 'B')]),
+      { type: 'OPEN_DRAFT', at: t0 },
+    );
+    expect(state.draft.pickStartedAt).toBe(t0);
+
+    state = dispatch(state, { type: 'PICK_CARD', cardId: 1, at: t0 + 8_000 });
+    expect(state.players.find(p => p.id === 1).totalTime).toBe(8);
+    expect(state.draft.pickStartedAt).toBe(t0 + 8_000);
+
+    state = dispatch(state, { type: 'PICK_CARD', cardId: 2, at: t0 + 11_000 });
+    expect(state.players.find(p => p.id === 2).totalTime).toBe(3);
+    expect(state.draft.pickStartedAt).toBe(t0 + 11_000);
   });
 
   it('skips players who already passed', () => {
@@ -945,6 +1015,40 @@ describe('agenda phase', () => {
   it('tracks influence spent per player', () => {
     const state = dispatch(voting(), { type: 'SET_INFLUENCE', playerId: 2, influence: 6 });
     expect(state.players.find(p => p.id === 2).influence).toBe(6);
+  });
+
+  it('oneVoteLaw skips influence setup and coerces ballots to 1', () => {
+    let state = voting();
+    expect(state.politics.step).toBe('SETUP');
+
+    state = dispatch(state, { type: 'TOGGLE_ONE_VOTE_LAW' });
+    expect(state.politics.oneVoteLaw).toBe(true);
+    expect(state.politics.step).toBe('VOTE');
+
+    state = dispatch(state, { type: 'SET_AGENDA_TYPE', agendaType: 'FOR_AGAINST' });
+    state = dispatch(state, {
+      type: 'SET_VOTE',
+      playerId: 1,
+      vote: { choice: 'for', amount: 50 },
+    });
+    expect(currentAgenda(state).votes[1]).toEqual({ choice: 'for', amount: 1 });
+
+    state = dispatch(state, {
+      type: 'SET_VOTE',
+      playerId: 1,
+      vote: { choice: 'abstain', amount: 7 },
+    });
+    expect(currentAgenda(state).votes[1]).toEqual({ choice: 'abstain', amount: 0 });
+
+    // Persists into the next agenda phase
+    state = dispatch(state, { type: 'FINISH_AGENDA_PHASE', playerId: 1 });
+    expect(state.politics.oneVoteLaw).toBe(true);
+    expect(state.politics.showModal).toBe(false);
+
+    state = dispatch(withAllPassed(dispatch(state, { type: 'START_ROUND' })), { type: 'END_ROUND' });
+    state = dispatch(state, { type: 'CONFIRM_STATUS_PHASE' });
+    expect(state.politics.oneVoteLaw).toBe(true);
+    expect(state.politics.step).toBe('VOTE');
   });
 });
 
@@ -1319,6 +1423,60 @@ describe('Technology research (card 7)', () => {
       ignorePrereq: 1,
     });
     expect(state.players.find(p => p.id === 1).techIds).toContain('hyper_metabolism');
+  });
+
+  it('Cabal Riftmeld ignores all unit-upgrade prereqs via plastic, not color tech', () => {
+    let state = gameWith([
+      player(1, 'Cabal', {
+        cards: [STRATEGY_CARDS[6]],
+        lastMinInitiative: 1,
+        techIds: [],
+        factionId: 'vuilraith',
+      }),
+      player(2, 'B', { cards: [STRATEGY_CARDS[0]], lastMinInitiative: 2 }),
+    ], {
+      meta: { ...createEmptyGameState().meta, speakerId: 1, usePok: true },
+    });
+    state = dispatch(state, { type: 'START_ROUND' });
+    state = dispatch(state, { type: 'PLAY_STRATEGY', cardId: 7 });
+
+    // Color tech: ignore-all must not apply
+    const blockedColor = dispatch(state, {
+      type: 'RESEARCH_TECH',
+      playerId: 1,
+      techId: 'hyper_metabolism',
+      ignorePrereq: 'all',
+    });
+    expect(blockedColor).toBe(state);
+
+    // Unit upgrade with multiple prereqs: ignore-all works
+    state = dispatch(state, {
+      type: 'RESEARCH_TECH',
+      playerId: 1,
+      techId: 'war_sun',
+      ignorePrereq: 'all',
+    });
+    expect(state.players.find(p => p.id === 1).techIds).toContain('war_sun');
+
+    // Non-Cabal cannot use ignore-all
+    let other = gameWith([
+      player(1, 'Sol', {
+        cards: [STRATEGY_CARDS[6]],
+        lastMinInitiative: 1,
+        techIds: [],
+        factionId: 'sol',
+      }),
+      player(2, 'B', { cards: [STRATEGY_CARDS[0]], lastMinInitiative: 2 }),
+    ]);
+    other = dispatch(other, { type: 'START_ROUND' });
+    other = dispatch(other, { type: 'PLAY_STRATEGY', cardId: 7 });
+    const blockedSol = dispatch(other, {
+      type: 'RESEARCH_TECH',
+      playerId: 1,
+      techId: 'dreadnought_2',
+      ignorePrereq: 'all',
+    });
+    expect(blockedSol).toBe(other);
   });
 
   it('GRANT_TECH lets host add outside strategy card', () => {

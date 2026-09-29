@@ -69,6 +69,10 @@ export function useSyncedGame() {
   const [roomError, setRoomError] = useState(null);
   /** SSE link: 'idle' | 'open' | 'reconnecting' | 'closed' */
   const [syncLink, setSyncLink] = useState('idle');
+  /** Bump to tear down + recreate EventSource (phone unlock / zombie SSE). */
+  const [sseGeneration, setSseGeneration] = useState(0);
+  const hiddenAtRef = useRef(0);
+  const resumeInFlightRef = useRef(false);
   const [canUndo, setCanUndo] = useState(false);
   const seqRef = useRef(loadRoomSession()?.seq || 0);
   const roomRef = useRef(null);
@@ -277,7 +281,71 @@ export function useSyncedGame() {
     );
 
     return unsubscribe;
-  }, [room?.roomId, applyAuthoritativeState, clearSoloUndo]);
+  }, [room?.roomId, sseGeneration, applyAuthoritativeState, clearSoloUndo]);
+
+  /**
+   * After phone unlock / tab resume: catch up via snapshot and force a fresh SSE.
+   * Mobile browsers often leave EventSource half-dead while readyState still looks fine.
+   */
+  const resumeLiveSync = useCallback(async ({ forceSse = true } = {}) => {
+    const current = roomRef.current;
+    if (!current?.roomId || resumeInFlightRef.current) return;
+    resumeInFlightRef.current = true;
+    setSyncLink((prev) => (prev === 'closed' ? 'reconnecting' : prev));
+    try {
+      const snap = await fetchRoomSnapshot(current.roomId);
+      if (roomRef.current?.roomId !== current.roomId) return;
+      if (snap?.state) {
+        applyAuthoritativeState(snap.seq, snap.state, {
+          claimedSeats: snap.claimedSeats,
+          canUndo: typeof snap.canUndo === 'boolean' ? snap.canUndo : undefined,
+        });
+        setRoomError(null);
+        setRoomStatus('live');
+      }
+    } catch (err) {
+      if (roomRef.current?.roomId === current.roomId) {
+        setRoomError(`Не удалось обновить комнату: ${err.message || err}`);
+      }
+    } finally {
+      resumeInFlightRef.current = false;
+      if (forceSse && roomRef.current?.roomId === current.roomId) {
+        setSseGeneration((g) => g + 1);
+      }
+    }
+  }, [applyAuthoritativeState]);
+
+  useEffect(() => {
+    if (!room?.roomId) return undefined;
+
+    const onHidden = () => {
+      hiddenAtRef.current = Date.now();
+    };
+
+    const onResume = () => {
+      if (document.visibilityState === 'hidden') {
+        onHidden();
+        return;
+      }
+      const awayMs = hiddenAtRef.current
+        ? Date.now() - hiddenAtRef.current
+        : Number.POSITIVE_INFINITY;
+      hiddenAtRef.current = 0;
+      // Ignore quick tab flickers; phone lock / long background usually >2s.
+      if (awayMs < 2000) return;
+      resumeLiveSync({ forceSse: true });
+    };
+
+    document.addEventListener('visibilitychange', onResume);
+    // iOS Safari bfcache restore
+    window.addEventListener('pageshow', onResume);
+    window.addEventListener('online', onResume);
+    return () => {
+      document.removeEventListener('visibilitychange', onResume);
+      window.removeEventListener('pageshow', onResume);
+      window.removeEventListener('online', onResume);
+    };
+  }, [room?.roomId, resumeLiveSync]);
 
   const dispatch = useCallback((action) => {
     if (!action || typeof action !== 'object') return;
@@ -290,6 +358,15 @@ export function useSyncedGame() {
       'END_ROUND',
       'CONFIRM_STATUS_PHASE',
       'FINISH_AGENDA_PHASE',
+      'OPEN_DRAFT',
+      'PICK_CARD',
+      'UNDO_PICK',
+      'PLAY_STRATEGY',
+      'RESOLVE_STRATEGY',
+      'CONFIRM_IMPERIAL_CLAIM',
+      'PASS_IMPERIAL_CLAIM',
+      'RESEARCH_TECH',
+      'PASS_TECH_RESEARCH',
     ]);
     const stamped = CLOCK_ACTIONS.has(action.type) && !Number.isFinite(action.at)
       ? { ...action, at: Date.now() }
@@ -567,6 +644,7 @@ export function useSyncedGame() {
     roomStatus,
     roomError,
     syncLink,
+    resumeLiveSync,
     dismissRoomError,
     perms,
     canUndo,

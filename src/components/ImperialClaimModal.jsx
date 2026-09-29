@@ -29,7 +29,6 @@ export function ImperialClaimModal({
   const player = players.find(p => p.id === claim.playerId) || null;
   const isMySeat = seatPlayerId != null && seatPlayerId === claim.playerId;
   const canAct = !!player && (canScoreAny || isMySeat);
-  const secretsAtCap = (player?.secrets || 0) >= 3;
 
   const stages = [
     { stage: 1, title: 'Этап I · 1 ПО', color: 'text-blue-400' },
@@ -74,7 +73,7 @@ export function ImperialClaimModal({
                 {isMySeat ? 'Ваша способность' : (player?.name || '…')}
               </h2>
               <p className="text-xs text-slate-400 mt-1 leading-snug">
-                Мекатол или секретка, плюс 1 общая цель — засчитается только после подтверждения
+                Мекатол (+1 ПО) или взять секретку (карта, без ПО), плюс 1 общая цель — засчитается только после подтверждения
               </p>
             </div>
             {onMinimize && (
@@ -122,20 +121,14 @@ export function ImperialClaimModal({
 
           <button
             type="button"
-            disabled={!canAct || claim.mecatol || (!claim.secret && secretsAtCap)}
+            disabled={!canAct || claim.mecatol}
             onClick={() => canAct && !claim.mecatol && onToggleSecret?.(claim.playerId)}
-            title={
-              claim.mecatol
-                ? 'Снимите Мекатол, чтобы взять секретку'
-                : secretsAtCap && !claim.secret
-                  ? 'Уже 3 секретки'
-                  : undefined
-            }
+            title={claim.mecatol ? 'Снимите Мекатол, чтобы взять секретку' : undefined}
             className={`w-full flex items-center gap-3 px-4 py-3.5 rounded-2xl border text-left transition ${
               claim.secret
                 ? 'bg-violet-500/15 border-violet-400 text-violet-200'
                 : 'bg-slate-900 border-slate-700 text-slate-300'
-            } ${canAct && !claim.mecatol && (claim.secret || !secretsAtCap) ? 'hover:border-violet-500/60' : 'opacity-70 cursor-default'}`}
+            } ${canAct && !claim.mecatol ? 'hover:border-violet-500/60' : 'opacity-70 cursor-default'}`}
           >
             <span className={`flex h-9 w-9 items-center justify-center rounded-xl border ${
               claim.secret ? 'border-violet-400 bg-violet-500/20' : 'border-slate-700 bg-slate-950'
@@ -148,11 +141,11 @@ export function ImperialClaimModal({
                 Взять секретку
               </span>
               <span className="block text-xs text-slate-400 mt-0.5">
-                Если не скорите Мекатол
+                Взять карту секретной цели (не даёт ПО)
               </span>
             </span>
             {claim.secret && (
-              <span className="font-orbitron font-black text-violet-300 text-sm">+1</span>
+              <span className="text-[10px] font-bold uppercase tracking-wide text-violet-300">Отметка</span>
             )}
           </button>
 

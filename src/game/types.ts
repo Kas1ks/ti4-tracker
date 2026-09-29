@@ -43,6 +43,7 @@ export interface GameRound {
   passed: Record<string | number, boolean>;
   turnTime: number;
   turnStartedAt: number | null;
+  turnPausedAccum: number;
   strategyActionTaken: boolean;
   expeditionClaimedThisTurn: boolean;
   expeditionClaimedSliceId: string | null;

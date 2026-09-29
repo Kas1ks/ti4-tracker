@@ -6,6 +6,7 @@ export function SyncStatusBanner({
   roomError,
   syncLink,
   onDismissError,
+  onReconnect,
 }) {
   const reconnecting = syncLink === 'reconnecting';
   const closed = syncLink === 'closed';
@@ -23,8 +24,10 @@ export function SyncStatusBanner({
       : 'Переподключение…';
   const body = roomError
     || (closed
-      ? 'Поток комнаты закрыт. Обновите страницу или зайдите снова.'
+      ? 'Поток комнаты закрыт. Нажмите «Обновить связь» или перезайдите.'
       : 'Связь с комнатой прервалась. Ждём восстановление потока…');
+  const showReconnect = typeof onReconnect === 'function'
+    && (closed || reconnecting || !!roomError);
 
   return (
     <div
@@ -40,11 +43,20 @@ export function SyncStatusBanner({
           <div className="w-10 h-10 rounded-xl border border-white/20 flex items-center justify-center flex-shrink-0 bg-black/20">
             <i className={`fa-solid ${icon}`} aria-hidden="true" />
           </div>
-          <div className="min-w-0 flex-1 space-y-1">
+          <div className="min-w-0 flex-1 space-y-2">
             <div className="font-orbitron font-bold text-xs uppercase tracking-wider opacity-90">
               {title}
             </div>
             <p className="text-sm leading-snug whitespace-pre-wrap">{body}</p>
+            {showReconnect && (
+              <button
+                type="button"
+                onClick={onReconnect}
+                className="text-xs font-bold uppercase tracking-wide px-3 py-1.5 rounded-lg border border-white/30 bg-black/20 hover:bg-white/10"
+              >
+                Обновить связь
+              </button>
+            )}
           </div>
           {roomError && typeof onDismissError === 'function' ? (
             <button

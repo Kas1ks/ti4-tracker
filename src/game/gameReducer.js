@@ -54,6 +54,14 @@ import {
 
 const emptyAgenda = () => ({ type: null, votes: {}, locked: {} });
 
+/** Under one-vote law, a non-abstain ballot is always amount 1. */
+function coerceAgendaVote(state, vote) {
+  if (!vote || typeof vote !== 'object') return vote;
+  if (!state.politics?.oneVoteLaw) return vote;
+  if (vote.choice === 'abstain') return { ...vote, amount: 0 };
+  return { ...vote, amount: 1 };
+}
+
 /** Naalu always goes last-to-act first, then lowest strategy card, then seat order. */
 function sortedForTurnOrder(players) {
   return players.filter(p => !p.eliminated).sort((a, b) => {
@@ -76,19 +84,21 @@ const clearedDraft = {
   pickOrder: [],
   step: 'DRAFT',
   showModal: false,
+  pickStartedAt: null,
 };
 
 const actionAt = (action) => (
   Number.isFinite(action?.at) ? action.at : Date.now()
 );
 
-/** Seconds on the clock since turnStartedAt (or legacy turnTime). */
-function elapsedSeconds(state, at) {
-  const started = state.round.turnStartedAt;
+/** Seconds on the clock for the active turn (paused accum + live segment). */
+function liveTurnElapsed(state, at) {
+  const accum = Math.max(0, state.round?.turnPausedAccum || 0);
+  const started = state.round?.turnStartedAt;
   if (Number.isFinite(started)) {
-    return Math.max(0, Math.floor((at - started) / 1000));
+    return accum + Math.max(0, Math.floor((at - started) / 1000));
   }
-  return Math.max(0, state.round.turnTime || 0);
+  return accum;
 }
 
 /** Credit the active player's totalTime before the clock resets. */
@@ -96,9 +106,12 @@ function bankActivePlayerTime(state, at) {
   if (!state.round.active) return state;
   const player = activePlayer(state);
   if (!player) return state;
-  const elapsed = elapsedSeconds(state, at);
-  if (elapsed <= 0) return state;
-  return patchPlayer(state, player.id, p => ({ totalTime: (p.totalTime || 0) + elapsed }));
+  const elapsed = liveTurnElapsed(state, at);
+  let next = state;
+  if (elapsed > 0) {
+    next = patchPlayer(next, player.id, p => ({ totalTime: (p.totalTime || 0) + elapsed }));
+  }
+  return withRound(next, { turnPausedAccum: 0, turnTime: 0 });
 }
 
 /** End of round: agenda phase if one is pending, otherwise the status checklist. */
@@ -107,6 +120,7 @@ function endRound(state, at = Date.now()) {
   next = withRound(next, {
     turnTime: 0,
     turnStartedAt: null,
+    turnPausedAccum: 0,
     strategyResolution: { ...EMPTY_STRATEGY_RESOLUTION },
     imperialClaim: { ...EMPTY_IMPERIAL_CLAIM },
     techResearch: { ...EMPTY_TECH_RESEARCH, picks: [], queueIds: [], byPlayer: {} },
@@ -141,6 +155,7 @@ function startNewRound(state) {
       passed: {},
       turnTime: 0,
       turnStartedAt: null,
+      turnPausedAccum: 0,
       strategyActionTaken: false,
       expeditionClaimedThisTurn: false,
       expeditionClaimedSliceId: null,
@@ -171,6 +186,7 @@ function startRound(state, at = Date.now()) {
     passed: {},
     turnTime: 0,
     turnStartedAt: at,
+    turnPausedAccum: 0,
     strategyActionTaken: false,
     expeditionClaimedThisTurn: false,
     expeditionClaimedSliceId: null,
@@ -204,6 +220,7 @@ function nextTurn(state, at = Date.now()) {
     activeTurnIdx,
     turnTime: 0,
     turnStartedAt: at,
+    turnPausedAccum: 0,
     strategyActionTaken: false,
     expeditionClaimedThisTurn: false,
     expeditionClaimedSliceId: null,
@@ -231,7 +248,18 @@ function passTurn(state, playerId, at = Date.now()) {
 function eliminatePlayer(state, playerId, at = Date.now()) {
   if (!state.players.some(p => p.id === playerId)) return state;
 
-  let next = patchPlayer(state, playerId, (p) => ({
+  const resolution = strategyResolutionOf(state);
+  let next = state;
+  // Bank pending resolution time before removing the seat from the poll.
+  if (resolution.active && resolution.responses?.[playerId] === 'pending') {
+    const started = resolution.startedAt;
+    const secs = Number.isFinite(started) ? Math.max(0, Math.floor((at - started) / 1000)) : 0;
+    if (secs > 0) {
+      next = patchPlayer(next, playerId, p => ({ totalTime: (p.totalTime || 0) + secs }));
+    }
+  }
+
+  next = patchPlayer(next, playerId, (p) => ({
     eliminated: true,
     eliminatedRound: Number.isFinite(p.eliminatedRound) && p.eliminatedRound > 0
       ? p.eliminatedRound
@@ -239,16 +267,16 @@ function eliminatePlayer(state, playerId, at = Date.now()) {
   }));
   next = withRound(next, { passed: { ...next.round.passed, [playerId]: true } });
 
-  const resolution = next.round?.strategyResolution;
-  if (resolution?.active && resolution.responses?.[playerId] != null) {
-    const { [playerId]: _removed, ...rest } = resolution.responses;
+  const openResolution = next.round?.strategyResolution;
+  if (openResolution?.active && openResolution.responses?.[playerId] != null) {
+    const { [playerId]: _removed, ...rest } = openResolution.responses;
     const responses = rest;
     next = withRound(next, {
-      strategyResolution: { ...resolution, responses },
+      strategyResolution: { ...openResolution, responses },
     });
     if (Object.keys(responses).length === 0
       || Object.values(responses).every(s => s === 'played' || s === 'passed')) {
-      next = commitStrategyPlay(next);
+      next = commitStrategyPlay(next, at);
     }
   }
 
@@ -281,7 +309,7 @@ function strategyResolutionOf(state) {
   return state.round?.strategyResolution || EMPTY_STRATEGY_RESOLUTION;
 }
 
-function startStrategyResolution(state, cardId) {
+function startStrategyResolution(state, cardId, at = Date.now()) {
   const player = activePlayer(state);
   if (!player?.cards?.length) return state;
   if (state.round.strategyActionTaken) return state;
@@ -309,19 +337,26 @@ function startStrategyResolution(state, cardId) {
     responses[p.id] = 'pending';
   });
 
+  // Pause the active-player turn clock; resolution time is billed per seat instead.
+  const pausedAccum = liveTurnElapsed(state, at);
+
   return withRound(state, {
+    turnStartedAt: null,
+    turnPausedAccum: pausedAccum,
     strategyActionTaken: true,
     strategyResolution: {
       active: true,
       cardId: resolvedCardId,
       playerId: player.id,
+      startedAt: at,
       responses,
+      resolvedAt: {},
     },
   });
 }
 
 /** Technology (7) opens concurrent tech + shared resolution; Imperial (8) primary UI first. */
-function beginStrategyPlay(state, cardId) {
+function beginStrategyPlay(state, cardId, at = Date.now()) {
   const player = activePlayer(state);
   if (!player?.cards?.length) return state;
   if (state.round.strategyActionTaken) return state;
@@ -345,7 +380,7 @@ function beginStrategyPlay(state, cardId) {
   if (!player.cards.some(c => c.id === resolvedCardId)) return state;
 
   if (resolvedCardId === 7) {
-    const withPoll = startStrategyResolution(state, 7);
+    const withPoll = startStrategyResolution(state, 7, at);
     if (!strategyResolutionOf(withPoll).active) return state;
     return withRound(withPoll, {
       techResearch: {
@@ -374,31 +409,35 @@ function beginStrategyPlay(state, cardId) {
     });
   }
 
-  return startStrategyResolution(state, resolvedCardId);
+  return startStrategyResolution(state, resolvedCardId, at);
 }
 
-function commitStrategyPlay(state) {
+function commitStrategyPlay(state, at = Date.now()) {
   const resolution = strategyResolutionOf(state);
   if (!resolution.active) return state;
 
   const player = state.players.find(p => p.id === resolution.playerId);
   const cardId = resolution.cardId;
+  // Resume the active-player turn clock after the shared resolution window.
   const cleared = withRound(state, {
     strategyResolution: { ...EMPTY_STRATEGY_RESOLUTION },
     strategyActionTaken: true,
+    turnStartedAt: at,
   });
 
   if (!player || cardId == null) return cleared;
-  return markStrategyCardPlayed(cleared, player.id, cardId);
+  return markStrategyCardPlayed(cleared, player.id, cardId, at);
 }
 
 /** Mark a strategy card played and clear tech session (Technology / commit helpers). */
-function markStrategyCardPlayed(state, playerId, cardId) {
+function markStrategyCardPlayed(state, playerId, cardId, at = Date.now()) {
   const player = state.players.find(p => p.id === playerId);
   let next = withRound(state, {
     strategyResolution: { ...EMPTY_STRATEGY_RESOLUTION },
     strategyActionTaken: true,
     techResearch: { ...EMPTY_TECH_RESEARCH, picks: [], queueIds: [], byPlayer: {} },
+    // Keep / restore turn clock if already resumed by commitStrategyPlay.
+    turnStartedAt: Number.isFinite(state.round?.turnStartedAt) ? state.round.turnStartedAt : at,
   });
   if (!player || cardId == null) return next;
   if (!player.cards?.some(c => c.id === cardId)) return next;
@@ -413,7 +452,7 @@ function markStrategyCardPlayed(state, playerId, cardId) {
   return patchPlayer(next, player.id, () => ({ playedCardIds, strategyPlayed }));
 }
 
-function resolveStrategyResponse(state, playerId, choice) {
+function resolveStrategyResponse(state, playerId, choice, at = Date.now()) {
   const resolution = strategyResolutionOf(state);
   if (!resolution.active) return state;
   if (choice !== 'played' && choice !== 'passed') return state;
@@ -425,17 +464,25 @@ function resolveStrategyResponse(state, playerId, choice) {
   const tech = techResearchOf(state);
   if (tech.active && !tech.concurrent) return state;
 
+  const started = resolution.startedAt;
+  const secs = Number.isFinite(started) ? Math.max(0, Math.floor((at - started) / 1000)) : 0;
+  let next = state;
+  if (secs > 0) {
+    next = patchPlayer(next, playerId, p => ({ totalTime: (p.totalTime || 0) + secs }));
+  }
+
   const responses = { ...resolution.responses, [playerId]: choice };
-  let next = withRound(state, {
-    strategyResolution: { ...resolution, responses },
+  const resolvedAt = { ...(resolution.resolvedAt || {}), [playerId]: at };
+  next = withRound(next, {
+    strategyResolution: { ...resolution, responses, resolvedAt },
   });
 
   const allDone = Object.values(responses).every(s => s === 'played' || s === 'passed');
-  if (allDone) next = commitStrategyPlay(next);
+  if (allDone) next = commitStrategyPlay(next, at);
   return next;
 }
 
-function openDraft(state) {
+function openDraft(state, at = Date.now()) {
   if (isDraftInProgress(state)) return withDraft(state, { showModal: true });
 
   const eligible = activePlayers(state);
@@ -458,6 +505,7 @@ function openDraft(state) {
     pickOrder: [],
     step: 'DRAFT',
     showModal: true,
+    pickStartedAt: at,
   });
 }
 
@@ -532,22 +580,32 @@ function setSpeaker(state, playerId) {
   return realignDraftQueueToSpeaker(next);
 }
 
-function pickCard(state, cardId) {
+function pickCard(state, cardId, at = Date.now()) {
   const playerId = currentDraftPlayerId(state);
   if (playerId == null || state.draft.assignments[cardId] != null) return state;
 
-  const nextIndex = state.draft.currentQueueIndex + 1;
-  const finished = nextIndex >= state.draft.queue.length;
+  let next = state;
+  const started = state.draft.pickStartedAt;
+  if (Number.isFinite(started)) {
+    const secs = Math.max(0, Math.floor((at - started) / 1000));
+    if (secs > 0) {
+      next = patchPlayer(next, playerId, p => ({ totalTime: (p.totalTime || 0) + secs }));
+    }
+  }
 
-  return withDraft(state, {
-    assignments: { ...state.draft.assignments, [cardId]: playerId },
-    pickOrder: [...state.draft.pickOrder, cardId],
-    currentQueueIndex: finished ? state.draft.currentQueueIndex : nextIndex,
+  const nextIndex = next.draft.currentQueueIndex + 1;
+  const finished = nextIndex >= next.draft.queue.length;
+
+  return withDraft(next, {
+    assignments: { ...next.draft.assignments, [cardId]: playerId },
+    pickOrder: [...next.draft.pickOrder, cardId],
+    currentQueueIndex: finished ? next.draft.currentQueueIndex : nextIndex,
     step: finished ? 'CONFIRM' : 'DRAFT',
+    pickStartedAt: finished ? null : at,
   });
 }
 
-function undoPick(state) {
+function undoPick(state, at = Date.now()) {
   if (state.draft.pickOrder.length === 0) return state;
 
   const pickOrder = state.draft.pickOrder.slice(0, -1);
@@ -559,6 +617,7 @@ function undoPick(state) {
     pickOrder,
     currentQueueIndex: pickOrder.length,
     step: 'DRAFT',
+    pickStartedAt: at,
   });
 }
 
@@ -616,9 +675,10 @@ function confirmStatusPhase(state) {
 
   if (!next.meta.isPoliticsActive) return startNewRound(next);
 
+  const oneVoteLaw = !!next.politics?.oneVoteLaw;
   return withPolitics(withMeta(next, { isAgendaPhasePending: true }), {
     showModal: true,
-    step: 'SETUP',
+    step: oneVoteLaw ? 'VOTE' : 'SETUP',
     agendas: [emptyAgenda()],
     currentAgendaIndex: 0,
     influenceLocked: {},
@@ -848,11 +908,8 @@ function applyImperialClaim(state, claim) {
     next = patchPlayer(next, playerId, p => ({
       extra: (p.extra || 0) + 1,
     }));
-  } else if (claim.secret) {
-    next = patchPlayer(next, playerId, p => ({
-      secrets: Math.min(3, (p.secrets || 0) + 1),
-    }));
   }
+  // claim.secret is only a reminder to draw a secret objective card — no VP.
 
   return next;
 }
@@ -891,26 +948,22 @@ function toggleImperialSecret(state, playerId) {
   if (!claim.active || claim.playerId !== playerId) return state;
   if (claim.mecatol) return state;
 
-  const player = state.players.find(p => p.id === playerId);
-  if (!player) return state;
-  if (!claim.secret && (player.secrets || 0) >= 3) return state;
-
   return withRound(state, {
     imperialClaim: { ...claim, secret: !claim.secret },
   });
 }
 
-function confirmImperialClaim(state, playerId) {
+function confirmImperialClaim(state, playerId, at = Date.now()) {
   const claim = imperialClaimOf(state);
   if (!claim.active || claim.playerId !== playerId) return state;
   const next = clearImperialClaim(applyImperialClaim(state, claim));
-  return startStrategyResolution(next, 8);
+  return startStrategyResolution(next, 8, at);
 }
 
-function passImperialClaim(state, playerId) {
+function passImperialClaim(state, playerId, at = Date.now()) {
   const claim = imperialClaimOf(state);
   if (!claim.active || claim.playerId !== playerId) return state;
-  return startStrategyResolution(clearImperialClaim(state), 8);
+  return startStrategyResolution(clearImperialClaim(state), 8, at);
 }
 
 function techResearchOf(state) {
@@ -939,6 +992,26 @@ function techEntryForPlayer(session, playerId) {
   };
 }
 
+/**
+ * How many color prereqs to waive for this RESEARCH_TECH.
+ * Planet/marker → 1. Cabal Riftmeld (return captured plastic) → all, unit upgrades only.
+ */
+function researchIgnoreCount(player, tech, opts, entry) {
+  const raw = opts?.ignorePrereq;
+  if (raw === 'all' || opts?.ignoreAll) {
+    if (player?.factionId === 'vuilraith' && tech?.kind === 'unit') {
+      return Math.max((tech.prereqs || []).length, 1);
+    }
+    return 0;
+  }
+  if (raw != null) {
+    const n = Number(raw);
+    if (Number.isFinite(n)) return Math.max(0, Math.floor(n));
+    return raw ? 1 : 0;
+  }
+  return entry?.ignorePrereq ? 1 : 0;
+}
+
 function resolutionStatus(resolution, playerId) {
   const responses = resolution?.responses || {};
   if (responses[playerId] != null) return responses[playerId];
@@ -948,7 +1021,7 @@ function resolutionStatus(resolution, playerId) {
   return null;
 }
 
-function researchTech(state, playerId, techId, opts = {}) {
+function researchTech(state, playerId, techId, opts = {}, at = Date.now()) {
   const session = techResearchOf(state);
   if (!session.active || !session.concurrent) return state;
 
@@ -974,9 +1047,7 @@ function researchTech(state, playerId, techId, opts = {}) {
   if (!catalog.some(t => t.id === techId)) return state;
 
   const owned = player.techIds || [];
-  const ignoreCount = opts.ignorePrereq != null
-    ? (opts.ignorePrereq ? 1 : 0)
-    : entry.ignorePrereq;
+  const ignoreCount = researchIgnoreCount(player, tech, opts, entry);
   if (!opts.force && !canResearch(tech, owned, {
     ...researchSynergyOpts(player, state),
     ignoreCount,
@@ -999,12 +1070,12 @@ function researchTech(state, playerId, techId, opts = {}) {
   });
 
   if (picks.length >= maxSlots) {
-    return resolveStrategyResponse(next, playerId, 'played');
+    return resolveStrategyResponse(next, playerId, 'played', at);
   }
   return next;
 }
 
-function passTechResearch(state, playerId) {
+function passTechResearch(state, playerId, at = Date.now()) {
   const session = techResearchOf(state);
   if (!session.active || !session.concurrent) return state;
 
@@ -1013,7 +1084,7 @@ function passTechResearch(state, playerId) {
   if (resolutionStatus(resolution, playerId) !== 'pending') return state;
   const entry = techEntryForPlayer(session, playerId);
   const choice = entry.picks.length > 0 ? 'played' : 'passed';
-  return resolveStrategyResponse(state, playerId, choice);
+  return resolveStrategyResponse(state, playerId, choice, at);
 }
 
 function setTechIgnorePrereq(state, playerId, enabled) {
@@ -1401,16 +1472,16 @@ export function gameReducer(state, action) {
 
     // --- Draft ---
     case 'OPEN_DRAFT':
-      return openDraft(state);
+      return openDraft(state, actionAt(action));
 
     case 'SET_DRAFT_VISIBLE':
       return withDraft(state, { showModal: !!action.visible });
 
     case 'PICK_CARD':
-      return pickCard(state, action.cardId);
+      return pickCard(state, action.cardId, actionAt(action));
 
     case 'UNDO_PICK':
-      return undoPick(state);
+      return undoPick(state, actionAt(action));
 
     case 'REASSIGN_CARD':
       return withDraft(state, {
@@ -1425,10 +1496,10 @@ export function gameReducer(state, action) {
       return startRound(state, actionAt(action));
 
     case 'PLAY_STRATEGY':
-      return beginStrategyPlay(state, action.cardId);
+      return beginStrategyPlay(state, action.cardId, actionAt(action));
 
     case 'RESOLVE_STRATEGY':
-      return resolveStrategyResponse(state, action.playerId, action.choice);
+      return resolveStrategyResponse(state, action.playerId, action.choice, actionAt(action));
 
     case 'TICK': {
       // Legacy solo tick: display-only turnTime. totalTime is banked on turn change.
@@ -1484,19 +1555,19 @@ export function gameReducer(state, action) {
       return toggleImperialSecret(state, action.playerId);
 
     case 'CONFIRM_IMPERIAL_CLAIM':
-      return confirmImperialClaim(state, action.playerId);
+      return confirmImperialClaim(state, action.playerId, actionAt(action));
 
     case 'PASS_IMPERIAL_CLAIM':
-      return passImperialClaim(state, action.playerId);
+      return passImperialClaim(state, action.playerId, actionAt(action));
 
     case 'RESEARCH_TECH':
       return researchTech(state, action.playerId, action.techId, {
         force: !!action.force,
         ignorePrereq: action.ignorePrereq,
-      });
+      }, actionAt(action));
 
     case 'PASS_TECH_RESEARCH':
-      return passTechResearch(state, action.playerId);
+      return passTechResearch(state, action.playerId, actionAt(action));
 
     case 'SET_TECH_IGNORE_PREREQ':
       return setTechIgnorePrereq(state, action.playerId, !!action.enabled);
@@ -1545,23 +1616,55 @@ export function gameReducer(state, action) {
     case 'SET_VOTE': {
       const agenda = currentAgenda(state);
       if (agenda?.locked?.[action.playerId]) return state;
+      const vote = coerceAgendaVote(state, action.vote);
       return mapCurrentAgenda(state, a => ({
         ...a,
-        votes: { ...a.votes, [action.playerId]: action.vote },
+        votes: { ...a.votes, [action.playerId]: vote },
       }));
     }
 
-    case 'LOCK_VOTE':
-      return mapCurrentAgenda(state, agenda => ({
-        ...agenda,
-        locked: { ...agenda.locked, [action.playerId]: true },
+    case 'LOCK_VOTE': {
+      const agenda = currentAgenda(state);
+      if (!agenda || agenda.locked?.[action.playerId]) return state;
+      const prev = agenda.votes?.[action.playerId] || { choice: 'abstain', amount: 0 };
+      const vote = coerceAgendaVote(state, prev);
+      return mapCurrentAgenda(state, a => ({
+        ...a,
+        votes: { ...a.votes, [action.playerId]: vote },
+        locked: { ...a.locked, [action.playerId]: true },
       }));
+    }
 
     case 'TOGGLE_VOTE_REVERSED':
       return withPolitics(state, { voteReversed: !state.politics.voteReversed });
 
     case 'SET_VOTE_REVERSED':
       return withPolitics(state, { voteReversed: !!action.reversed });
+
+    case 'TOGGLE_ONE_VOTE_LAW': {
+      const enabled = !state.politics?.oneVoteLaw;
+      const patch = { oneVoteLaw: enabled };
+      // Enabling skips influence entry; disabling returns to SETUP if still in agenda.
+      if (enabled && state.politics?.showModal && state.politics.step === 'SETUP') {
+        patch.step = 'VOTE';
+      }
+      if (!enabled && state.politics?.showModal && state.politics.step === 'VOTE') {
+        patch.step = 'SETUP';
+      }
+      return withPolitics(state, patch);
+    }
+
+    case 'SET_ONE_VOTE_LAW': {
+      const enabled = !!action.enabled;
+      const patch = { oneVoteLaw: enabled };
+      if (enabled && state.politics?.showModal && state.politics.step === 'SETUP') {
+        patch.step = 'VOTE';
+      }
+      if (!enabled && state.politics?.showModal && state.politics.step === 'VOTE') {
+        patch.step = 'SETUP';
+      }
+      return withPolitics(state, patch);
+    }
 
     case 'SET_POLITICS_STEP':
       return withPolitics(state, { step: action.step });

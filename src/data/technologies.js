@@ -274,7 +274,7 @@ const FACTION_TECHS = [
   // PoK
   {
     id: 'aerie_hololattice', name: 'Aerie Hololattice', color: 'yellow', kind: 'faction',
-    prereqs: ['yellow', 'yellow'], source: 'pok', factionId: 'argent',
+    prereqs: ['yellow'], source: 'pok', factionId: 'argent',
     text: 'Другие не могут двигать корабли через системы с вашими структурами. Каждая планета с ≥1 вашей структурой получает Production 1, как будто это ваш юнит.',
   },
   {
@@ -294,7 +294,7 @@ const FACTION_TECHS = [
   },
   {
     id: 'genetic_recombination', name: 'Genetic Recombination', color: 'green', kind: 'faction',
-    prereqs: ['green', 'green'], source: 'pok', factionId: 'mahact',
+    prereqs: ['green'], source: 'pok', factionId: 'mahact',
     text: 'Можете истощить до того, как игрок голосует; этот игрок должен отдать ≥1 голос за исход на ваш выбор или снять 1 жетон из fleet pool в подкрепления.',
   },
   {
@@ -314,12 +314,12 @@ const FACTION_TECHS = [
   },
   {
     id: 'temporal_command_suite', name: 'Temporal Command Suite', color: 'yellow', kind: 'faction',
-    prereqs: ['yellow', 'yellow'], source: 'pok', factionId: 'nomad',
+    prereqs: ['yellow'], source: 'pok', factionId: 'nomad',
     text: 'После того как агент любого игрока истощён, можете истощить эту карту, чтобы ready этого агента; если ready чужого агента — можете провести сделку с этим игроком.',
   },
   {
     id: 'memoria_2', name: 'Memoria II', color: null, kind: 'unit',
-    prereqs: ['blue', 'blue', 'yellow'], source: 'pok', factionId: 'nomad',
+    prereqs: ['green', 'blue', 'yellow'], source: 'pok', factionId: 'nomad',
     text: 'Можете считать этот юнит смежным с системами, где есть ≥1 ваш mech. Sustain Damage, AFB 5×3. Cost 8, Combat 5, Move 2, Capacity 6.',
   },
   {
@@ -339,7 +339,7 @@ const FACTION_TECHS = [
   },
   {
     id: 'vortex', name: 'Vortex', color: 'red', kind: 'faction',
-    prereqs: ['red', 'red'], source: 'pok', factionId: 'vuilraith',
+    prereqs: ['red'], source: 'pok', factionId: 'vuilraith',
     text: 'ACTION: истощить — выбрать чужой non-structure юнит в системе, смежной с ≥1 вашим space dock. Capture 1 юнит этого типа из подкреплений того игрока.',
   },
 
@@ -378,27 +378,27 @@ const FACTION_TECHS = [
   // Thunder's Edge factions
   {
     id: 'exile_2', name: 'Exile II', color: null, kind: 'unit',
-    prereqs: ['blue', 'blue'], source: 'te', factionId: 'crimson',
+    prereqs: ['red', 'red'], source: 'te', factionId: 'crimson',
     text: 'В конце боя любого игрока в этой системе или до 2 систем дальше можете разместить активный или неактивный breach в той системе. AFB 6×3. Cost 1, Combat 7, Move 2.',
   },
   {
-    id: 'subatomic_splicer', name: 'Subatomic Splicer', color: 'red', kind: 'faction',
-    prereqs: ['red', 'red'], source: 'te', factionId: 'crimson',
+    id: 'subatomic_splicer', name: 'Subatomic Splicer', color: 'yellow', kind: 'faction',
+    prereqs: ['yellow'], source: 'te', factionId: 'crimson',
     text: 'Когда один из ваших кораблей уничтожен, можете произвести корабль того же типа у space dock в домашней системе.',
   },
   {
-    id: 'hydrothermal_mining', name: 'Hydrothermal Mining', color: 'yellow', kind: 'faction',
-    prereqs: ['yellow'], source: 'te', factionId: 'deepwrought',
+    id: 'hydrothermal_mining', name: 'Hydrothermal Mining', color: 'green', kind: 'faction',
+    prereqs: ['green'], source: 'te', factionId: 'deepwrought',
     text: 'В начале фазы статуса получите 1 ТГ за каждую ocean-карту в игре.',
   },
   {
     id: 'radical_advancement', name: 'Radical Advancement', color: 'green', kind: 'faction',
-    prereqs: ['green', 'green'], source: 'te', factionId: 'deepwrought',
+    prereqs: ['green'], source: 'te', factionId: 'deepwrought',
     text: 'В начале фазы статуса можете заменить одну свою non-unit tech на tech того же цвета ровно с +1 пререквизитом.',
   },
   {
-    id: 'plane_splitter', name: 'Planesplitter', color: 'blue', kind: 'faction',
-    prereqs: ['blue', 'blue'], source: 'te', factionId: 'firmament',
+    id: 'plane_splitter', name: 'Planesplitter', color: 'yellow', kind: 'faction',
+    prereqs: ['yellow', 'yellow'], source: 'te', factionId: 'firmament',
     text: 'При получении выведите Fracture в игру. Переверните карту, если в игре Obsidian. (Obs.: в начале strategic actions можете переместить ingress token в систему с вашими юнитами или смежную.)',
   },
   {
@@ -408,22 +408,22 @@ const FACTION_TECHS = [
   },
   {
     id: 'heliosphere_v2', name: '4X41C "Helios" V2', color: null, kind: 'unit',
-    prereqs: ['red', 'yellow'], source: 'te', factionId: 'bastion',
+    prereqs: ['yellow', 'yellow'], source: 'te', factionId: 'bastion',
     text: 'Production = resource планеты +4. Resource планеты +2. До 3 истребителей не считают против capacity.',
   },
   {
     id: 'proxima_targeting', name: 'Proxima Targeting VI', color: 'red', kind: 'faction',
-    prereqs: ['red', 'red'], source: 'te', factionId: 'bastion',
+    prereqs: ['red'], source: 'te', factionId: 'bastion',
     text: 'Отменяйте 1 hit от Bombardment против ваших наземных за каждый ваш galvanized юнит здесь. В начале раунда наземного боя можете разрешить Bombardment 8×3 против чужих GF; если да — такой же бросок против своих GF.',
   },
   {
     id: 'linkship_2', name: 'Linkship II', color: null, kind: 'unit',
-    prereqs: ['blue', 'blue'], source: 'te', factionId: 'ralnel',
+    prereqs: ['red', 'red'], source: 'te', factionId: 'ralnel',
     text: 'Может использовать Space Cannon одной вашей структуры в своей космической зоне; несколько linkship могут триггерить одну структуру. AFB 6×3. Cost 1, Combat 8, Move 4.',
   },
   {
-    id: 'nanomachines', name: 'Nanomachines', color: 'yellow', kind: 'faction',
-    prereqs: ['yellow', 'yellow'], source: 'te', factionId: 'ralnel',
+    id: 'nanomachines', name: 'Nanomachines', color: 'red', kind: 'faction',
+    prereqs: ['red'], source: 'te', factionId: 'ralnel',
     text: 'ACTION: истощить — разместить 1 PDS на планету под контролем. ACTION: истощить — починить все повреждённые юниты. ACTION: истощить и сбросить 1 КД — взять 1 КД.',
   },
 ];

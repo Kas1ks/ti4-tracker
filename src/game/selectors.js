@@ -40,7 +40,9 @@ export function strategyResolution(state) {
     active: false,
     cardId: null,
     playerId: null,
+    startedAt: null,
     responses: {},
+    resolvedAt: {},
   };
 }
 
@@ -319,10 +321,12 @@ export function isArgentFlightPlayer(player) {
 
 /**
  * Votes that count toward the outcome for a locked ballot.
+ * oneVoteLaw: exactly 1 (no Argent Zeal / influence spend).
  * Argent: spent amount + playerCount when amount ≥ 1 and not abstaining.
  */
 export function effectiveVoteAmount(state, player, vote) {
   if (!vote || vote.choice === 'abstain') return 0;
+  if (state?.politics?.oneVoteLaw) return 1;
   const spent = Number(vote.amount) || 0;
   if (spent <= 0) return 0;
   if (isArgentFlightPlayer(player)) return spent + argentFlightVoteBonus(state);

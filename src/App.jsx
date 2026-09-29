@@ -60,6 +60,7 @@ function App() {
     roomStatus,
     roomError,
     syncLink,
+    resumeLiveSync,
     dismissRoomError,
     startHostRoom,
     joinRoomById,
@@ -89,15 +90,15 @@ function App() {
   const { isGameActive, players } = game;
   const { targetScore, roundNumber, usePok, useTe, speakerId, isPoliticsActive } = game.meta;
   const { active: objectives, completions } = game.objectives;
-  const { active: roundActive, passed, turnStartedAt, strategyActionTaken, strategyResolution, imperialClaim, techResearch } = game.round;
+  const { active: roundActive, passed, turnStartedAt, turnPausedAccum, strategyActionTaken, strategyResolution, imperialClaim, techResearch } = game.round;
   const {
     queue: draftQueue, assignments: draftAssignments, currentQueueIndex,
     step: draftStep, pickOrder: draftPickOrder, showModal: showDraftModal,
-    strategyCardBonuses,
+    strategyCardBonuses, pickStartedAt: draftPickStartedAt,
   } = game.draft;
   const {
     showModal: showPoliticsModal, step: politicsStep, agendas, currentAgendaIndex,
-    influenceLocked, voteReversed,
+    influenceLocked, voteReversed, oneVoteLaw,
   } = game.politics;
   const { show: showStatusPhaseModal, checks: statusPhaseChecks, scoring: objectiveScoring } = game.statusPhase;
 
@@ -112,8 +113,10 @@ function App() {
   const isDraftLocked = select.isDraftLocked(game);
 
   const clockRunning = isGameActive && !!activePlayer && !passed[activePlayer.id]
-    && Number.isFinite(turnStartedAt);
-  const turnTime = useElapsedSeconds(turnStartedAt, clockRunning);
+    && Number.isFinite(turnStartedAt)
+    && !strategyResolution?.active;
+  const liveTurnSecs = useElapsedSeconds(turnStartedAt, clockRunning);
+  const turnTime = Math.max(0, turnPausedAccum || 0) + liveTurnSecs;
 
   const isLive = roomStatus === 'live' && !!room?.roomId;
   const isConnecting = roomStatus === 'connecting';
@@ -400,6 +403,7 @@ function App() {
         roomError={hasRoomSession ? roomError : null}
         syncLink={hasRoomSession ? syncLink : 'idle'}
         onDismissError={dismissRoomError}
+        onReconnect={hasRoomSession ? () => resumeLiveSync({ forceSse: true }) : undefined}
       />
 
       <GameHeader
@@ -706,7 +710,7 @@ function App() {
               playerId,
               techId,
               force: !!opts.force,
-              ignorePrereq: opts.ignorePrereq ? 1 : 0,
+              ignorePrereq: opts.ignoreAll ? 'all' : (opts.ignorePrereq ? 1 : 0),
             })}
             onPass={(playerId) => dispatch({ type: 'PASS_TECH_RESEARCH', playerId })}
             onGrantTech={(playerId, techId) => dispatch({ type: 'GRANT_TECH', playerId, techId })}
@@ -765,6 +769,7 @@ function App() {
             handleReassignCard={(cardId, playerId) => dispatch({ type: 'REASSIGN_CARD', cardId, playerId })}
             confirmDraft={() => dispatch({ type: 'CONFIRM_DRAFT' })}
             perms={perms}
+            pickStartedAt={draftPickStartedAt}
           />
         </LazyWhen>
 
@@ -795,6 +800,8 @@ function App() {
             currentVoterId={select.currentVoterId(game)}
             influenceLocked={influenceLocked || {}}
             voteReversed={!!voteReversed}
+            oneVoteLaw={!!oneVoteLaw}
+            onToggleOneVoteLaw={() => dispatch({ type: 'TOGGLE_ONE_VOTE_LAW' })}
             allInfluenceLocked={select.allInfluenceLocked(game)}
             perms={perms}
             readOnly={perms.role === 'viewer'}
@@ -897,6 +904,7 @@ function App() {
             show={!!strategyResolution?.active && strategyResolution.cardId !== 7}
             cardId={strategyResolution?.cardId}
             myStatus={strategyResolution?.responses?.[perms.seatPlayerId]}
+            startedAt={strategyResolution?.startedAt}
             onResolve={(choice) => resolveStrategy(perms.seatPlayerId, choice)}
           />
         )}

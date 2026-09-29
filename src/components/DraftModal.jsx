@@ -1,11 +1,14 @@
 import { STRATEGY_CARDS } from '../data/gameData';
 import { useEscapeKey } from '../hooks/useEscapeKey';
 import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
+import { useElapsedSeconds } from '../hooks/useTurnTimer';
+import { formatTime } from '../utils/game';
 
 export function DraftModal({
   showDraftModal, minimizedModals, toggleMinimize, setShowDraftModal, draftStep, draftQueue,
   players, currentQueueIndex, draftAssignments, strategyCardBonuses, handleSelectCard,
   handleUndoLastPick, handleReassignCard, confirmDraft, draftPickOrder, perms,
+  pickStartedAt = null,
 }) {
   const currentPickerId = draftQueue[currentQueueIndex];
   const currentPicker = players.find(p => p.id === currentPickerId);
@@ -23,6 +26,9 @@ export function DraftModal({
   const visible = openForClient && !minimizedModals.draft;
   useEscapeKey(() => setShowDraftModal(false), visible);
   useBodyScrollLock(visible);
+
+  const pickClockRunning = draftStep === 'DRAFT' && Number.isFinite(pickStartedAt) && visible;
+  const pickElapsed = useElapsedSeconds(pickStartedAt, pickClockRunning);
 
   /** Full card grid only while this client can pick; otherwise compact status. */
   const showCardPicker = draftStep === 'DRAFT' && canPick;
@@ -53,6 +59,14 @@ export function DraftModal({
                                             {draftStep === 'DRAFT' ? "ВЫБОР КАРТ СТРАТЕГИЙ" : "ПОДТВЕРЖДЕНИЕ И ОБМЕН"}
                                         </h2>
                                         <div className="flex items-center gap-4 flex-shrink-0">
+                                            {draftStep === 'DRAFT' && Number.isFinite(pickStartedAt) && (
+                                              <div className="text-right" title="Время текущего выбора">
+                                                <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Таймер выбора</div>
+                                                <div className="font-orbitron font-black text-amber-300 text-lg tabular-nums leading-none">
+                                                  {formatTime(pickElapsed)}
+                                                </div>
+                                              </div>
+                                            )}
                                             <button type="button" onClick={() => toggleMinimize('draft')} aria-label="Свернуть драфт" className="text-slate-500 hover:text-white transition">
                                                 <i className="fa-solid fa-window-minimize text-base" aria-hidden="true"></i>
                                             </button>
@@ -116,6 +130,11 @@ export function DraftModal({
                                                   <div className="font-orbitron font-black text-2xl text-amber-300">
                                                     {currentPicker?.name || '…'}
                                                   </div>
+                                                  {Number.isFinite(pickStartedAt) && (
+                                                    <div className="font-orbitron font-bold text-amber-400/90 text-lg tabular-nums pt-1">
+                                                      {formatTime(pickElapsed)}
+                                                    </div>
+                                                  )}
                                                   <div className="text-xs text-slate-400">
                                                     {seatHasPicked
                                                       ? 'Ожидание выбора других игроков'
@@ -228,8 +247,8 @@ export function DraftModal({
                                                                 : 'cursor-pointer'
                                                                 }`}
                                                         >
-                                                            {bonus > 0 && !isTaken && (
-                                                                <div className="absolute top-2 right-2 bg-yellow-500 text-black rounded-full w-7 h-7 flex items-center justify-center font-orbitron font-bold text-sm border-2 border-slate-900 shadow-lg z-10" title={`Накоплено товаров: ${bonus}`}>
+                                                            {bonus > 0 && (
+                                                                <div className="absolute top-2 right-2 bg-yellow-500 text-black rounded-full w-7 h-7 flex items-center justify-center font-orbitron font-bold text-sm border-2 border-slate-900 shadow-lg z-20" title={`Накоплено товаров: ${bonus}`}>
                                                                     {bonus}
                                                                 </div>
                                                             )}
@@ -239,7 +258,7 @@ export function DraftModal({
                                                               className={`w-full rounded-xl border-2 transition-all bg-slate-950 h-80 object-cover max-md:h-auto max-md:aspect-[2/3] max-md:object-contain max-md:object-top ${isTaken ? 'border-slate-800/50' : 'border-transparent group-hover:border-amber-500/80'}`}
                                                             />
                                                             {isTaken && (
-                                                                <div className="absolute inset-0 bg-black/80 flex flex-col items-center justify-center text-center p-2 rounded-xl">
+                                                                <div className="absolute inset-0 bg-black/80 flex flex-col items-center justify-center text-center p-2 rounded-xl z-10">
                                                                     <span className="text-xs text-slate-400">Взял:</span>
                                                                     <span className="font-bold text-amber-400 text-sm">{owner?.name}</span>
                                                                 </div>

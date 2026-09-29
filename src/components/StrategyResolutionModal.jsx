@@ -1,11 +1,27 @@
 import { STRATEGY_CARDS } from '../data/gameData';
 import { useEscapeKey } from '../hooks/useEscapeKey';
 import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
+import { useElapsedSeconds } from '../hooks/useTurnTimer';
+import { formatTime } from '../utils/game';
 
 function statusLabel(status) {
   if (status === 'played') return 'Сыграно';
   if (status === 'passed') return 'Пас';
   return 'Ожидание';
+}
+
+function resolutionSecsFor(resolution, playerId, liveSecs) {
+  const status = resolution?.responses?.[playerId];
+  const started = resolution?.startedAt;
+  if (!Number.isFinite(started)) return 0;
+  if (status === 'played' || status === 'passed') {
+    const ended = resolution?.resolvedAt?.[playerId] ?? resolution?.resolvedAt?.[String(playerId)];
+    if (Number.isFinite(ended)) {
+      return Math.max(0, Math.floor((ended - started) / 1000));
+    }
+    return liveSecs;
+  }
+  return liveSecs;
 }
 
 export function StrategyResolutionModal({
@@ -20,11 +36,21 @@ export function StrategyResolutionModal({
 }) {
   useEscapeKey(onMinimize || onClose, show && !minimized);
   useBodyScrollLock(show && !minimized);
+
+  const seats = (players || []).filter(p => !p.eliminated && resolution?.responses?.[p.id] != null);
+  const anyPending = seats.some((p) => {
+    const s = resolution?.responses?.[p.id];
+    return s !== 'played' && s !== 'passed';
+  });
+  const liveSecs = useElapsedSeconds(
+    resolution?.startedAt,
+    !!show && !minimized && anyPending && Number.isFinite(resolution?.startedAt),
+  );
+
   if (!show) return null;
 
   const card = STRATEGY_CARDS.find(c => c.id === resolution?.cardId) || null;
   const owner = players.find(p => p.id === resolution?.playerId) || null;
-  const seats = players.filter(p => !p.eliminated && resolution?.responses?.[p.id] != null);
   const answered = seats.filter(p => {
     const s = resolution?.responses?.[p.id];
     return s === 'played' || s === 'passed';
@@ -55,15 +81,25 @@ export function StrategyResolutionModal({
               {answered}/{seats.length}
             </p>
           </div>
-          <button
-            type="button"
-            onClick={onMinimize || onClose}
-            className="flex-shrink-0 w-10 h-10 rounded-xl bg-slate-900 border border-slate-700 text-slate-300 hover:text-white hover:border-slate-500 transition"
-            title="Свернуть"
-            aria-label="Свернуть"
-          >
-            <i className="fa-solid fa-window-minimize text-base" aria-hidden="true" />
-          </button>
+          <div className="flex items-center gap-3 flex-shrink-0">
+            {Number.isFinite(resolution?.startedAt) && (
+              <div className="text-right hidden sm:block">
+                <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Таймер</div>
+                <div className="font-orbitron font-black text-amber-300 text-lg tabular-nums leading-none">
+                  {formatTime(liveSecs)}
+                </div>
+              </div>
+            )}
+            <button
+              type="button"
+              onClick={onMinimize || onClose}
+              className="flex-shrink-0 w-10 h-10 rounded-xl bg-slate-900 border border-slate-700 text-slate-300 hover:text-white hover:border-slate-500 transition"
+              title="Свернуть"
+              aria-label="Свернуть"
+            >
+              <i className="fa-solid fa-window-minimize text-base" aria-hidden="true" />
+            </button>
+          </div>
         </div>
 
         <div className="flex-1 overflow-y-auto p-4 md:p-6 grid md:grid-cols-[minmax(0,300px)_1fr] gap-4 md:gap-6">
@@ -93,6 +129,7 @@ export function StrategyResolutionModal({
               const played = status === 'played';
               const passed = status === 'passed';
               const done = played || passed;
+              const secs = resolutionSecsFor(resolution, p.id, liveSecs);
               return (
                 <div
                   key={p.id}
@@ -121,6 +158,11 @@ export function StrategyResolutionModal({
                     )}
                   </div>
                   <div className="flex items-center gap-2 flex-shrink-0">
+                    <span className={`font-orbitron font-bold text-sm tabular-nums ${
+                      done ? 'text-slate-400' : 'text-amber-300'
+                    }`} title="Время ответа">
+                      {formatTime(secs)}
+                    </span>
                     <span className={`text-xs md:text-sm font-bold uppercase tracking-wide ${
                       played ? 'text-emerald-300' : passed ? 'text-rose-300' : 'text-slate-500'
                     }`}>

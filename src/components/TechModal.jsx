@@ -162,12 +162,18 @@ export function TechModal({
       synergyColors: synergy,
       ignoreCount: 1,
     });
+    const isCabalUnit = player.factionId === 'vuilraith' && tech.kind === 'unit';
+    const okWithPlastic = isCabalUnit && canResearch(tech, owned, {
+      synergyColors: synergy,
+      ignoreCount: Math.max((tech.prereqs || []).length, 1),
+    });
     setPrereqError({
       techId,
       techName: tech.name,
       message: prereqGapMessage(tech, owned, { synergyColors: synergy })
         || 'Не выполнены пререквизиты',
       canPlanet: okWithPlanet,
+      canPlastic: okWithPlastic,
     });
   };
 
@@ -451,8 +457,11 @@ export function TechModal({
                 {prereqError.message}
               </p>
               <p className="text-xs text-slate-500 mt-2 leading-relaxed">
-                Обход: метка tech на планете (игнор 1 пререка) или уже исследованные цвета.
-                Хост может добавить технологию вручную вне карты.
+                Обход: метка tech на планете (игнор 1 пререка)
+                {prereqError.canPlastic
+                  ? '; Кабала — вернуть захваченный пластик того же типа (Riftmeld: игнор всех пререков unit upgrade).'
+                  : '.'}
+                {' '}Хост может добавить технологию вручную вне карты.
               </p>
             </div>
             <div className="flex flex-col gap-2">
@@ -466,6 +475,18 @@ export function TechModal({
                   className="w-full py-3 rounded-xl bg-amber-600 hover:bg-amber-500 text-slate-950 font-bold text-sm"
                 >
                   Игнор 1 пререка (планета / метка)
+                </button>
+              )}
+              {prereqError.canPlastic && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onResearch?.(session.playerId, prereqError.techId, { ignoreAll: true });
+                    setPrereqError(null);
+                  }}
+                  className="w-full py-3 rounded-xl bg-rose-700 hover:bg-rose-600 text-white font-bold text-sm"
+                >
+                  Игнор всех пререков (пластик / Riftmeld)
                 </button>
               )}
               {isHost && (

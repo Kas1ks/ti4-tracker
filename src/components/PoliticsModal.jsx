@@ -28,6 +28,7 @@ export function PoliticsModal({
   onLockInfluence,
   onUnlockInfluence,
   onToggleVoteReversed,
+  onToggleOneVoteLaw,
   onSetSpeaker: _onSetSpeaker,
   onNextAgenda,
   onFinish,
@@ -35,6 +36,7 @@ export function PoliticsModal({
   currentVoterId = null,
   influenceLocked = {},
   voteReversed = false,
+  oneVoteLaw = false,
   allInfluenceLocked = false,
   perms,
   readOnly = false,
@@ -116,11 +118,30 @@ export function PoliticsModal({
         aria-labelledby="politics-modal-title"
         className="bg-slate-900 border border-purple-800 rounded-2xl max-w-4xl w-full p-6 max-h-[90vh] overflow-y-auto shadow-2xl shadow-purple-500/10 max-md:p-4 max-md:max-h-[min(92vh,100dvh)] modal-scroll"
       >
-        <div className="flex justify-between items-center mb-4 pb-3 border-b border-slate-800">
+        <div className="flex justify-between items-center mb-4 pb-3 border-b border-slate-800 gap-3 flex-wrap">
           <h2 id="politics-modal-title" className="font-orbitron text-lg font-bold text-purple-400 uppercase flex items-center gap-2">
             <i className="fa-solid fa-gavel" /> Фаза Политики
           </h2>
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3 flex-wrap justify-end">
+            {canAdmin && (
+              <button
+                type="button"
+                onClick={onToggleOneVoteLaw}
+                className={`text-[11px] font-bold px-3 py-1.5 rounded-lg border transition ${
+                  oneVoteLaw
+                    ? 'bg-amber-950 border-amber-500 text-amber-300'
+                    : 'bg-slate-950 border-slate-700 text-slate-400 hover:border-amber-600 hover:text-amber-200'
+                }`}
+                title="Закон: каждый игрок голосует ровно 1 голосом без доп. голосов и без ввода влияния"
+              >
+                {oneVoteLaw ? '① Закон: 1 голос' : '① Закон: 1 голос — выкл'}
+              </button>
+            )}
+            {!canAdmin && oneVoteLaw && (
+              <span className="text-[11px] font-bold px-2.5 py-1 rounded-lg border border-amber-700/60 text-amber-300 bg-amber-950/40">
+                ① 1 голос
+              </span>
+            )}
             <button type="button" onClick={onMinimize} aria-label="Свернуть" className="text-slate-500 hover:text-white transition">
               <i className="fa-solid fa-window-minimize text-base" />
             </button>
@@ -130,7 +151,26 @@ export function PoliticsModal({
           </div>
         </div>
 
-        {politicsStep === 'SETUP' && (
+        {politicsStep === 'SETUP' && oneVoteLaw && (
+          <div className="space-y-4">
+            <p className="text-sm text-amber-200/90 bg-amber-950/30 border border-amber-700/50 rounded-xl px-4 py-3">
+              Активен закон «1 голос»: влияние не вводится — каждый отдаёт ровно один голос.
+            </p>
+            {canAdmin && (
+              <div className="flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => setPoliticsStep('VOTE')}
+                  className="bg-purple-600 hover:bg-purple-500 text-white font-orbitron font-extrabold py-2 px-6 rounded-xl text-sm transition uppercase"
+                >
+                  Перейти к голосованию <i className="fa-solid fa-arrow-right" />
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {politicsStep === 'SETUP' && !oneVoteLaw && (
           <div className="space-y-4">
             <p className="text-sm text-slate-400">
               Каждый игрок указывает своё влияние (голоса) на фазу и подтверждает.
@@ -204,7 +244,7 @@ export function PoliticsModal({
         {politicsStep === 'VOTE' && (
           <div className="space-y-4">
             <div className="flex flex-wrap justify-between items-center gap-2">
-              {canAdmin ? (
+              {canAdmin && !oneVoteLaw ? (
                 <button type="button" onClick={() => setPoliticsStep('SETUP')} className="text-xs text-slate-400 hover:text-white font-bold flex items-center gap-1">
                   <i className="fa-solid fa-arrow-left" /> Назад к голосам
                 </button>
@@ -225,6 +265,12 @@ export function PoliticsModal({
                 </button>
               )}
             </div>
+
+            {oneVoteLaw && (
+              <div className="text-xs text-amber-200/90 bg-amber-950/25 border border-amber-700/40 rounded-xl px-3 py-2">
+                Закон «1 голос»: каждый игрок отдаёт ровно 1 голос (без влияния, Zeal и других надбавок).
+              </div>
+            )}
 
             <div className="text-xs text-slate-400 bg-slate-950 border border-slate-800 rounded-xl px-3 py-2">
               Порядок голосования{voteReversed ? ' (обратный)' : ''}:{' '}
@@ -322,22 +368,28 @@ export function PoliticsModal({
                     const vote = currentAgenda.votes[p.id] || { choice: 'abstain', amount: 0 };
                     const isLocked = !!currentAgenda.locked[p.id];
                     const isCurrent = currentVoterId === p.id;
-                    const votesSpentOnPrevAgendas = agendas.slice(0, currentAgendaIndex).reduce((acc, agenda) => {
-                      const playerVote = agenda.votes[p.id];
-                      if (playerVote && agenda.locked[p.id]) {
-                        return acc + (playerVote.amount || 0);
-                      }
-                      return acc;
-                    }, 0);
-                    const availableInfluence = (p.influence || 0) - votesSpentOnPrevAgendas;
+                    const votesSpentOnPrevAgendas = oneVoteLaw
+                      ? 0
+                      : agendas.slice(0, currentAgendaIndex).reduce((acc, agenda) => {
+                        const playerVote = agenda.votes[p.id];
+                        if (playerVote && agenda.locked[p.id]) {
+                          return acc + (playerVote.amount || 0);
+                        }
+                        return acc;
+                      }, 0);
+                    const availableInfluence = oneVoteLaw
+                      ? 1
+                      : (p.influence || 0) - votesSpentOnPrevAgendas;
                     const faction = ALL_FACTIONS.find(f => f.id === p.factionId);
                     const canVoteNow = canEditPlayer(p.id) && isCurrent && !isLocked;
-                    const isArgent = isArgentFlightPlayer(p);
-                    const spent = Number(vote.amount) || 0;
+                    const isArgent = !oneVoteLaw && isArgentFlightPlayer(p);
+                    const spent = oneVoteLaw
+                      ? (vote.choice === 'abstain' ? 0 : 1)
+                      : (Number(vote.amount) || 0);
                     const countsToward = !isLocked && vote.choice !== 'abstain' && spent > 0
-                      ? spent + (isArgent ? argentBonus : 0)
+                      ? (oneVoteLaw ? 1 : spent + (isArgent ? argentBonus : 0))
                       : (isLocked
-                        ? effectiveVoteAmount(game || { players: activePlayers }, p, vote)
+                        ? effectiveVoteAmount(game || { players: activePlayers, politics: { oneVoteLaw } }, p, vote)
                         : 0);
 
                     return (
@@ -371,7 +423,7 @@ export function PoliticsModal({
                             )}
                           </div>
                           <div className="text-center w-20 max-md:ml-auto">
-                            <div className="text-xs text-slate-400">Доступно</div>
+                            <div className="text-xs text-slate-400">{oneVoteLaw ? 'Голосов' : 'Доступно'}</div>
                             <div className="font-orbitron font-black text-3xl text-amber-400 max-md:text-2xl">{availableInfluence}</div>
                           </div>
                         </div>
@@ -379,7 +431,13 @@ export function PoliticsModal({
                         <div className="flex items-center gap-2 max-md:w-full">
                           <select
                             value={vote.choice}
-                            onChange={e => setAgendaVotes(p.id, { ...vote, choice: e.target.value })}
+                            onChange={e => {
+                              const choice = e.target.value;
+                              setAgendaVotes(p.id, {
+                                choice,
+                                amount: choice === 'abstain' ? 0 : (oneVoteLaw ? 1 : vote.amount),
+                              });
+                            }}
                             disabled={!canVoteNow}
                             className="bg-slate-800 border border-slate-700 rounded-md px-2 py-2 text-xs text-white focus:outline-none focus:border-purple-400 w-32 disabled:opacity-50 max-md:flex-1 max-md:min-h-[44px]"
                           >
@@ -397,18 +455,27 @@ export function PoliticsModal({
                               opt && <option key={idx} value={idx}>{opt}</option>
                             ))}
                           </select>
-                          <input
-                            type="number"
-                            min="0"
-                            max={availableInfluence}
-                            value={vote.amount}
-                            onChange={(e) => {
-                              const newAmount = Math.max(0, Math.min(availableInfluence, parseInt(e.target.value, 10) || 0));
-                              setAgendaVotes(p.id, { ...vote, amount: newAmount });
-                            }}
-                            disabled={!canVoteNow || vote.choice === 'abstain'}
-                            className="bg-slate-800 border border-slate-700 rounded-md w-28 text-center font-orbitron font-black text-4xl text-cyan-400 focus:outline-none focus:border-cyan-500 disabled:opacity-50"
-                          />
+                          {oneVoteLaw ? (
+                            <div
+                              className="bg-slate-800 border border-slate-700 rounded-md w-28 text-center font-orbitron font-black text-4xl text-cyan-400 opacity-90"
+                              title="По закону — ровно 1 голос"
+                            >
+                              {vote.choice === 'abstain' ? 0 : 1}
+                            </div>
+                          ) : (
+                            <input
+                              type="number"
+                              min="0"
+                              max={availableInfluence}
+                              value={vote.amount}
+                              onChange={(e) => {
+                                const newAmount = Math.max(0, Math.min(availableInfluence, parseInt(e.target.value, 10) || 0));
+                                setAgendaVotes(p.id, { ...vote, amount: newAmount });
+                              }}
+                              disabled={!canVoteNow || vote.choice === 'abstain'}
+                              className="bg-slate-800 border border-slate-700 rounded-md w-28 text-center font-orbitron font-black text-4xl text-cyan-400 focus:outline-none focus:border-cyan-500 disabled:opacity-50"
+                            />
+                          )}
                           <button
                             type="button"
                             onClick={() => lockVote(p.id)}
