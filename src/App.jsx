@@ -25,6 +25,7 @@ import { getTechSession } from './hooks/useTechSession';
 
 const GameBoard = lazy(() => import('./components/GameBoard').then(m => ({ default: m.GameBoard })));
 const PlayerMobileConsole = lazy(() => import('./components/PlayerMobileConsole').then(m => ({ default: m.PlayerMobileConsole })));
+const ViewerMobileConsole = lazy(() => import('./components/ViewerMobileConsole').then(m => ({ default: m.ViewerMobileConsole })));
 const GameSummaryModal = lazy(() => import('./components/GameSummaryModal').then(m => ({ default: m.GameSummaryModal })));
 const StatsModal = lazy(() => import('./components/StatsModal').then(m => ({ default: m.StatsModal })));
 const StatusPhaseModal = lazy(() => import('./components/StatusPhaseModal').then(m => ({ default: m.StatusPhaseModal })));
@@ -126,6 +127,7 @@ function App() {
   const showAdminSetup = !isGameActive && canSetup && (soloSetup || hasRoomSession);
   const showGuestLobby = !isGameActive && !canSetup && hasRoomSession;
   const isPlayerClient = perms?.role === ROLES.PLAYER;
+  const isViewerClient = perms?.role === ROLES.VIEWER;
   const showImperialClaimModal = !!imperialClaim?.active && (
     roomStatus === 'solo'
     || perms?.role === ROLES.ADMIN
@@ -227,8 +229,8 @@ function App() {
     setShowExpeditionModal(true);
   };
 
-  const playerMobileShell = isPlayerClient && isGameActive;
-  useVisualViewportShell(playerMobileShell);
+  const mobileShell = (isPlayerClient || isViewerClient) && isGameActive;
+  useVisualViewportShell(mobileShell);
 
   // During objective scoring: tuck status checklist, open scoring modal.
   // When scoring finishes: restore the status checklist.
@@ -394,7 +396,7 @@ function App() {
   return (
     <div
       className={`max-w-[1800px] mx-auto flex flex-col text-slate-100 ${
-        playerMobileShell
+        mobileShell
           ? 'player-app-frame min-h-screen max-md:min-h-0 md:relative md:h-auto md:max-h-none md:overflow-visible md:px-8 max-md:px-0'
           : 'min-h-screen px-3 md:px-8'
       }`}
@@ -428,7 +430,7 @@ function App() {
         onOpenStats={cloud.openStatsModal}
         onOpenEventLog={() => ui.setShowEventLog(true)}
         onOpenExpedition={useTe ? openExpeditionPanel : undefined}
-        onOpenTech={() => {
+        onOpenTech={isViewerClient ? undefined : () => {
           ui.setTechViewPlayerId(perms?.seatPlayerId ?? activePlayer?.id ?? players[0]?.id ?? null);
           ui.setShowTechModal(true);
         }}
@@ -452,13 +454,13 @@ function App() {
         room={room}
         roomStatus={roomStatus}
         perms={perms}
-        hideTurnBarOnMobile={isPlayerClient}
+        hideTurnBarOnMobile={isPlayerClient || isViewerClient}
         onLeaveRoom={perms?.role === ROLES.VIEWER ? handleLeaveRoom : undefined}
       />
 
       <main
         className={`py-6 flex-grow space-y-8 ${
-          playerMobileShell
+          mobileShell
             ? 'md:px-0 max-md:py-0 max-md:space-y-0 max-md:flex-1 max-md:min-h-0 max-md:overflow-hidden max-md:flex max-md:flex-col'
             : ''
         }`}
@@ -554,7 +556,29 @@ function App() {
                 />
               </Suspense>
             )}
-            <div className={isPlayerClient ? 'hidden md:block' : undefined}>
+            {isViewerClient && (
+              <Suspense fallback={<BoardChunkFallback />}>
+                <ViewerMobileConsole
+                  activePlayer={activePlayer}
+                  turnOrder={turnOrder}
+                  players={players}
+                  passed={passed}
+                  turnTime={turnTime}
+                  getPlayerScore={getPlayerScore}
+                  targetScore={targetScore}
+                  speakerId={speakerId}
+                  objectives={objectives}
+                  completions={completions}
+                  scoring={objectiveScoring}
+                  roundActive={roundActive}
+                  strategyResolutionActive={!!strategyResolution?.active || !!imperialClaim?.active || !!techResearch?.active}
+                  resolvingCardId={strategyResolution?.cardId ?? null}
+                  usePok={usePok}
+                  useTe={useTe}
+                />
+              </Suspense>
+            )}
+            <div className={(isPlayerClient || isViewerClient) ? 'hidden md:block' : undefined}>
               <Suspense fallback={<BoardChunkFallback />}>
                 <GameBoard
                 turnOrder={turnOrder}
@@ -622,9 +646,9 @@ function App() {
           </>
         )}
 
-        <LazyWhen active={showStatusPhaseModal}>
+        <LazyWhen active={showStatusPhaseModal && !isViewerClient}>
           <StatusPhaseModal
-            show={showStatusPhaseModal}
+            show={showStatusPhaseModal && !isViewerClient}
             minimized={!!ui.minimizedModals.statusPhase}
             roundNumber={roundNumber}
             checks={statusPhaseChecks}
@@ -642,9 +666,9 @@ function App() {
           />
         </LazyWhen>
 
-        <LazyWhen active={!!objectiveScoring?.active}>
+        <LazyWhen active={!!objectiveScoring?.active && !isViewerClient}>
           <ObjectiveScoringModal
-            show={!!objectiveScoring?.active}
+            show={!!objectiveScoring?.active && !isViewerClient}
             minimized={!!ui.minimizedModals.objectiveScoring}
             players={players}
             objectives={objectives}
@@ -847,9 +871,9 @@ function App() {
           />
         </LazyWhen>
 
-        <LazyWhen active={!!strategyResolution?.active && !isPlayerClient}>
+        <LazyWhen active={!!strategyResolution?.active && !isPlayerClient && !isViewerClient}>
           <StrategyResolutionModal
-            show={!!strategyResolution?.active && !isPlayerClient}
+            show={!!strategyResolution?.active && !isPlayerClient && !isViewerClient}
             minimized={!!ui.minimizedModals.strategyResolution}
             resolution={strategyResolution}
             players={players}
@@ -973,7 +997,7 @@ function App() {
           type="button"
           onClick={() => ui.setShowProductionCalculator(true)}
           className={`fixed z-40 items-center gap-2 rounded-xl border border-cyan-700 bg-slate-900/95 px-3 py-2.5 text-xs font-bold text-cyan-300 shadow-lg hover:bg-slate-800 transition left-4 bottom-4 ${
-            isPlayerClient ? 'hidden md:flex' : 'flex'
+            (isPlayerClient || isViewerClient) ? 'hidden md:flex' : 'flex'
           }`}
           title="Калькулятор производства"
         >
@@ -987,9 +1011,9 @@ function App() {
         showDraftModal={showDraftModal && (draftStep !== 'CONFIRM' || perms.can('confirmDraft'))}
         showPoliticsModal={showPoliticsModal && (politicsStep !== 'SPEAKER' || perms.can('politics'))}
         showCombatModal={ui.showCombatModal}
-        showStatusPhaseModal={showStatusPhaseModal}
-        scoringActive={!!objectiveScoring?.active}
-        strategyResolutionActive={!!strategyResolution?.active && !isPlayerClient}
+        showStatusPhaseModal={showStatusPhaseModal && !isViewerClient}
+        scoringActive={!!objectiveScoring?.active && !isViewerClient}
+        strategyResolutionActive={!!strategyResolution?.active && !isPlayerClient && !isViewerClient}
         imperialClaimActive={showImperialClaimModal}
         techResearchActive={showTechResearchModal}
         expeditionActive={false}
