@@ -31,6 +31,8 @@ function syncedReducer(state, action) {
 
 function playerGateMessage(error) {
   switch (error) {
+    case 'victory-locked':
+      return 'Партия остановлена: достигнута цель ПО. Дождитесь хоста.';
     case 'not-your-turn':
       return 'Сейчас не ваш ход.';
     case 'strategy-required':
@@ -432,6 +434,23 @@ export function useSyncedGame() {
       });
       if (!gate.ok) {
         setRoomError(playerGateMessage(gate.error));
+        return;
+      }
+    }
+
+    if (current.role === ROLES.ADMIN) {
+      const gate = authorizeAction({
+        role: current.role,
+        seatPlayerId: current.seatPlayerId ?? null,
+        action: stamped,
+        state: gameRef.current,
+      });
+      if (!gate.ok) {
+        setRoomError(
+          gate.error === 'victory-locked'
+            ? 'Партия на паузе победы: процессы заблокированы. Откатите ПО или правьте табло.'
+            : playerGateMessage(gate.error),
+        );
         return;
       }
     }

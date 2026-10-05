@@ -26,6 +26,11 @@ export interface Player {
   passed?: boolean;
 }
 
+export interface RoundTimeEntry {
+  round: number;
+  seconds: number;
+}
+
 export interface GameMeta {
   targetScore: number;
   roundNumber: number;
@@ -34,6 +39,7 @@ export interface GameMeta {
   speakerId: number | null;
   isPoliticsActive: boolean;
   isAgendaPhasePending: boolean;
+  roundTimes: RoundTimeEntry[];
 }
 
 export interface GameRound {
@@ -43,6 +49,7 @@ export interface GameRound {
   passed: Record<string | number, boolean>;
   turnTime: number;
   turnStartedAt: number | null;
+  roundStartedAt: number | null;
   turnPausedAccum: number;
   strategyActionTaken: boolean;
   expeditionClaimedThisTurn: boolean;

@@ -19,9 +19,11 @@ import { SetupScreen } from './components/SetupScreen';
 import { StrategyResolutionBanner } from './components/StrategyResolutionBanner';
 import { StartingTechDraftBanner } from './components/StartingTechDraftBanner';
 import { SyncStatusBanner } from './components/SyncStatusBanner';
+import { VictoryLockBanner } from './components/VictoryLockBanner';
 import { ROLES } from './sync/permissions';
 import { playersNeedingStartingTechDraft } from './data/technologies';
 import { getTechSession } from './hooks/useTechSession';
+import { isVictoryReached, victoryWinners } from './game/victory';
 
 const GameBoard = lazy(() => import('./components/GameBoard').then(m => ({ default: m.GameBoard })));
 const PlayerMobileConsole = lazy(() => import('./components/PlayerMobileConsole').then(m => ({ default: m.PlayerMobileConsole })));
@@ -92,6 +94,7 @@ function App() {
   const { targetScore, roundNumber, usePok, useTe, speakerId, isPoliticsActive } = game.meta;
   const { active: objectives, completions } = game.objectives;
   const { active: roundActive, passed, turnStartedAt, turnPausedAccum, strategyActionTaken, strategyResolution, imperialClaim, techResearch } = game.round;
+  const roundStartedAt = game.round?.roundStartedAt ?? null;
   const {
     queue: draftQueue, assignments: draftAssignments, currentQueueIndex,
     step: draftStep, pickOrder: draftPickOrder, showModal: showDraftModal,
@@ -115,9 +118,17 @@ function App() {
 
   const clockRunning = isGameActive && !!activePlayer && !passed[activePlayer.id]
     && Number.isFinite(turnStartedAt)
-    && !strategyResolution?.active;
+    && !strategyResolution?.active
+    && !isVictoryReached(game);
   const liveTurnSecs = useElapsedSeconds(turnStartedAt, clockRunning);
   const turnTime = Math.max(0, turnPausedAccum || 0) + liveTurnSecs;
+
+  const roundClockRunning = isGameActive && Number.isFinite(roundStartedAt) && !isVictoryReached(game);
+  const liveRoundSecs = useElapsedSeconds(roundStartedAt, roundClockRunning);
+  const roundTime = select.currentRoundDisplayTime(game, liveRoundSecs);
+  const victoryLocked = isGameActive && isVictoryReached(game);
+  const winners = victoryLocked ? victoryWinners(game) : [];
+  const isHostClient = perms?.role === ROLES.ADMIN || roomStatus === 'solo';
 
   const isLive = roomStatus === 'live' && !!room?.roomId;
   const isConnecting = roomStatus === 'connecting';
@@ -128,7 +139,7 @@ function App() {
   const showGuestLobby = !isGameActive && !canSetup && hasRoomSession;
   const isPlayerClient = perms?.role === ROLES.PLAYER;
   const isViewerClient = perms?.role === ROLES.VIEWER;
-  const showImperialClaimModal = !!imperialClaim?.active && (
+  const showImperialClaimModal = !!imperialClaim?.active && !victoryLocked && (
     roomStatus === 'solo'
     || perms?.role === ROLES.ADMIN
     || (perms?.seatPlayerId != null && perms.seatPlayerId === imperialClaim.playerId)
@@ -137,12 +148,14 @@ function App() {
   const startingTechNeeders = playersNeedingStartingTechDraft(players);
   const showStartingTechBanner = !!(
     isGameActive
+    && !victoryLocked
     && startingTechDraft?.needed
     && !startingTechDraft?.active
     && (perms?.role === ROLES.ADMIN || roomStatus === 'solo')
   );
   const showStartingTechHostModal = !!(
     startingTechDraft?.active
+    && !victoryLocked
     && (perms?.role === ROLES.ADMIN || roomStatus === 'solo')
   );
   const {
@@ -190,7 +203,8 @@ function App() {
     ? startingTechDraft.responses?.[mySeatPlayer.id]
     : null;
   const startingTechPlayerPending = !!(
-    isPlayerClient
+    !victoryLocked
+    && isPlayerClient
     && mySeatPlayer
     && startingTechDraft?.active
     && myStartingTechResponse
@@ -408,22 +422,36 @@ function App() {
         onReconnect={hasRoomSession ? () => resumeLiveSync({ forceSse: true }) : undefined}
       />
 
+      {victoryLocked && (
+        <VictoryLockBanner
+          winners={winners}
+          targetScore={targetScore}
+          isHost={isHostClient}
+          canUndo={canUndo}
+          onUndo={() => dispatch({ type: 'UNDO_LAST' })}
+        />
+      )}
+
       <GameHeader
         isGameActive={isGameActive}
         roundNumber={roundNumber}
+        roundTime={roundTime}
         isPoliticsActive={isPoliticsActive}
         onTogglePolitics={() => dispatch({ type: 'TOGGLE_POLITICS_ACTIVE' })}
         roundActive={roundActive}
         isDraftLocked={isDraftLocked}
-        canStartRound={canStartRound}
+        canStartRound={canStartRound && !victoryLocked}
         onOpenDraft={() => dispatch({ type: 'OPEN_DRAFT' })}
         onStartRound={() => dispatch({ type: 'START_ROUND' })}
         onEndRound={() => dispatch({ type: 'END_ROUND' })}
-        canEndRound={canEndRound}
+        canEndRound={canEndRound && !victoryLocked}
+        victoryLocked={victoryLocked}
         endRoundDisabledTitle={
-          showStatusPhaseModal || objectiveScoring?.active
-            ? 'Сначала завершите фазу статуса'
-            : 'Сначала все игроки должны спасовать'
+          victoryLocked
+            ? 'Партия остановлена — достигнута цель ПО'
+            : showStatusPhaseModal || objectiveScoring?.active
+              ? 'Сначала завершите фазу статуса'
+              : 'Сначала все игроки должны спасовать'
         }
         onExport={cloud.exportGameToken}
         onOpenEndGame={() => ui.setShowEndGameModal(true)}
@@ -542,9 +570,14 @@ function App() {
                   onConfirmScoring={(playerId) => dispatch({ type: 'CONFIRM_OBJECTIVE_SCORING', playerId })}
                   onPassScoring={(playerId) => dispatch({ type: 'PASS_OBJECTIVE_SCORING', playerId })}
                   roundActive={roundActive}
-                  canPlay={!!mySeatPlayer && (!perms?.seatPlayerId || activePlayer?.id === perms.seatPlayerId)}
+                  canPlay={
+                    !victoryLocked
+                    && !!mySeatPlayer
+                    && (!perms?.seatPlayerId || activePlayer?.id === perms.seatPlayerId)
+                  }
                   canNextTurn={
-                    !!mySeatPlayer
+                    !victoryLocked
+                    && !!mySeatPlayer
                     && (!perms?.seatPlayerId || activePlayer?.id === perms.seatPlayerId)
                     && !strategyResolution?.active
                     && !imperialClaim?.active
@@ -602,7 +635,7 @@ function App() {
                 scoring={objectiveScoring}
                 expandedObjectives={ui.expandedObjectives}
                 toggleExpand={ui.toggleExpand}
-                removeObjective={(objectiveId) => dispatch({ type: 'REMOVE_OBJECTIVE', objectiveId })}
+                removeObjective={dialogs.removeObjective}
                 addRandomObjective={dialogs.addRandomObjective}
                 addCustomObjective={dialogs.addCustomObjective}
                 targetScore={targetScore}
@@ -675,7 +708,7 @@ function App() {
             completions={completions}
             scoring={objectiveScoring}
             seatPlayerId={perms?.seatPlayerId ?? null}
-            canScoreAny={perms.can('scoreAny')}
+            canScoreAny={!victoryLocked && perms.can('scoreAny')}
             onSelectPublic={(playerId, objectiveId) => dispatch({ type: 'SELECT_SCORING_PUBLIC', playerId, objectiveId })}
             onToggleSecret={(playerId) => dispatch({ type: 'TOGGLE_SCORING_SECRET', playerId })}
             onConfirm={(playerId) => dispatch({ type: 'CONFIRM_OBJECTIVE_SCORING', playerId })}
@@ -694,7 +727,7 @@ function App() {
             objectives={objectives}
             completions={completions}
             seatPlayerId={perms?.seatPlayerId ?? null}
-            canScoreAny={perms.can('scoreAny')}
+            canScoreAny={!victoryLocked && perms.can('scoreAny')}
             onSelectPublic={(playerId, objectiveId) => dispatch({ type: 'SELECT_IMPERIAL_PUBLIC', playerId, objectiveId })}
             onToggleMecatol={(playerId) => dispatch({ type: 'TOGGLE_IMPERIAL_MECATOL', playerId })}
             onToggleSecret={(playerId) => dispatch({ type: 'TOGGLE_IMPERIAL_SECRET', playerId })}
@@ -794,6 +827,10 @@ function App() {
             confirmDraft={() => dispatch({ type: 'CONFIRM_DRAFT' })}
             perms={perms}
             pickStartedAt={draftPickStartedAt}
+            getPlayerScore={getPlayerScore}
+            targetScore={targetScore}
+            objectives={objectives}
+            completions={completions}
           />
         </LazyWhen>
 
@@ -813,7 +850,12 @@ function App() {
             onSetCustomChoices={(choices) => dispatch({ type: 'SET_AGENDA_CUSTOM_CHOICES', choices })}
             onSetVote={(playerId, vote) => dispatch({ type: 'SET_VOTE', playerId, vote })}
             onLockVote={(playerId) => dispatch({ type: 'LOCK_VOTE', playerId })}
-            onSetInfluence={(playerId, influence) => dispatch({ type: 'SET_INFLUENCE', playerId, influence })}
+            onSetInfluence={(playerId, influence, planets) => dispatch({
+              type: 'SET_INFLUENCE',
+              playerId,
+              influence,
+              ...(planets != null ? { planets } : {}),
+            })}
             onLockInfluence={(playerId) => dispatch({ type: 'LOCK_INFLUENCE', playerId })}
             onUnlockInfluence={(playerId) => dispatch({ type: 'UNLOCK_INFLUENCE', playerId })}
             onToggleVoteReversed={() => dispatch({ type: 'TOGGLE_VOTE_REVERSED' })}
@@ -871,9 +913,9 @@ function App() {
           />
         </LazyWhen>
 
-        <LazyWhen active={!!strategyResolution?.active && !isPlayerClient && !isViewerClient}>
+        <LazyWhen active={!!strategyResolution?.active && !victoryLocked && !isPlayerClient && !isViewerClient}>
           <StrategyResolutionModal
-            show={!!strategyResolution?.active && !isPlayerClient && !isViewerClient}
+            show={!!strategyResolution?.active && !victoryLocked && !isPlayerClient && !isViewerClient}
             minimized={!!ui.minimizedModals.strategyResolution}
             resolution={strategyResolution}
             players={players}
@@ -925,7 +967,7 @@ function App() {
 
         {isPlayerClient && perms?.seatPlayerId != null && (
           <StrategyResolutionBanner
-            show={!!strategyResolution?.active && strategyResolution.cardId !== 7}
+            show={!!strategyResolution?.active && !victoryLocked && strategyResolution.cardId !== 7}
             cardId={strategyResolution?.cardId}
             myStatus={strategyResolution?.responses?.[perms.seatPlayerId]}
             startedAt={strategyResolution?.startedAt}

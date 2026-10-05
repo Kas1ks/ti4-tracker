@@ -7,6 +7,7 @@ import {
   argentFlightVoteBonus,
   effectiveVoteAmount,
   isArgentFlightPlayer,
+  isXxchaPlayer,
 } from '../game/selectors';
 
 export function PoliticsModal({
@@ -47,6 +48,8 @@ export function PoliticsModal({
   const seatId = perms?.seatPlayerId;
   const isAdmin = role === ROLES.ADMIN;
   const canAdmin = isAdmin && !readOnly;
+  /** Seated player client (not host/viewer) — on mobile see only own ballot. */
+  const isSeatPlayer = !isAdmin && seatId != null;
   /** Speaker handoff after voting is host-only. */
   const openForClient = politicsStep !== 'SPEAKER' || isAdmin;
   const visible = show && !minimized && openForClient;
@@ -174,33 +177,61 @@ export function PoliticsModal({
           <div className="space-y-4">
             <p className="text-sm text-slate-400">
               Каждый игрок указывает своё влияние (голоса) на фазу и подтверждает.
+              {activePlayers.some(isXxchaPlayer) && (
+                <span className="block mt-1 text-emerald-400/90">
+                  Ззча также указывает число планет: при голосовании каждая перевёрнутая планета даёт +1 голос.
+                </span>
+              )}
             </p>
             <div className="space-y-2">
               {activePlayers.map(p => {
                 const faction = ALL_FACTIONS.find(f => f.id === p.factionId);
                 const locked = !!influenceLocked[p.id];
                 const editable = canEditPlayer(p.id) && !locked;
+                const isXxcha = isXxchaPlayer(p);
                 return (
-                  <div key={p.id} className={`p-2 bg-slate-950 border rounded-lg flex items-center justify-between gap-3 ${locked ? 'border-emerald-700/60' : 'border-slate-800'}`}>
-                    <div className="flex items-center gap-3">
-                      <img src={faction?.iconUrl} alt={faction?.name} className="w-8 h-8 object-contain" />
-                      <div className="font-bold text-white">{p.name}</div>
-                      {locked && <span className="text-[10px] font-bold uppercase text-emerald-400">✓ Готово</span>}
+                  <div key={p.id} className={`p-2 bg-slate-950 border rounded-lg flex items-center justify-between gap-3 max-md:flex-col max-md:items-stretch ${locked ? 'border-emerald-700/60' : 'border-slate-800'}`}>
+                    <div className="flex items-center gap-3 min-w-0">
+                      <img src={faction?.iconUrl} alt={faction?.name} className="w-8 h-8 object-contain flex-shrink-0" />
+                      <div className="min-w-0">
+                        <div className="font-bold text-white truncate">{p.name}</div>
+                        {isXxcha && (
+                          <div className="text-[10px] text-emerald-400 font-bold uppercase">Ззча · планеты +1</div>
+                        )}
+                      </div>
+                      {locked && <span className="text-[10px] font-bold uppercase text-emerald-400 flex-shrink-0">✓ Готово</span>}
                     </div>
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="number"
-                        min="0"
-                        value={p.influence || 0}
-                        disabled={!editable}
-                        onChange={(e) => onSetInfluence(p.id, parseInt(e.target.value, 10) || 0)}
-                        className="bg-slate-800 border border-slate-700 rounded-md w-20 text-center font-orbitron font-bold text-lg text-amber-400 focus:outline-none focus:border-amber-500 disabled:opacity-50"
-                      />
+                    <div className="flex items-center gap-2 flex-wrap justify-end">
+                      <div className="text-center">
+                        <div className="text-[9px] font-bold uppercase text-slate-500 tracking-wide">Влияние</div>
+                        <input
+                          type="number"
+                          min="0"
+                          value={p.influence || 0}
+                          disabled={!editable}
+                          onChange={(e) => onSetInfluence(p.id, parseInt(e.target.value, 10) || 0, isXxcha ? (p.votePlanets || 0) : undefined)}
+                          className="bg-slate-800 border border-slate-700 rounded-md w-20 text-center font-orbitron font-bold text-lg text-amber-400 focus:outline-none focus:border-amber-500 disabled:opacity-50"
+                        />
+                      </div>
+                      {isXxcha && (
+                        <div className="text-center">
+                          <div className="text-[9px] font-bold uppercase text-emerald-500/80 tracking-wide">Планеты</div>
+                          <input
+                            type="number"
+                            min="0"
+                            value={p.votePlanets || 0}
+                            disabled={!editable}
+                            onChange={(e) => onSetInfluence(p.id, p.influence || 0, parseInt(e.target.value, 10) || 0)}
+                            className="bg-slate-800 border border-emerald-800/60 rounded-md w-20 text-center font-orbitron font-bold text-lg text-emerald-300 focus:outline-none focus:border-emerald-500 disabled:opacity-50"
+                            title="Сколько планет можно перевернуть в этой фазе повестки"
+                          />
+                        </div>
+                      )}
                       {canEditPlayer(p.id) && !locked && (
                         <button
                           type="button"
                           onClick={() => onLockInfluence(p.id)}
-                          className="px-3 py-2 bg-purple-800 hover:bg-purple-700 text-xs font-bold rounded-md"
+                          className="px-3 py-2 bg-purple-800 hover:bg-purple-700 text-xs font-bold rounded-md self-end"
                         >
                           OK
                         </button>
@@ -209,7 +240,7 @@ export function PoliticsModal({
                         <button
                           type="button"
                           onClick={() => onUnlockInfluence(p.id)}
-                          className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-xs font-bold rounded-md text-slate-300"
+                          className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-xs font-bold rounded-md text-slate-300 self-end"
                         >
                           Изменить
                         </button>
@@ -268,21 +299,33 @@ export function PoliticsModal({
 
             {oneVoteLaw && (
               <div className="text-xs text-amber-200/90 bg-amber-950/25 border border-amber-700/40 rounded-xl px-3 py-2">
-                Закон «1 голос»: каждый игрок отдаёт ровно 1 голос (без влияния, Zeal и других надбавок).
+                Закон «1 голос»: каждый игрок отдаёт ровно 1 голос (без влияния, Zeal, планет Ззча и других надбавок).
               </div>
             )}
 
-            <div className="text-xs text-slate-400 bg-slate-950 border border-slate-800 rounded-xl px-3 py-2">
+            <div className={`text-xs text-slate-400 bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 ${
+              isSeatPlayer ? 'max-md:hidden' : ''
+            }`}>
               Порядок голосования{voteReversed ? ' (обратный)' : ''}:{' '}
               {orderedForVote.map((p, i) => (
                 <span key={p.id} className={p.id === currentVoterId ? 'text-amber-300 font-bold' : ''}>
                   {i > 0 ? ' → ' : ''}
                   {p.name}
                   {p.factionId === 'argent' ? ' ★' : ''}
+                  {p.factionId === 'xxcha' ? ' ◆' : ''}
                   {p.id === speakerId ? ' (спикер)' : ''}
                 </span>
               ))}
             </div>
+
+            {isSeatPlayer && (
+              <div className="md:hidden text-xs text-slate-400 bg-slate-950 border border-slate-800 rounded-xl px-3 py-2">
+                Сейчас голосует:{' '}
+                <span className="text-amber-300 font-bold">
+                  {orderedForVote.find(p => p.id === currentVoterId)?.name || '—'}
+                </span>
+              </div>
+            )}
 
             {!currentAgenda?.type && (
               canAdmin ? (
@@ -365,9 +408,10 @@ export function PoliticsModal({
 
                 <div className="space-y-3 pt-4 border-t border-slate-800">
                   {orderedForVote.map(p => {
-                    const vote = currentAgenda.votes[p.id] || { choice: 'abstain', amount: 0 };
+                    const vote = currentAgenda.votes[p.id] || { choice: 'abstain', amount: 0, planets: 0 };
                     const isLocked = !!currentAgenda.locked[p.id];
                     const isCurrent = currentVoterId === p.id;
+                    const isMine = seatId != null && p.id === seatId;
                     const votesSpentOnPrevAgendas = oneVoteLaw
                       ? 0
                       : agendas.slice(0, currentAgendaIndex).reduce((acc, agenda) => {
@@ -377,25 +421,48 @@ export function PoliticsModal({
                         }
                         return acc;
                       }, 0);
+                    const planetsSpentOnPrevAgendas = oneVoteLaw
+                      ? 0
+                      : agendas.slice(0, currentAgendaIndex).reduce((acc, agenda) => {
+                        const playerVote = agenda.votes[p.id];
+                        if (playerVote && agenda.locked[p.id]) {
+                          return acc + (Number(playerVote.planets) || 0);
+                        }
+                        return acc;
+                      }, 0);
                     const availableInfluence = oneVoteLaw
                       ? 1
                       : (p.influence || 0) - votesSpentOnPrevAgendas;
+                    const availablePlanets = oneVoteLaw
+                      ? 0
+                      : Math.max(0, (p.votePlanets || 0) - planetsSpentOnPrevAgendas);
                     const faction = ALL_FACTIONS.find(f => f.id === p.factionId);
                     const canVoteNow = canEditPlayer(p.id) && isCurrent && !isLocked;
                     const isArgent = !oneVoteLaw && isArgentFlightPlayer(p);
+                    const isXxcha = !oneVoteLaw && isXxchaPlayer(p);
                     const spent = oneVoteLaw
                       ? (vote.choice === 'abstain' ? 0 : 1)
                       : (Number(vote.amount) || 0);
-                    const countsToward = !isLocked && vote.choice !== 'abstain' && spent > 0
-                      ? (oneVoteLaw ? 1 : spent + (isArgent ? argentBonus : 0))
-                      : (isLocked
-                        ? effectiveVoteAmount(game || { players: activePlayers, politics: { oneVoteLaw } }, p, vote)
-                        : 0);
+                    const planetsSpent = oneVoteLaw ? 0 : Math.max(0, Number(vote.planets) || 0);
+                    const liveBallot = {
+                      ...vote,
+                      amount: spent,
+                      planets: isXxcha ? planetsSpent : 0,
+                    };
+                    const countsToward = vote.choice === 'abstain'
+                      ? 0
+                      : effectiveVoteAmount(
+                        game || { players: activePlayers, politics: { oneVoteLaw } },
+                        p,
+                        liveBallot,
+                      );
 
                     return (
                       <div
                         key={p.id}
                         className={`p-4 bg-slate-950 border rounded-xl flex items-center justify-between gap-4 transition max-md:flex-col max-md:items-stretch max-md:gap-3 ${
+                          isSeatPlayer && !isMine ? 'hidden md:flex' : ''
+                        } ${
                           isLocked
                             ? 'border-purple-700/50 opacity-60'
                             : isCurrent
@@ -421,14 +488,30 @@ export function PoliticsModal({
                                 {spent > 0 && vote.choice !== 'abstain' ? ` → итог ${countsToward}` : ''}
                               </div>
                             )}
+                            {isXxcha && (
+                              <div className="text-[10px] text-emerald-400/90 font-bold">
+                                Планеты: +1 голос за каждую
+                                {vote.choice !== 'abstain' && (spent > 0 || planetsSpent > 0)
+                                  ? ` → итог ${countsToward}`
+                                  : ''}
+                              </div>
+                            )}
                           </div>
                           <div className="text-center w-20 max-md:ml-auto">
-                            <div className="text-xs text-slate-400">{oneVoteLaw ? 'Голосов' : 'Доступно'}</div>
+                            <div className="text-xs text-slate-400">{oneVoteLaw ? 'Голосов' : 'Влияние'}</div>
                             <div className="font-orbitron font-black text-3xl text-amber-400 max-md:text-2xl">{availableInfluence}</div>
                           </div>
+                          {isXxcha && (
+                            <div className="text-center w-20">
+                              <div className="text-xs text-emerald-500/80">Планеты</div>
+                              <div className="font-orbitron font-black text-3xl text-emerald-300 max-md:text-2xl">{availablePlanets}</div>
+                            </div>
+                          )}
                         </div>
 
-                        <div className="flex items-center gap-2 max-md:w-full">
+                        <div className={`flex items-center gap-2 max-md:w-full ${
+                          isXxcha ? 'max-md:flex-col max-md:items-stretch max-md:gap-2.5' : 'max-md:flex-wrap'
+                        }`}>
                           <select
                             value={vote.choice}
                             onChange={e => {
@@ -436,10 +519,15 @@ export function PoliticsModal({
                               setAgendaVotes(p.id, {
                                 choice,
                                 amount: choice === 'abstain' ? 0 : (oneVoteLaw ? 1 : vote.amount),
+                                planets: choice === 'abstain' ? 0 : (vote.planets || 0),
                               });
                             }}
                             disabled={!canVoteNow}
-                            className="bg-slate-800 border border-slate-700 rounded-md px-2 py-2 text-xs text-white focus:outline-none focus:border-purple-400 w-32 disabled:opacity-50 max-md:flex-1 max-md:min-h-[44px]"
+                            className={`bg-slate-800 border border-slate-700 rounded-md px-2 py-2 text-xs text-white focus:outline-none focus:border-purple-400 disabled:opacity-50 ${
+                              isXxcha
+                                ? 'w-32 max-md:w-full max-md:min-h-[44px] max-md:text-sm'
+                                : 'w-32 max-md:flex-1 max-md:min-h-[44px]'
+                            }`}
                           >
                             <option value="abstain">Воздержаться</option>
                             {currentAgenda.type === 'FOR_AGAINST' && (
@@ -456,34 +544,95 @@ export function PoliticsModal({
                             ))}
                           </select>
                           {oneVoteLaw ? (
-                            <div
-                              className="bg-slate-800 border border-slate-700 rounded-md w-28 text-center font-orbitron font-black text-4xl text-cyan-400 opacity-90"
-                              title="По закону — ровно 1 голос"
-                            >
-                              {vote.choice === 'abstain' ? 0 : 1}
+                            <div className="flex items-center gap-2 max-md:w-full">
+                              <div
+                                className="bg-slate-800 border border-slate-700 rounded-md w-28 max-md:flex-1 text-center font-orbitron font-black text-4xl text-cyan-400 opacity-90"
+                                title="По закону — ровно 1 голос"
+                              >
+                                {vote.choice === 'abstain' ? 0 : 1}
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => lockVote(p.id)}
+                                disabled={!canVoteNow}
+                                className="px-4 py-2 bg-purple-800 hover:bg-purple-700 text-sm font-bold rounded-md disabled:bg-slate-800 disabled:text-slate-500 disabled:cursor-not-allowed self-end max-md:min-h-[44px]"
+                              >
+                                {isLocked ? '✓' : 'OK'}
+                              </button>
+                            </div>
+                          ) : isXxcha ? (
+                            <div className="flex items-end gap-2 max-md:w-full">
+                              <div className="flex items-end gap-2 flex-1 min-w-0">
+                                <div className="text-center flex-1 min-w-0">
+                                  <div className="text-[9px] font-bold uppercase text-slate-500 mb-0.5">Голоса</div>
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    max={availableInfluence}
+                                    value={vote.amount}
+                                    onChange={(e) => {
+                                      const newAmount = Math.max(0, Math.min(availableInfluence, parseInt(e.target.value, 10) || 0));
+                                      setAgendaVotes(p.id, { ...vote, amount: newAmount });
+                                    }}
+                                    disabled={!canVoteNow || vote.choice === 'abstain'}
+                                    className="bg-slate-800 border border-slate-700 rounded-md w-full max-w-[6rem] mx-auto block text-center font-orbitron font-black text-2xl md:text-3xl text-cyan-400 focus:outline-none focus:border-cyan-500 disabled:opacity-50 max-md:min-h-[44px]"
+                                    title="Голоса с влияния"
+                                  />
+                                </div>
+                                <div className="text-center flex-1 min-w-0">
+                                  <div className="text-[9px] font-bold uppercase text-emerald-500/80 mb-0.5">Планеты</div>
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    max={availablePlanets}
+                                    value={vote.planets || 0}
+                                    onChange={(e) => {
+                                      const newPlanets = Math.max(0, Math.min(availablePlanets, parseInt(e.target.value, 10) || 0));
+                                      setAgendaVotes(p.id, { ...vote, planets: newPlanets });
+                                    }}
+                                    disabled={!canVoteNow || vote.choice === 'abstain'}
+                                    className="bg-slate-800 border border-emerald-800/60 rounded-md w-full max-w-[6rem] mx-auto block text-center font-orbitron font-black text-2xl md:text-3xl text-emerald-300 focus:outline-none focus:border-emerald-500 disabled:opacity-50 max-md:min-h-[44px]"
+                                    title="Сколько планет перевернуть (+1 голос каждая)"
+                                  />
+                                </div>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => lockVote(p.id)}
+                                disabled={!canVoteNow}
+                                className="px-4 py-2 bg-purple-800 hover:bg-purple-700 text-sm font-bold rounded-md disabled:bg-slate-800 disabled:text-slate-500 disabled:cursor-not-allowed flex-shrink-0 max-md:min-h-[44px] max-md:px-5"
+                              >
+                                {isLocked ? '✓' : 'OK'}
+                              </button>
                             </div>
                           ) : (
-                            <input
-                              type="number"
-                              min="0"
-                              max={availableInfluence}
-                              value={vote.amount}
-                              onChange={(e) => {
-                                const newAmount = Math.max(0, Math.min(availableInfluence, parseInt(e.target.value, 10) || 0));
-                                setAgendaVotes(p.id, { ...vote, amount: newAmount });
-                              }}
-                              disabled={!canVoteNow || vote.choice === 'abstain'}
-                              className="bg-slate-800 border border-slate-700 rounded-md w-28 text-center font-orbitron font-black text-4xl text-cyan-400 focus:outline-none focus:border-cyan-500 disabled:opacity-50"
-                            />
+                            <>
+                              <div className="text-center">
+                                <div className="text-[9px] font-bold uppercase text-slate-500">Голоса</div>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  max={availableInfluence}
+                                  value={vote.amount}
+                                  onChange={(e) => {
+                                    const newAmount = Math.max(0, Math.min(availableInfluence, parseInt(e.target.value, 10) || 0));
+                                    setAgendaVotes(p.id, { ...vote, amount: newAmount });
+                                  }}
+                                  disabled={!canVoteNow || vote.choice === 'abstain'}
+                                  className="bg-slate-800 border border-slate-700 rounded-md w-24 text-center font-orbitron font-black text-3xl text-cyan-400 focus:outline-none focus:border-cyan-500 disabled:opacity-50"
+                                  title="Голоса с влияния"
+                                />
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => lockVote(p.id)}
+                                disabled={!canVoteNow}
+                                className="px-4 py-2 bg-purple-800 hover:bg-purple-700 text-sm font-bold rounded-md disabled:bg-slate-800 disabled:text-slate-500 disabled:cursor-not-allowed self-end"
+                              >
+                                {isLocked ? '✓' : 'OK'}
+                              </button>
+                            </>
                           )}
-                          <button
-                            type="button"
-                            onClick={() => lockVote(p.id)}
-                            disabled={!canVoteNow}
-                            className="px-4 py-2 bg-purple-800 hover:bg-purple-700 text-sm font-bold rounded-md disabled:bg-slate-800 disabled:text-slate-500 disabled:cursor-not-allowed"
-                          >
-                            {isLocked ? '✓' : 'OK'}
-                          </button>
                         </div>
                       </div>
                     );

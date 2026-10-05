@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { ActiveTurnBar } from './ActiveTurnBar';
 import { ROLE_LABELS, ROLES } from '../sync/permissions';
+import { formatTime } from '../utils/game';
 
 const CTRL =
   'inline-flex items-center justify-center gap-1.5 h-9 px-3 rounded-xl text-xs font-bold transition border';
@@ -70,6 +71,7 @@ function RoomLiveBadge({ room }) {
 export function GameHeader({
   isGameActive,
   roundNumber,
+  roundTime = 0,
   isPoliticsActive,
   onTogglePolitics,
   roundActive,
@@ -108,17 +110,18 @@ export function GameHeader({
   perms,
   hideTurnBarOnMobile = false,
   onLeaveRoom,
+  victoryLocked = false,
 }) {
   const role = perms?.role || ROLES.ADMIN;
   const isAdmin = role === ROLES.ADMIN;
   const isViewer = role === ROLES.VIEWER;
-  const canPhases = isAdmin;
+  const canPhases = isAdmin && !victoryLocked;
   const canExport = isAdmin;
   const canEndGame = isAdmin;
-  const canCombat = isAdmin;
+  const canCombat = isAdmin && !victoryLocked;
   const canUndoLast = isAdmin && typeof onUndoLast === 'function';
-  const canPlayTurn = isAdmin || role === ROLES.PLAYER;
-  const canNextTurn = isAdmin || role === ROLES.PLAYER;
+  const canPlayTurn = (isAdmin || role === ROLES.PLAYER) && !victoryLocked;
+  const canNextTurn = (isAdmin || role === ROLES.PLAYER) && !victoryLocked;
 
   const turnLocked = strategyResolutionActive || imperialClaimActive || techResearchActive;
 
@@ -175,9 +178,16 @@ export function GameHeader({
             <RoomLiveBadge room={room} />
           )}
           {isGameActive && (
-            <div className={`${CTRL} !text-sm md:!text-base bg-slate-950 border-slate-800 text-amber-400 font-orbitron cursor-default flex-shrink-0 px-3.5`}>
+            <div className={`${CTRL} !text-sm md:!text-base bg-slate-950 border-slate-800 text-amber-400 font-orbitron cursor-default flex-shrink-0 px-3.5 gap-2 md:gap-3`}>
               <span className="max-md:hidden">Раунд {roundNumber}</span>
               <span className="md:hidden">R{roundNumber}</span>
+              <span className="w-px h-4 bg-slate-700" aria-hidden="true" />
+              <span
+                className="font-mono text-cyan-300 tabular-nums"
+                title="Время текущего раунда (фаза действий)"
+              >
+                {formatTime(roundTime)}
+              </span>
             </div>
           )}
         </div>

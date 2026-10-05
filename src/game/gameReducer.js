@@ -29,6 +29,7 @@ import {
   resolveThundersEdgeControl,
   setExpeditionSlice,
 } from './expeditionActions';
+import { isVictoryActionAllowed, isVictoryReached } from './victory';
 import {
   mapPlayers,
   patchPlayer,
@@ -54,12 +55,12 @@ import {
 
 const emptyAgenda = () => ({ type: null, votes: {}, locked: {} });
 
-/** Under one-vote law, a non-abstain ballot is always amount 1. */
+/** Under one-vote law, a non-abstain ballot is always amount 1 (no planet bonuses). */
 function coerceAgendaVote(state, vote) {
   if (!vote || typeof vote !== 'object') return vote;
   if (!state.politics?.oneVoteLaw) return vote;
-  if (vote.choice === 'abstain') return { ...vote, amount: 0 };
-  return { ...vote, amount: 1 };
+  if (vote.choice === 'abstain') return { ...vote, amount: 0, planets: 0 };
+  return { ...vote, amount: 1, planets: 0 };
 }
 
 /** Naalu always goes last-to-act first, then lowest strategy card, then seat order. */
@@ -114,13 +115,34 @@ function bankActivePlayerTime(state, at) {
   return withRound(next, { turnPausedAccum: 0, turnTime: 0 });
 }
 
+/** Freeze action-phase duration into meta.roundTimes for the current round number. */
+function bankRoundTime(state, at) {
+  const started = state.round?.roundStartedAt;
+  if (!Number.isFinite(started)) {
+    return withRound(state, { roundStartedAt: null });
+  }
+  const secs = Math.max(0, Math.floor((at - started) / 1000));
+  const roundNum = state.meta?.roundNumber || 1;
+  const prev = Array.isArray(state.meta?.roundTimes) ? state.meta.roundTimes : [];
+  const roundTimes = [
+    ...prev.filter(entry => entry.round !== roundNum),
+    { round: roundNum, seconds: secs },
+  ].sort((a, b) => a.round - b.round);
+  return withMeta(
+    withRound(state, { roundStartedAt: null }),
+    { roundTimes },
+  );
+}
+
 /** End of round: agenda phase if one is pending, otherwise the status checklist. */
 function endRound(state, at = Date.now()) {
   let next = bankActivePlayerTime(state, at);
+  next = bankRoundTime(next, at);
   next = withRound(next, {
     turnTime: 0,
     turnStartedAt: null,
     turnPausedAccum: 0,
+    roundStartedAt: null,
     strategyResolution: { ...EMPTY_STRATEGY_RESOLUTION },
     imperialClaim: { ...EMPTY_IMPERIAL_CLAIM },
     techResearch: { ...EMPTY_TECH_RESEARCH, picks: [], queueIds: [], byPlayer: {} },
@@ -155,6 +177,7 @@ function startNewRound(state) {
       passed: {},
       turnTime: 0,
       turnStartedAt: null,
+      roundStartedAt: null,
       turnPausedAccum: 0,
       strategyActionTaken: false,
       expeditionClaimedThisTurn: false,
@@ -186,6 +209,7 @@ function startRound(state, at = Date.now()) {
     passed: {},
     turnTime: 0,
     turnStartedAt: at,
+    roundStartedAt: at,
     turnPausedAccum: 0,
     strategyActionTaken: false,
     expeditionClaimedThisTurn: false,
@@ -732,6 +756,31 @@ function finishScoringIfComplete(state) {
   });
 }
 
+/** Remove a revealed objective from the board and its stage deck; reveal the next undrawn card if any. */
+function discardObjectiveAndRevealNext(state, objectiveId) {
+  const removed = state.objectives.active.find(o => o.id === objectiveId);
+  if (!removed) return state;
+
+  const stage = Number(removed.stage) === 2 ? 2 : 1;
+  const deckKey = stage === 2 ? 'stage2Deck' : 'stage1Deck';
+  const active = state.objectives.active.filter(o => o.id !== objectiveId);
+  const deck = state.objectives[deckKey].filter(o => o.id !== objectiveId);
+
+  const next = deck.find(o => !active.some(a => a.id === o.id));
+  const newActive = next ? [...active, next] : active;
+
+  const completions = { ...state.objectives.completions };
+  for (const key of Object.keys(completions)) {
+    if (key.endsWith(`_${objectiveId}`)) delete completions[key];
+  }
+
+  return withObjectives(state, {
+    active: newActive,
+    [deckKey]: deck,
+    completions,
+  });
+}
+
 /** After a player resolves, advance to the next pending seat in initiative order. */
 function advanceScoringTurn(state) {
   const scoring = scoringOf(state);
@@ -1186,6 +1235,15 @@ function applyStartingTechDraftIfComplete(state) {
 }
 
 export function gameReducer(state, action) {
+  if (
+    state?.isGameActive
+    && action?.type
+    && isVictoryReached(state)
+    && !isVictoryActionAllowed(action.type)
+  ) {
+    return state;
+  }
+
   switch (action.type) {
     // --- Setup ---
     case 'SET_TARGET_SCORE':
@@ -1429,10 +1487,15 @@ export function gameReducer(state, action) {
       };
     }
 
-    case 'SET_INFLUENCE':
-      return patchPlayer(state, action.playerId, () => ({
+    case 'SET_INFLUENCE': {
+      const patch = {
         influence: Math.max(0, Number(action.influence) || 0),
-      }));
+      };
+      if (action.planets != null) {
+        patch.votePlanets = Math.max(0, Number(action.planets) || 0);
+      }
+      return patchPlayer(state, action.playerId, () => patch);
+    }
 
     case 'LOCK_INFLUENCE':
       return withPolitics(state, {
@@ -1469,6 +1532,9 @@ export function gameReducer(state, action) {
       return withObjectives(state, {
         active: state.objectives.active.filter(obj => obj.id !== action.objectiveId),
       });
+
+    case 'DISCARD_OBJECTIVE':
+      return discardObjectiveAndRevealNext(state, action.objectiveId);
 
     // --- Draft ---
     case 'OPEN_DRAFT':

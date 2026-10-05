@@ -2,6 +2,7 @@ import { useRef, useState } from 'react';
 import { isCloudConfigured } from '../config';
 import { ALL_FACTIONS } from '../data/gameData';
 import { stampGameState } from '../game/gameState';
+import { finalizeRoundTimes } from '../game/selectors';
 import { rememberObjectiveIds } from '../game/objectiveHistory';
 import {
   clearCloudStats,
@@ -96,6 +97,7 @@ export function useCloudGame({ game, dispatch, getPlayerScore, uiAlert, uiConfir
       date: new Date().toLocaleDateString('ru-RU'),
       targetScore,
       roundsCount: roundNumber,
+      roundTimes: finalizeRoundTimes(current),
       winner: winnerPlayer ? winnerPlayer.name : 'Ничья',
       winningFaction: winnerPlayer
         ? (ALL_FACTIONS.find(f => f.id === winnerPlayer.factionId)?.name || '')

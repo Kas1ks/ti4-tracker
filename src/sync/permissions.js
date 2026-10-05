@@ -5,6 +5,7 @@ import {
   currentVoterId,
   isStrategyCardPlayed,
 } from '../game/selectors.js';
+import { isVictoryActionAllowed, isVictoryReached } from '../game/victory.js';
 
 export const ROLES = Object.freeze({
   ADMIN: 'admin',
@@ -32,6 +33,14 @@ function lastPickOwner(state) {
 export function authorizeAction({ role, seatPlayerId, action, state }) {
   if (!action || typeof action.type !== 'string') {
     return { ok: false, error: 'invalid-action' };
+  }
+
+  // Victory lock: only host VP edits / panel closes / undo; no new processes.
+  if (state?.isGameActive && isVictoryReached(state)) {
+    if (role === ROLES.ADMIN && isVictoryActionAllowed(action.type)) {
+      return { ok: true };
+    }
+    return { ok: false, error: 'victory-locked' };
   }
 
   if (role === ROLES.ADMIN) return { ok: true };

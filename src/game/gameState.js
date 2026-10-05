@@ -165,6 +165,8 @@ export function createEmptyGameState() {
       isPoliticsActive: false,
       isAgendaPhasePending: false,
       strategyPickHistory: [],
+      /** Completed action-phase durations: [{ round, seconds }, ...] */
+      roundTimes: [],
     },
     players: [],
     objectives: {
@@ -183,6 +185,8 @@ export function createEmptyGameState() {
       passed: {},
       turnTime: 0,
       turnStartedAt: null,
+      /** Wall-clock start of the current action phase (START_ROUND → END_ROUND). */
+      roundStartedAt: null,
       turnPausedAccum: 0,
       strategyActionTaken: false,
       expeditionClaimedThisTurn: false,
@@ -258,6 +262,7 @@ function toFlat(raw) {
     isPoliticsActive: meta.isPoliticsActive,
     isAgendaPhasePending: meta.isAgendaPhasePending,
     strategyPickHistory: meta.strategyPickHistory,
+    roundTimes: meta.roundTimes,
     players: raw.players,
     objectives: objectives.active,
     completions: objectives.completions,
@@ -270,6 +275,7 @@ function toFlat(raw) {
     passed: round.passed,
     turnTime: round.turnTime,
     turnStartedAt: round.turnStartedAt,
+    roundStartedAt: round.roundStartedAt,
     turnPausedAccum: round.turnPausedAccum,
     strategyActionTaken: round.strategyActionTaken,
     expeditionClaimedThisTurn: !!round.expeditionClaimedThisTurn,
@@ -460,6 +466,7 @@ function normalizePlayer(player) {
   const startingTechIds = asArray(player.startingTechIds).filter(id => typeof id === 'string');
   const eliminated = !!player.eliminated;
   const elimRound = Number(player.eliminatedRound);
+  const votePlanets = Math.max(0, asNumber(player.votePlanets, 0));
   return {
     ...player,
     cards,
@@ -470,6 +477,7 @@ function normalizePlayer(player) {
     eliminatedRound: eliminated && Number.isFinite(elimRound) && elimRound > 0 ? elimRound : null,
     techIds,
     startingTechIds,
+    votePlanets,
   };
 }
 
@@ -543,6 +551,20 @@ function normalizeStrategyPickHistory(value) {
     .filter(Boolean);
 }
 
+function normalizeRoundTimes(value) {
+  return asArray(value)
+    .map((entry) => {
+      if (!entry || typeof entry !== 'object') return null;
+      const round = Number(entry.round);
+      const seconds = Number(entry.seconds);
+      if (!Number.isFinite(round) || round < 1) return null;
+      if (!Number.isFinite(seconds) || seconds < 0) return null;
+      return { round, seconds: Math.floor(seconds) };
+    })
+    .filter(Boolean)
+    .sort((a, b) => a.round - b.round);
+}
+
 /** Accepts a nested doc, a legacy flat snapshot, or junk, and returns a valid doc. */
 export function normalizeGameState(raw) {
   // Migrations assume the nested document shape. Flat legacy snapshots skip them —
@@ -567,6 +589,7 @@ export function normalizeGameState(raw) {
       isPoliticsActive: !!flat.isPoliticsActive,
       isAgendaPhasePending: !!flat.isAgendaPhasePending,
       strategyPickHistory: normalizeStrategyPickHistory(flat.strategyPickHistory),
+      roundTimes: normalizeRoundTimes(flat.roundTimes),
     },
     players,
     objectives: {
@@ -589,6 +612,7 @@ export function normalizeGameState(raw) {
       passed: asRecord(flat.passed),
       turnTime: asNumber(flat.turnTime, 0),
       turnStartedAt: Number.isFinite(flat.turnStartedAt) ? flat.turnStartedAt : null,
+      roundStartedAt: Number.isFinite(flat.roundStartedAt) ? flat.roundStartedAt : null,
       turnPausedAccum: Math.max(0, asNumber(flat.turnPausedAccum, 0)),
       strategyActionTaken: !!flat.strategyActionTaken,
       expeditionClaimedThisTurn: !!flat.expeditionClaimedThisTurn,

@@ -162,6 +162,23 @@ describe('scoring', () => {
     expect(playerScore(state, 1)).toBe(0);
   });
 
+  it('discards a revealed objective from the deck and reveals the next one', () => {
+    let state = gameWith([player(1, 'A')]);
+    const deck = state.objectives.stage1Deck;
+    const first = deck[0];
+    const second = deck.find(o => o.id !== first.id);
+    state = dispatch(state, { type: 'ADD_OBJECTIVE', objective: first });
+    expect(state.objectives.active.map(o => o.id)).toContain(first.id);
+
+    state = dispatch(state, { type: 'DISCARD_OBJECTIVE', objectiveId: first.id });
+
+    expect(state.objectives.active.map(o => o.id)).not.toContain(first.id);
+    expect(state.objectives.stage1Deck.map(o => o.id)).not.toContain(first.id);
+    if (second) {
+      expect(state.objectives.active.map(o => o.id)).toContain(second.id);
+    }
+  });
+
   it('sorts the board by score, then by seat', () => {
     let state = gameWith([player(1, 'A'), player(2, 'B'), player(3, 'C')]);
     state = dispatch(state, { type: 'ADJUST_MECATOL', playerId: 3, delta: 5 });
@@ -415,6 +432,30 @@ describe('agenda voting order', () => {
     expect(effectiveVoteAmount(state, state.players[1], { choice: 'for', amount: 3 })).toBe(3);
   });
 
+  it('XXCha adds +1 vote per exhausted planet', () => {
+    const state = normalizeGameState({
+      isGameActive: true,
+      players: [
+        player(1, 'Xxcha', { factionId: 'xxcha', votePlanets: 4 }),
+        player(2, 'B', { factionId: 'sol' }),
+      ],
+    });
+    const xxcha = state.players[0];
+    expect(effectiveVoteAmount(state, xxcha, { choice: 'for', amount: 3, planets: 2 })).toBe(5);
+    expect(effectiveVoteAmount(state, xxcha, { choice: 'for', amount: 0, planets: 3 })).toBe(3);
+    expect(effectiveVoteAmount(state, xxcha, { choice: 'abstain', amount: 2, planets: 2 })).toBe(0);
+    expect(effectiveVoteAmount(state, state.players[1], { choice: 'for', amount: 3, planets: 99 })).toBe(3);
+  });
+
+  it('stores XXCha votePlanets with influence setup', () => {
+    let state = normalizeGameState({
+      isGameActive: true,
+      players: [player(1, 'Xxcha', { factionId: 'xxcha' })],
+    });
+    state = dispatch(state, { type: 'SET_INFLUENCE', playerId: 1, influence: 7, planets: 3 });
+    expect(state.players.find(p => p.id === 1)).toMatchObject({ influence: 7, votePlanets: 3 });
+  });
+
   it('oneVoteLaw forces exactly 1 vote and disables Argent Zeal', () => {
     const state = normalizeGameState({
       isGameActive: true,
@@ -637,6 +678,49 @@ describe('round and turn order', () => {
     expect(state.round.turnStartedAt).toBe(t0 + 5000);
     expect(state.players.find(p => p.id === 2).totalTime).toBe(5);
     expect(state.players.find(p => p.id === 3).totalTime).toBe(0);
+  });
+
+  it('starts a round wall-clock and banks it into meta.roundTimes on END_ROUND', () => {
+    const t0 = 5_000_000;
+    let state = dispatch(drafted(), { type: 'START_ROUND', at: t0 });
+    expect(state.round.roundStartedAt).toBe(t0);
+    expect(state.meta.roundTimes).toEqual([]);
+
+    state = dispatch(state, { type: 'NEXT_TURN', at: t0 + 10_000 });
+    state = dispatch(state, { type: 'NEXT_TURN', at: t0 + 25_000 });
+    // Seat order after draft: 2 → 3 → 1; pass everyone to allow END_ROUND.
+    state = withAllPassed(state);
+    state = dispatch(state, { type: 'END_ROUND', at: t0 + 90_000 });
+
+    expect(state.round.roundStartedAt).toBeNull();
+    expect(state.meta.roundTimes).toEqual([{ round: 1, seconds: 90 }]);
+  });
+
+  it('keeps separate roundTimes entries across multiple rounds', () => {
+    const t0 = 6_000_000;
+    let state = dispatch(drafted(), { type: 'START_ROUND', at: t0 });
+    state = dispatch(withAllPassed(state), { type: 'END_ROUND', at: t0 + 40_000 });
+    expect(state.meta.roundTimes).toEqual([{ round: 1, seconds: 40 }]);
+
+    // Finish status phase → next round number, then draft + start again.
+    state = dispatch(state, { type: 'CONFIRM_STATUS_PHASE' });
+    // After status confirm, roundNumber bumps and cards clear — re-draft.
+    const withCards = {
+      ...state,
+      players: state.players.map((p, idx) => ({
+        ...p,
+        cards: [{ id: idx + 1, name: `C${idx + 1}`, initiative: idx + 1 }],
+      })),
+    };
+    state = dispatch(withCards, { type: 'START_ROUND', at: t0 + 100_000 });
+    expect(state.meta.roundNumber).toBe(2);
+    expect(state.round.roundStartedAt).toBe(t0 + 100_000);
+
+    state = dispatch(withAllPassed(state), { type: 'END_ROUND', at: t0 + 160_000 });
+    expect(state.meta.roundTimes).toEqual([
+      { round: 1, seconds: 40 },
+      { round: 2, seconds: 60 },
+    ]);
   });
 
   it('moves to the next player and resets the turn clock', () => {
@@ -1031,14 +1115,14 @@ describe('agenda phase', () => {
       playerId: 1,
       vote: { choice: 'for', amount: 50 },
     });
-    expect(currentAgenda(state).votes[1]).toEqual({ choice: 'for', amount: 1 });
+    expect(currentAgenda(state).votes[1]).toEqual({ choice: 'for', amount: 1, planets: 0 });
 
     state = dispatch(state, {
       type: 'SET_VOTE',
       playerId: 1,
       vote: { choice: 'abstain', amount: 7 },
     });
-    expect(currentAgenda(state).votes[1]).toEqual({ choice: 'abstain', amount: 0 });
+    expect(currentAgenda(state).votes[1]).toEqual({ choice: 'abstain', amount: 0, planets: 0 });
 
     // Persists into the next agenda phase
     state = dispatch(state, { type: 'FINISH_AGENDA_PHASE', playerId: 1 });
@@ -1821,5 +1905,39 @@ describe('host breakthrough grant', () => {
 
     state = dispatch(state, { type: 'REVOKE_BREAKTHROUGH', playerId: 1 });
     expect(state.players[0].breakthrough).toBe(false);
+  });
+});
+
+describe('victory lock', () => {
+  const withCards = () => gameWith([
+    player(1, 'A', { cards: [STRATEGY_CARDS[2]], lastMinInitiative: 3 }),
+    player(2, 'B', { cards: [STRATEGY_CARDS[0]], lastMinInitiative: 1 }),
+    player(3, 'C', { cards: [STRATEGY_CARDS[1]], lastMinInitiative: 2 }),
+  ]);
+
+  it('freezes process actions once a seat reaches the target score', () => {
+    let state = dispatch(withCards(), { type: 'START_ROUND' });
+    state = dispatch(state, { type: 'SET_TARGET_SCORE', value: 3 });
+    state = dispatch(state, { type: 'ADJUST_SECRETS', playerId: 2, delta: 3 });
+    expect(playerScore(state, 2)).toBe(3);
+
+    const frozen = dispatch(state, { type: 'NEXT_TURN' });
+    expect(frozen).toBe(state);
+    expect(dispatch(state, { type: 'OPEN_DRAFT' })).toBe(state);
+    expect(dispatch(state, { type: 'PLAY_STRATEGY', cardId: 1 })).toBe(state);
+  });
+
+  it('still allows host VP toggles and unlocks when score drops below target', () => {
+    let state = dispatch(withCards(), { type: 'START_ROUND' });
+    state = dispatch(state, { type: 'SET_TARGET_SCORE', value: 2 });
+    state = dispatch(state, { type: 'ADJUST_SECRETS', playerId: 2, delta: 2 });
+    expect(playerScore(state, 2)).toBe(2);
+
+    state = dispatch(state, { type: 'ADJUST_SECRETS', playerId: 2, delta: -1 });
+    expect(playerScore(state, 2)).toBe(1);
+
+    const advanced = dispatch(state, { type: 'NEXT_TURN' });
+    expect(advanced).not.toBe(state);
+    expect(activePlayer(advanced).id).not.toBe(2);
   });
 });

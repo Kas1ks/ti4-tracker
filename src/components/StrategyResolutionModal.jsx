@@ -3,6 +3,7 @@ import { useEscapeKey } from '../hooks/useEscapeKey';
 import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
 import { useElapsedSeconds } from '../hooks/useTurnTimer';
 import { formatTime } from '../utils/game';
+import { isStrategyCardPlayed } from '../game/selectors';
 
 function statusLabel(status) {
   if (status === 'played') return 'Сыграно';
@@ -22,6 +23,117 @@ function resolutionSecsFor(resolution, playerId, liveSecs) {
     return liveSecs;
   }
   return liveSecs;
+}
+
+/** All strategy cards in play this round with played / in-hand / resolving status — ordered by card initiative. */
+function StrategyBoardGlance({ players = [], resolution }) {
+  const resolvingId = resolution?.cardId ?? null;
+  const seats = (players || []).filter(p => !p.eliminated);
+
+  const ownerByCardId = new Map();
+  for (const p of seats) {
+    const cards = Array.isArray(p.cards) ? p.cards : [];
+    for (const card of cards) {
+      if (card?.id == null) continue;
+      ownerByCardId.set(card.id, { player: p, card });
+    }
+  }
+
+  const displayRows = STRATEGY_CARDS
+    .slice()
+    .sort((a, b) => (a.initiative ?? a.id) - (b.initiative ?? b.id))
+    .filter((meta) => ownerByCardId.has(meta.id))
+    .map((meta) => {
+      const { player, card } = ownerByCardId.get(meta.id);
+      const played = isStrategyCardPlayed(player, card.id);
+      const resolving = resolvingId === card.id;
+      return {
+        key: `card-${meta.id}`,
+        player,
+        card,
+        state: resolving ? 'resolving' : played ? 'played' : 'hand',
+      };
+    });
+
+  const playedCount = displayRows.filter(r => r.state === 'played').length;
+  const handCount = displayRows.filter(r => r.state === 'hand').length;
+  const resolvingCount = displayRows.filter(r => r.state === 'resolving').length;
+
+  return (
+    <div className="rounded-xl border border-slate-800 bg-slate-900/50 overflow-hidden flex flex-col w-full max-h-[min(52vh,420px)] md:max-h-[calc(92vh-8rem)]">
+      <div className="px-3 py-2 border-b border-slate-800/80 flex flex-wrap items-center justify-between gap-2 flex-shrink-0">
+        <div className="text-[11px] md:text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+          <i className="fa-solid fa-layer-group text-amber-400" aria-hidden="true" />
+          Карты стратегий раунда
+        </div>
+        <div className="flex flex-wrap gap-2 text-[10px] font-bold uppercase tracking-wide">
+          <span className="text-amber-400/90">Розыгрыш {resolvingCount}</span>
+          <span className="text-slate-600">·</span>
+          <span className="text-slate-400">В руке {handCount}</span>
+          <span className="text-slate-600">·</span>
+          <span className="text-emerald-400/90">Сыграно {playedCount}</span>
+        </div>
+      </div>
+      <ul className="divide-y divide-slate-800/70 overflow-y-auto modal-scroll">
+        {displayRows.map(({ key, player, card, state }) => {
+          const meta = STRATEGY_CARDS.find(c => c.id === card.id) || card;
+          return (
+            <li
+              key={key}
+              className={`flex items-center gap-2.5 px-3 py-2 ${
+                state === 'resolving'
+                  ? 'bg-amber-950/25'
+                  : state === 'played'
+                    ? 'bg-emerald-950/10'
+                    : ''
+              }`}
+            >
+              {meta?.imageUrl ? (
+                <img
+                  src={meta.imageUrl}
+                  alt={meta.name || meta.ruName || `#${meta.id}`}
+                  className={`w-9 h-12 object-cover rounded-md border flex-shrink-0 ${
+                    state === 'played'
+                      ? 'border-emerald-700/60 opacity-70'
+                      : state === 'resolving'
+                        ? 'border-amber-500'
+                        : 'border-slate-700'
+                  }`}
+                />
+              ) : (
+                <div className="w-9 h-12 rounded-md border border-dashed border-slate-700 bg-slate-950 flex-shrink-0" />
+              )}
+              <div className="min-w-0 flex-1">
+                <div className={`text-sm font-orbitron font-bold truncate ${
+                  state === 'played' ? 'text-slate-500 line-through' : 'text-amber-300'
+                }`}>
+                  {meta.ruName || meta.name || `#${meta.id}`}
+                </div>
+                <div className="flex items-center gap-1.5 min-w-0 mt-0.5">
+                  <span
+                    className="w-2 h-2 rounded-full flex-shrink-0"
+                    style={{ backgroundColor: player.color || '#64748b' }}
+                  />
+                  <span className="text-xs font-bold text-slate-300 truncate">{player.name}</span>
+                </div>
+              </div>
+              <span
+                className={`text-[10px] font-bold uppercase tracking-wide px-2 py-1 rounded-lg border flex-shrink-0 ${
+                  state === 'resolving'
+                    ? 'bg-amber-950 border-amber-500 text-amber-200'
+                    : state === 'played'
+                      ? 'bg-emerald-950 border-emerald-600 text-emerald-300'
+                      : 'bg-slate-950 border-slate-600 text-slate-300'
+                }`}
+              >
+                {state === 'resolving' ? 'Розыгрыш' : state === 'played' ? 'Сыграна' : 'В руке'}
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
 }
 
 export function StrategyResolutionModal({
@@ -63,7 +175,7 @@ export function StrategyResolutionModal({
       onClick={onMinimize || onClose}
     >
       <div
-        className="relative w-full max-w-5xl max-md:h-full md:max-h-[92vh] bg-slate-950 border border-amber-700/60 md:rounded-2xl shadow-2xl flex flex-col overflow-hidden"
+        className="relative w-full max-w-5xl max-md:h-full md:h-[min(92vh,860px)] md:max-h-[92vh] bg-slate-950 border border-amber-700/60 md:rounded-2xl shadow-2xl flex flex-col overflow-hidden"
         role="dialog"
         aria-modal="true"
         aria-labelledby="strategy-resolution-title"
@@ -82,14 +194,12 @@ export function StrategyResolutionModal({
             </p>
           </div>
           <div className="flex items-center gap-3 flex-shrink-0">
-            {Number.isFinite(resolution?.startedAt) && (
-              <div className="text-right hidden sm:block">
-                <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Таймер</div>
-                <div className="font-orbitron font-black text-amber-300 text-lg tabular-nums leading-none">
-                  {formatTime(liveSecs)}
-                </div>
+            <div className="text-right hidden sm:block min-w-[4.75rem]">
+              <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Таймер</div>
+              <div className="font-orbitron font-black text-amber-300 text-lg leading-none inline-block w-[5.5ch] text-right tabular-nums">
+                {Number.isFinite(resolution?.startedAt) ? formatTime(liveSecs) : '—'}
               </div>
-            )}
+            </div>
             <button
               type="button"
               onClick={onMinimize || onClose}
@@ -102,25 +212,27 @@ export function StrategyResolutionModal({
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-4 md:p-6 grid md:grid-cols-[minmax(0,300px)_1fr] gap-4 md:gap-6">
-          <div className="flex flex-col items-center gap-3">
-            {card?.imageUrl ? (
-              <img
-                src={card.imageUrl}
-                alt={card.name}
-                className="w-full max-w-[300px] rounded-xl border-2 border-amber-600/70 shadow-lg object-cover"
-              />
-            ) : (
-              <div className="w-full max-w-[300px] aspect-[3/4] rounded-xl border-2 border-amber-700/50 bg-slate-900 flex items-center justify-center text-amber-300 font-orbitron font-bold text-center p-4">
-                {card?.name || 'Карта стратегии'}
-              </div>
-            )}
-            <div className={`w-full max-w-[300px] text-center text-xs md:text-sm font-bold uppercase tracking-wider px-3 py-2 rounded-xl border ${card?.color || 'border-slate-700 text-slate-300'}`}>
+        <div className="flex-1 min-h-0 overflow-hidden p-4 md:p-6 grid md:grid-rows-1 md:grid-cols-[minmax(0,260px)_1fr_minmax(0,280px)] gap-4 md:gap-5 max-md:overflow-y-auto max-md:modal-scroll">
+          <div className="flex flex-col items-center gap-3 md:min-h-0 md:h-full">
+            <div className="w-full max-w-[300px] aspect-[3/4] flex-shrink-0">
+              {card?.imageUrl ? (
+                <img
+                  src={card.imageUrl}
+                  alt={card.name}
+                  className="w-full h-full rounded-xl border-2 border-amber-600/70 shadow-lg object-cover"
+                />
+              ) : (
+                <div className="w-full h-full rounded-xl border-2 border-amber-700/50 bg-slate-900 flex items-center justify-center text-amber-300 font-orbitron font-bold text-center p-4">
+                  {card?.name || 'Карта стратегии'}
+                </div>
+              )}
+            </div>
+            <div className={`w-full max-w-[300px] flex-shrink-0 text-center text-xs md:text-sm font-bold uppercase tracking-wider px-3 py-2 rounded-xl border ${card?.color || 'border-slate-700 text-slate-300'}`}>
               {card?.name || `Карта #${resolution?.cardId}`}
             </div>
           </div>
 
-          <div className="space-y-2.5">
+          <div className="space-y-2.5 min-w-0 md:min-h-0 md:overflow-y-auto modal-scroll">
             <div className="text-[11px] md:text-xs font-bold uppercase tracking-wider text-slate-500 px-0.5">
               Ответы игроков
             </div>
@@ -133,7 +245,7 @@ export function StrategyResolutionModal({
               return (
                 <div
                   key={p.id}
-                  className={`flex flex-wrap items-center justify-between gap-2 rounded-xl border px-3 md:px-4 py-2.5 md:py-3 ${
+                  className={`rounded-xl border px-3 md:px-4 py-2.5 md:py-3 space-y-2 ${
                     played
                       ? 'bg-emerald-950/40 border-emerald-600/70'
                       : passed
@@ -157,39 +269,48 @@ export function StrategyResolutionModal({
                       </span>
                     )}
                   </div>
-                  <div className="flex items-center gap-2 flex-shrink-0">
-                    <span className={`font-orbitron font-bold text-sm tabular-nums ${
-                      done ? 'text-slate-400' : 'text-amber-300'
-                    }`} title="Время ответа">
-                      {formatTime(secs)}
-                    </span>
-                    <span className={`text-xs md:text-sm font-bold uppercase tracking-wide ${
-                      played ? 'text-emerald-300' : passed ? 'text-rose-300' : 'text-slate-500'
-                    }`}>
-                      {statusLabel(status)}
-                    </span>
-                    {canResolveAny && !done && (
-                      <div className="flex items-center gap-1">
+                  <div className="flex items-center justify-between gap-3 w-full">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span
+                        className={`inline-block w-[5.5ch] text-left font-orbitron font-bold text-sm tabular-nums ${
+                          done ? 'text-slate-400' : 'text-amber-300'
+                        }`}
+                        title="Время ответа"
+                      >
+                        {formatTime(secs)}
+                      </span>
+                      <span className={`text-xs md:text-sm font-bold uppercase tracking-wide ${
+                        played ? 'text-emerald-300' : passed ? 'text-rose-300' : 'text-slate-500'
+                      }`}>
+                        {statusLabel(status)}
+                      </span>
+                    </div>
+                    {canResolveAny && !done ? (
+                      <div className="flex items-center gap-1.5 flex-shrink-0 ml-auto">
                         <button
                           type="button"
                           onClick={() => onResolve?.(p.id, 'played')}
-                          className="text-[11px] md:text-xs font-bold px-2 md:px-3 py-1 md:py-1.5 rounded-lg bg-emerald-900/60 border border-emerald-700 text-emerald-200 hover:bg-emerald-800/70"
+                          className="text-[11px] md:text-xs font-bold px-2.5 md:px-3 py-1 md:py-1.5 rounded-lg bg-emerald-900/60 border border-emerald-700 text-emerald-200 hover:bg-emerald-800/70"
                         >
                           Сыграно
                         </button>
                         <button
                           type="button"
                           onClick={() => onResolve?.(p.id, 'passed')}
-                          className="text-[11px] md:text-xs font-bold px-2 md:px-3 py-1 md:py-1.5 rounded-lg bg-rose-900/60 border border-rose-700 text-rose-200 hover:bg-rose-800/70"
+                          className="text-[11px] md:text-xs font-bold px-2.5 md:px-3 py-1 md:py-1.5 rounded-lg bg-rose-900/60 border border-rose-700 text-rose-200 hover:bg-rose-800/70"
                         >
                           Пас
                         </button>
                       </div>
-                    )}
+                    ) : null}
                   </div>
                 </div>
               );
             })}
+          </div>
+
+          <div className="min-w-0 md:self-start">
+            <StrategyBoardGlance players={players} resolution={resolution} />
           </div>
         </div>
       </div>

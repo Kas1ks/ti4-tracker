@@ -122,6 +122,12 @@ html.player-mobile-shell body {
     height: var(--player-tabbar-height);
     pointer-events: none;
   }
+
+  /* Keep minimized modal chips above the bottom tab bar (Ход / Цели / Стол). */
+  html.player-mobile-shell .minimized-modal-dock {
+    bottom: calc(var(--player-tabbar-height) + 0.5rem + var(--app-bottom, 0px));
+  }
+
   html.player-mobile-shell .player-console-scroll {
     padding-bottom: 0.75rem;
     -webkit-overflow-scrolling: touch;

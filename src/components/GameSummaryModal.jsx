@@ -86,6 +86,33 @@ export function GameSummaryModal({ show, onClose }) {
               </tbody>
             </table>
           </div>
+          {Array.isArray(summary.roundTimes) && summary.roundTimes.length > 0 && (
+            <div className="bg-slate-950 p-4 rounded-xl border border-slate-800">
+              <h3 className="font-orbitron text-xs font-bold uppercase text-slate-500 mb-3 flex items-center gap-2">
+                <i className="fa-solid fa-clock" aria-hidden="true" />
+                Время по раундам
+              </h3>
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+                {summary.roundTimes.map((entry) => (
+                  <div
+                    key={entry.round}
+                    className="rounded-xl border border-slate-800 bg-slate-900/80 px-3 py-2 text-center"
+                  >
+                    <div className="text-[10px] font-bold uppercase text-slate-500">Раунд {entry.round}</div>
+                    <div className="font-mono font-bold text-cyan-300 text-sm mt-0.5">
+                      {formatTime(entry.seconds || 0)}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="mt-3 pt-2 border-t border-slate-800 text-xs text-slate-500 flex justify-between">
+                <span>Всего (фаза действий)</span>
+                <span className="font-mono text-slate-300">
+                  {formatTime(summary.roundTimes.reduce((sum, e) => sum + (e.seconds || 0), 0))}
+                </span>
+              </div>
+            </div>
+          )}
           <div className="flex justify-center pt-2">
             <button type="button" onClick={handleClose} className="bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold px-6 py-2 rounded-xl text-xs transition">
               В главное меню

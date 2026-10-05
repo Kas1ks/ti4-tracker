@@ -73,7 +73,7 @@ export function ObjectivesPanel({
                                                                                 type="button"
                                                                                 onClick={() => removeObjective(obj.id)}
                                                                                 className="text-slate-600 hover:text-red-400 text-sm p-1 transition"
-                                                                                title="Удалить цель"
+                                                                                title="Убрать цель и открыть следующую из колоды"
                                                                             >
                                                                                 ✕
                                                                             </button>
@@ -205,7 +205,7 @@ export function ObjectivesPanel({
                                                                                 type="button"
                                                                                 onClick={() => removeObjective(obj.id)}
                                                                                 className="text-slate-600 hover:text-red-400 text-sm p-1 transition"
-                                                                                title="Удалить цель"
+                                                                                title="Убрать цель и открыть следующую из колоды"
                                                                             >
                                                                                 ✕
                                                                             </button>

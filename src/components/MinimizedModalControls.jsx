@@ -77,7 +77,7 @@ export function MinimizedModalControls({
   ];
 
   return (
-    <div className="fixed bottom-4 right-4 z-[65] flex flex-col items-end gap-2 max-md:bottom-[max(1rem,env(safe-area-inset-bottom))] max-md:right-2">
+    <div className="minimized-modal-dock fixed bottom-4 right-4 z-[65] flex flex-col items-end gap-2 max-md:right-2">
       {controls.filter((control) => minimizedModals[control.id] && control.show).map((control) => (
         <button key={control.id} onClick={() => onRestore(control.id)} className={control.className + ' font-bold px-4 py-2 rounded-xl text-xs transition shadow-lg hover:bg-slate-700 flex items-center gap-2'}>
           <i className={'fa-solid ' + control.icon} /><span>{control.label}</span>

@@ -231,7 +231,6 @@ function ViewerTurnTab({
         {turnOrder.map((p) => {
           if (!p) return null;
           const hasPassed = !!passed[p.id];
-          const isStrategyUsed = areAllStrategiesPlayed(p);
           const isCurrent = !!activePlayer && activePlayer.id === p.id && !hasPassed;
           const faction = ALL_FACTIONS.find(f => f.id === p.factionId);
           const isBlack = p.color === '#000000' || p.color === '#090d16' || p.color === '#030712';
@@ -264,25 +263,34 @@ function ViewerTurnTab({
                       <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-red-950 text-red-400 border border-red-800/50 uppercase flex-shrink-0">
                         ✓ Пас
                       </span>
-                    ) : isStrategyUsed ? (
-                      <span
-                        className="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-emerald-950 text-emerald-400 border border-emerald-800/50 flex-shrink-0"
-                        title="Карта стратегии сыграна"
-                      >
-                        <i className="fa-solid fa-check" aria-hidden="true" />
-                      </span>
                     ) : isCurrent ? (
                       <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-cyan-950 text-cyan-300 border border-cyan-700/50 uppercase flex-shrink-0">
                         Ход
                       </span>
                     ) : null}
                   </div>
-                  <div className="text-sm text-amber-300/80 truncate font-semibold mt-0.5">
+                  <div className="text-sm font-semibold mt-0.5 flex flex-wrap items-center gap-1.5">
                     {playerCards.length
-                      ? playerCards.map(card => (
-                        `${isStrategyCardPlayed(p, card.id) ? '✓ ' : ''}${card.ruName || card.name}`
-                      )).join(', ')
-                      : 'Без карты'}
+                      ? playerCards.map((card) => {
+                        const played = isStrategyCardPlayed(p, card.id);
+                        const label = card.ruName || card.name || '';
+                        const shortName = label.replace(/^\d+\.\s*/, '');
+                        return (
+                          <span key={card.id} className="inline-flex items-center gap-1 min-w-0">
+                            <span className="font-orbitron font-bold text-amber-300/80">
+                              #{card.id}
+                            </span>
+                            {played ? (
+                              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-md bg-emerald-950 text-emerald-400 border border-emerald-800/50 uppercase tracking-wide">
+                                Сыграно
+                              </span>
+                            ) : (
+                              <span className="text-amber-300/80 truncate">{shortName}</span>
+                            )}
+                          </span>
+                        );
+                      })
+                      : <span className="text-amber-300/80">Без карты</span>}
                   </div>
                   <div className="text-xs text-slate-500 mt-1.5 pt-1.5 border-t border-slate-800/60 flex items-center justify-between gap-2">
                     <span>

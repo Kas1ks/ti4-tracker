@@ -29,6 +29,42 @@ describe('authorizeAction', () => {
     }).ok).toBe(true);
   });
 
+  it('locks processes after victory but keeps host VP edits', () => {
+    let state = normalizeGameState({
+      isGameActive: true,
+      targetScore: 2,
+      players: [
+        { ...player(1, 'A'), secrets: 2 },
+        player(2, 'B'),
+      ],
+      speakerId: 1,
+    });
+    expect(authorizeAction({
+      role: ROLES.ADMIN,
+      seatPlayerId: null,
+      action: { type: 'OPEN_DRAFT' },
+      state,
+    })).toEqual({ ok: false, error: 'victory-locked' });
+    expect(authorizeAction({
+      role: ROLES.PLAYER,
+      seatPlayerId: 2,
+      action: { type: 'PASS_TURN', playerId: 2 },
+      state,
+    })).toEqual({ ok: false, error: 'victory-locked' });
+    expect(authorizeAction({
+      role: ROLES.ADMIN,
+      seatPlayerId: null,
+      action: { type: 'ADJUST_SECRETS', playerId: 1, delta: -1 },
+      state,
+    }).ok).toBe(true);
+    expect(authorizeAction({
+      role: ROLES.ADMIN,
+      seatPlayerId: null,
+      action: { type: 'UNDO_LAST' },
+      state,
+    }).ok).toBe(true);
+  });
+
   it('blocks viewer mutations', () => {
     const state = draftState();
     expect(authorizeAction({

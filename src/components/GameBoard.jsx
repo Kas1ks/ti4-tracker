@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import { ALL_FACTIONS } from '../data/gameData';
 import { formatTime } from '../utils/game';
-import { areAllStrategiesPlayed, isStrategyCardPlayed } from '../game/selectors';
+import { isStrategyCardPlayed } from '../game/selectors';
 import { ObjectivesPanel } from './ObjectivesPanel';
 
 export function GameBoard({
@@ -159,7 +159,6 @@ export function GameBoard({
                                             {turnOrder.map((p) => {
                                                 if (!p) return null;
                                                 const hasPassed = !!passed[p.id];
-                                                const isStrategyUsed = areAllStrategiesPlayed(p);
                                                 const isCurrent = activePlayer && activePlayer.id === p.id;
                                                 const faction = ALL_FACTIONS.find(f => f.id === p.factionId);
                                                 const isBlack = p.color === '#000000' || p.color === '#090d16';
@@ -183,10 +182,6 @@ export function GameBoard({
                                                                 <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-red-950 text-red-400 border border-red-800/50 uppercase">
                                                                     ✓ ПАС
                                                                 </span>
-                                                            ) : isStrategyUsed ? (
-                                                                <span className="text-xs font-bold px-1.5 py-0.5 rounded-md bg-emerald-950 text-emerald-400 border border-emerald-800/50 flex items-center gap-1" title="Карта стратегии сыграна">
-                                                                    <i className="fa-solid fa-check"></i>
-                                                                </span>
                                                             ) : null}
                                                         </div>
 
@@ -197,14 +192,29 @@ export function GameBoard({
                                                             >
                                                                 <img src={faction?.iconUrl} alt={faction?.name} className="w-full h-full object-contain" />
                                                             </div>
-                                                            <div className="truncate">
+                                                            <div className="truncate min-w-0">
                                                                 <div className="font-bold text-base text-white truncate">{p.name}</div>
-                                                                <div className="text-sm text-amber-300/80 truncate font-semibold">
+                                                                <div className="text-sm font-semibold mt-0.5 flex flex-wrap items-center gap-1.5">
                                                                     {playerCards.length
-                                                                        ? playerCards.map(card => (
-                                                                          `${isStrategyCardPlayed(p, card.id) ? '✓ ' : ''}${card.name}`
-                                                                        )).join(', ')
-                                                                        : 'Без карты'}
+                                                                        ? playerCards.map((card) => {
+                                                                          const played = isStrategyCardPlayed(p, card.id);
+                                                                          const shortName = (card.name || '').replace(/^\d+\.\s*/, '');
+                                                                          return (
+                                                                            <span key={card.id} className="inline-flex items-center gap-1 min-w-0">
+                                                                              <span className="font-orbitron font-bold text-amber-300/80">
+                                                                                #{card.id}
+                                                                              </span>
+                                                                              {played ? (
+                                                                                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-md bg-emerald-950 text-emerald-400 border border-emerald-800/50 uppercase tracking-wide">
+                                                                                  Сыграно
+                                                                                </span>
+                                                                              ) : (
+                                                                                <span className="text-amber-300/80 truncate">{shortName}</span>
+                                                                              )}
+                                                                            </span>
+                                                                          );
+                                                                        })
+                                                                        : <span className="text-amber-300/80">Без карты</span>}
                                                                 </div>
                                                             </div>
                                                         </div>

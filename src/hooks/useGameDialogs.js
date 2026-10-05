@@ -32,6 +32,29 @@ export function useGameDialogs({ game, dispatch, uiAlert, uiConfirm, uiForm, onN
     dispatch({ type: 'START_GAME' });
   };
 
+  const removeObjective = async (objectiveId) => {
+    const obj = objectives.find(o => o.id === objectiveId);
+    if (!obj) return;
+
+    const stage = Number(obj.stage) === 2 ? 2 : 1;
+    const deck = stage === 2 ? stage2Deck : stage1Deck;
+    const activeIds = new Set(objectives.map(o => o.id));
+    const hasReplacement = deck.some(
+      d => d.id !== objectiveId && !activeIds.has(d.id),
+    );
+
+    const label = obj.desc || obj.title || obj.id;
+    const confirmed = await uiConfirm(
+      hasReplacement
+        ? `Убрать цель «${label}» с поля? Она исчезнет из колоды, вместо неё откроется следующая цель этапа ${stage}.`
+        : `Убрать цель «${label}» с поля? Она исчезнет из колоды; неоткрытых целей этого этапа больше нет.`,
+      { title: 'Удалить цель?', confirmLabel: 'Убрать', variant: 'danger' },
+    );
+    if (!confirmed) return;
+
+    dispatch({ type: 'DISCARD_OBJECTIVE', objectiveId });
+  };
+
   const addRandomObjective = async (stage) => {
     const deck = stage === 1 ? stage1Deck : stage2Deck;
     const nextObjective = deck.find(deckObj =>
@@ -153,6 +176,7 @@ export function useGameDialogs({ game, dispatch, uiAlert, uiConfirm, uiForm, onN
 
   return {
     handleStartGame,
+    removeObjective,
     addRandomObjective,
     addCustomObjective,
     handleAddSecret,

@@ -250,6 +250,40 @@ export function canEndRound(state) {
   return playersNotPassed(state).length === 0;
 }
 
+/** Live wall-clock seconds for the current action phase (0 if not running). */
+export function liveRoundElapsed(state, at = Date.now()) {
+  const started = state.round?.roundStartedAt;
+  if (!Number.isFinite(started)) return 0;
+  return Math.max(0, Math.floor((at - started) / 1000));
+}
+
+/**
+ * Round durations for display / end-game save.
+ * Includes a live (or just-finished) entry for the current roundNumber when the clock is running.
+ */
+export function finalizeRoundTimes(state, at = Date.now()) {
+  const times = Array.isArray(state?.meta?.roundTimes) ? [...state.meta.roundTimes] : [];
+  const roundNum = state?.meta?.roundNumber || 1;
+  const live = liveRoundElapsed(state, at);
+  if (live > 0 || Number.isFinite(state?.round?.roundStartedAt)) {
+    return [
+      ...times.filter(entry => entry.round !== roundNum),
+      { round: roundNum, seconds: live },
+    ].sort((a, b) => a.round - b.round);
+  }
+  return times.sort((a, b) => a.round - b.round);
+}
+
+/** Seconds to show for the current round (live clock, else last banked value). */
+export function currentRoundDisplayTime(state, liveSecs = 0) {
+  if (Number.isFinite(state?.round?.roundStartedAt)) {
+    return Math.max(0, liveSecs);
+  }
+  const roundNum = state?.meta?.roundNumber || 1;
+  const entry = (state?.meta?.roundTimes || []).find(e => e.round === roundNum);
+  return entry ? entry.seconds : 0;
+}
+
 export function isDraftInProgress(state) {
   return state.draft.queue.length > 0;
 }
@@ -319,15 +353,26 @@ export function isArgentFlightPlayer(player) {
   return player?.factionId === 'argent';
 }
 
+/** XXCha Kingdom: +1 vote per planet exhausted while casting. */
+export function isXxchaPlayer(player) {
+  return player?.factionId === 'xxcha';
+}
+
 /**
  * Votes that count toward the outcome for a locked ballot.
- * oneVoteLaw: exactly 1 (no Argent Zeal / influence spend).
+ * oneVoteLaw: exactly 1 (no Argent Zeal / XXCha planets / influence spend).
  * Argent: spent amount + playerCount when amount ≥ 1 and not abstaining.
+ * XXCha: spent influence + exhausted planets (each planet +1).
  */
 export function effectiveVoteAmount(state, player, vote) {
   if (!vote || vote.choice === 'abstain') return 0;
   if (state?.politics?.oneVoteLaw) return 1;
   const spent = Number(vote.amount) || 0;
+  const planets = Math.max(0, Number(vote.planets) || 0);
+  if (isXxchaPlayer(player)) {
+    const total = spent + planets;
+    return total > 0 ? total : 0;
+  }
   if (spent <= 0) return 0;
   if (isArgentFlightPlayer(player)) return spent + argentFlightVoteBonus(state);
   return spent;
