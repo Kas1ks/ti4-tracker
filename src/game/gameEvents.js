@@ -120,20 +120,42 @@ export function deriveGameEvents(prev, action, next) {
         at,
         playerId: player.id,
         cardId,
+        roundNumber: prev.meta?.roundNumber ?? null,
       })];
     }
 
     case 'RESOLVE_STRATEGY': {
-      const wasActive = !!prev.round?.strategyResolution?.active;
+      const res = prev.round?.strategyResolution;
+      if (!res?.active) return [];
+      const roundNumber = prev.meta?.roundNumber ?? null;
+      const cardId = res.cardId ?? null;
+      const ownerId = res.playerId ?? null;
+      const events = [];
+
+      if (action.playerId !== ownerId) {
+        events.push(baseEvent(
+          action.choice === 'played' ? 'STRATEGY_SECONDARY_PLAYED' : 'STRATEGY_SECONDARY_PASSED',
+          action,
+          {
+            at,
+            playerId: action.playerId,
+            cardId,
+            ownerPlayerId: ownerId,
+            roundNumber,
+          },
+        ));
+      }
+
       const stillActive = !!next.round?.strategyResolution?.active;
-      if (!wasActive || stillActive) return [];
-      const cardId = prev.round?.strategyResolution?.cardId ?? null;
-      const playerId = prev.round?.strategyResolution?.playerId ?? null;
-      return [baseEvent('STRATEGY_PLAYED', action, {
-        at,
-        playerId,
-        cardId,
-      })];
+      if (!stillActive && ownerId != null && cardId != null) {
+        events.push(baseEvent('STRATEGY_PLAYED', action, {
+          at,
+          playerId: ownerId,
+          cardId,
+          roundNumber,
+        }));
+      }
+      return events;
     }
 
     case 'SET_SPEAKER':
@@ -142,6 +164,7 @@ export function deriveGameEvents(prev, action, next) {
         at,
         playerId: action.playerId,
         fromPlayerId: prev.meta?.speakerId ?? null,
+        roundNumber: prev.meta?.roundNumber ?? null,
       })];
 
     case 'ELIMINATE_PLAYER':
@@ -177,6 +200,7 @@ export function deriveGameEvents(prev, action, next) {
       return [baseEvent('AGENDA_PHASE_FINISHED', action, {
         at,
         playerId: action.playerId ?? next.meta?.speakerId ?? null,
+        roundNumber: prev.meta?.roundNumber ?? null,
       })];
 
     case 'ADD_COMBAT_DAMAGE':
@@ -445,6 +469,10 @@ export function formatGameEvent(event, players = []) {
       return `${name(event.playerId)} разыгрывает «${strategyLabel(event.cardId)}»`;
     case 'STRATEGY_PLAYED':
       return `${name(event.playerId)} сыграл «${strategyLabel(event.cardId)}»`;
+    case 'STRATEGY_SECONDARY_PLAYED':
+      return `${name(event.playerId)} взял вторичку «${strategyLabel(event.cardId)}» (${name(event.ownerPlayerId)})`;
+    case 'STRATEGY_SECONDARY_PASSED':
+      return `${name(event.playerId)} пропустил «${strategyLabel(event.cardId)}» (${name(event.ownerPlayerId)})`;
     case 'SPEAKER_CHANGED':
       return `Спикер: ${name(event.playerId)}`;
     case 'PLAYER_ELIMINATED':

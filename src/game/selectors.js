@@ -7,20 +7,36 @@ export function playerById(state, playerId) {
   return state.players.find(p => p.id === playerId) || null;
 }
 
-export function playerScore(state, playerId) {
+/** VP sources for one seat — used by scoring UI and end-of-game analytics. */
+export function playerScoreBreakdown(state, playerId) {
   const player = playerById(state, playerId);
-  if (!player) return 0;
+  if (!player) {
+    return { secrets: 0, objectives: 0, custodians: 0, support: 0, extra: 0, total: 0 };
+  }
 
-  const fromObjectives = state.objectives.active.reduce((sum, objective) => (
-    state.objectives.completions[`${playerId}_${objective.id}`] ? sum + objective.points : sum
+  const objectives = (state.objectives?.active || []).reduce((sum, objective) => (
+    state.objectives.completions[`${playerId}_${objective.id}`] ? sum + (Number(objective.points) || 0) : sum
   ), 0);
 
   const track = state.vpTrack || {};
-  const fromCustodians = track.custodiansPlayerId === playerId ? 1 : 0;
+  const custodians = track.custodiansPlayerId === playerId ? 1 : 0;
   const holders = track.supportHolders || {};
-  const fromSupport = Object.values(holders).filter(holderId => holderId === playerId).length;
+  const support = Object.values(holders).filter(holderId => holderId === playerId).length;
+  const secrets = Number(player.secrets) || 0;
+  const extra = Number(player.extra) || 0;
 
-  return player.secrets + player.extra + fromObjectives + fromCustodians + fromSupport;
+  return {
+    secrets,
+    objectives,
+    custodians,
+    support,
+    extra,
+    total: secrets + extra + objectives + custodians + support,
+  };
+}
+
+export function playerScore(state, playerId) {
+  return playerScoreBreakdown(state, playerId).total;
 }
 
 export function activePlayers(state) {

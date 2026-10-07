@@ -69,20 +69,35 @@ export function GameSummaryModal({ show, onClose }) {
                   <th className="py-2">Игрок</th>
                   <th className="py-2 text-center">Фракция</th>
                   <th className="py-2 text-center">Счет</th>
-                  <th className="py-2 text-center">Нанесено урона</th>
+                  <th className="py-2 text-left">Состав ПО</th>
+                  <th className="py-2 text-center">Урон</th>
                   <th className="py-2 text-right">Общее время</th>
                 </tr>
               </thead>
               <tbody>
-                {[...(summary.players || [])].sort((a, b) => b.score - a.score).map((player) => (
+                {[...(summary.players || [])].sort((a, b) => b.score - a.score).map((player) => {
+                  const b = player.scoreBreakdown;
+                  const parts = b ? [
+                    b.objectives ? `цел. ${b.objectives}` : null,
+                    b.secrets ? `секр. ${b.secrets}` : null,
+                    b.custodians ? `хран. ${b.custodians}` : null,
+                    b.support ? `supp. ${b.support}` : null,
+                    b.extra ? `др. ${b.extra}` : null,
+                  ].filter(Boolean) : [];
+                  return (
                   <tr key={player.name} className="border-b border-slate-800/50 last:border-b-0">
                     <td className={'py-3 font-bold ' + (player.isWinner ? 'text-amber-400' : 'text-white')}>{player.name}</td>
                     <td className="py-3 text-center text-slate-400 text-xs">{player.faction}</td>
                     <td className="py-3 text-center font-orbitron font-bold text-xl text-cyan-400">{player.score}</td>
+                    <td className="py-3 text-left text-[11px] text-slate-500">
+                      {parts.length ? parts.join(' · ') : '—'}
+                      {player.breakthrough && <span className="ml-2 text-violet-400">BT</span>}
+                    </td>
                     <td className="py-3 text-center font-orbitron font-bold text-xl text-red-400">{player.damageDealt || 0}</td>
                     <td className="py-3 text-right font-mono text-slate-300">{formatTime(player.totalTime || 0)}</td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>

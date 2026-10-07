@@ -1,9 +1,8 @@
 import { useRef, useState } from 'react';
 import { isCloudConfigured } from '../config';
-import { ALL_FACTIONS } from '../data/gameData';
 import { stampGameState } from '../game/gameState';
-import { finalizeRoundTimes } from '../game/selectors';
 import { rememberObjectiveIds } from '../game/objectiveHistory';
+import { buildGameRecord, normalizeHistory } from '../analytics/gameRecord';
 import {
   clearCloudStats,
   createCloudSave,
@@ -26,7 +25,8 @@ export function useCloudGame({ game, dispatch, getPlayerScore, uiAlert, uiConfir
     setShowStatsModal(true);
     setIsStatsLoading(true);
     try {
-      setGlobalHistory(isCloudConfigured ? await fetchCloudStats() : []);
+      const raw = isCloudConfigured ? await fetchCloudStats() : [];
+      setGlobalHistory(normalizeHistory(raw));
     } catch (err) {
       console.error(err);
       setGlobalHistory([]);
@@ -49,7 +49,7 @@ export function useCloudGame({ game, dispatch, getPlayerScore, uiAlert, uiConfir
     if (pin === null) return;
     try {
       const updated = await deleteCloudGame(gameId, pin);
-      if (updated) setGlobalHistory(updated);
+      if (updated) setGlobalHistory(normalizeHistory(updated));
       await uiAlert('Партия удалена.', { variant: 'success', title: 'Готово' });
     } catch (err) {
       await uiAlert(cloudErrorMessage(err, 'Ошибка при удалении'), { variant: 'danger', title: 'Ошибка' });
@@ -84,83 +84,10 @@ export function useCloudGame({ game, dispatch, getPlayerScore, uiAlert, uiConfir
 
   const saveGameToCloud = async (winnerPlayer) => {
     const current = gameRef.current;
-    const players = Array.isArray(current?.players) ? current.players : [];
-    const meta = current?.meta || {};
-    const targetScore = meta.targetScore;
-    const roundNumber = meta.roundNumber || 0;
 
     rememberObjectiveIds((current?.objectives?.active || []).map(o => o.id));
 
-    const gameRecord = {
-      id: Date.now(),
-      schemaVersion: 2,
-      date: new Date().toLocaleDateString('ru-RU'),
-      targetScore,
-      roundsCount: roundNumber,
-      roundTimes: finalizeRoundTimes(current),
-      winner: winnerPlayer ? winnerPlayer.name : 'Ничья',
-      winningFaction: winnerPlayer
-        ? (ALL_FACTIONS.find(f => f.id === winnerPlayer.factionId)?.name || '')
-        : '',
-      expansions: {
-        pok: !!meta.usePok,
-        te: !!meta.useTe,
-      },
-      objectives: (current?.objectives?.active || []).map(o => ({
-        id: o.id,
-        title: o.title,
-        stage: o.stage,
-        points: o.points,
-        scoredBy: players
-          .filter(p => current?.objectives?.completions?.[`${p.id}_${o.id}`])
-          .map(p => p.name),
-      })),
-      strategyPicks: (Array.isArray(meta.strategyPickHistory) ? meta.strategyPickHistory : []).map((pick) => {
-        const seat = players.find(p => p.id === pick.playerId);
-        return {
-          round: pick.round,
-          cardId: pick.cardId,
-          playerId: pick.playerId,
-          player: seat?.name || String(pick.playerId),
-        };
-      }),
-      teController: (() => {
-        if (!meta.useTe || !current?.expedition?.completed) return null;
-        const ctrl = players.find(p => p.id === current.expedition.controllerId);
-        if (!ctrl) return null;
-        return {
-          name: ctrl.name,
-          faction: ALL_FACTIONS.find(f => f.id === ctrl.factionId)?.name || ctrl.factionId,
-        };
-      })(),
-      custodians: (() => {
-        const id = current?.vpTrack?.custodiansPlayerId;
-        if (id == null) return null;
-        const p = players.find(x => x.id === id);
-        return p ? p.name : null;
-      })(),
-      supports: Object.entries(current?.vpTrack?.supportHolders || {}).map(([fromId, holderId]) => {
-        const from = players.find(p => p.id === Number(fromId));
-        const holder = players.find(p => p.id === Number(holderId));
-        return {
-          from: from?.name || String(fromId),
-          holder: holder?.name || String(holderId),
-        };
-      }),
-      players: players.map(p => ({
-        name: p.name,
-        damageDealt: p.damageDealt || 0,
-        factionId: p.factionId || null,
-        faction: ALL_FACTIONS.find(f => f.id === p.factionId)?.name || p.factionId,
-        score: getPlayerScore(p.id),
-        totalTime: p.totalTime || 0,
-        avgTurnTime: roundNumber > 0 ? Math.round((p.totalTime || 0) / roundNumber) : 0,
-        isWinner: winnerPlayer ? p.id === winnerPlayer.id : false,
-        breakthrough: !!p.breakthrough,
-        eliminated: !!p.eliminated,
-        eliminatedRound: p.eliminated && Number.isFinite(p.eliminatedRound) ? p.eliminatedRound : null,
-      })),
-    };
+    const gameRecord = buildGameRecord(current, winnerPlayer, getPlayerScore);
 
     localStorage.setItem('ti4_gameSummary', JSON.stringify(gameRecord));
 
