@@ -3,6 +3,7 @@ import { resolve, join, extname } from 'node:path';
 import { Readable } from 'node:stream';
 import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
+import { VitePWA } from 'vite-plugin-pwa';
 import { handleApi } from './worker/api.js';
 
 const FIGURINES_DIR = resolve(process.cwd(), 'ti4_figurines_8_colors');
@@ -166,7 +167,92 @@ function cloudApiPlugin(mode) {
 }
 
 export default defineConfig(({ mode }) => ({
-  plugins: [react(), cloudApiPlugin(mode), figurinesStaticPlugin()],
+  plugins: [
+    react(),
+    cloudApiPlugin(mode),
+    figurinesStaticPlugin(),
+    VitePWA({
+      registerType: 'autoUpdate',
+      includeAssets: [
+        'favicon.ico',
+        'favicon.png',
+        'pwa/apple-touch-icon.png',
+        'pwa/favicon-16.png',
+        'pwa/favicon-32.png',
+        'pwa/favicon-192.png',
+        'pwa/icon-192.png',
+        'pwa/icon-512.png',
+        'pwa/icon-192-maskable.png',
+        'pwa/icon-512-maskable.png',
+      ],
+      manifest: {
+        name: 'TI4 Tracker',
+        short_name: 'TI4 Tracker',
+        description: 'Companion для живых партий Twilight Imperium 4',
+        theme_color: '#0f172a',
+        background_color: '#020617',
+        display: 'standalone',
+        orientation: 'any',
+        start_url: '/',
+        scope: '/',
+        lang: 'ru',
+        categories: ['games', 'utilities'],
+        icons: [
+          {
+            src: '/pwa/icon-192.png',
+            sizes: '192x192',
+            type: 'image/png',
+            purpose: 'any',
+          },
+          {
+            src: '/pwa/icon-512.png',
+            sizes: '512x512',
+            type: 'image/png',
+            purpose: 'any',
+          },
+          {
+            src: '/pwa/icon-192-maskable.png',
+            sizes: '192x192',
+            type: 'image/png',
+            purpose: 'maskable',
+          },
+          {
+            src: '/pwa/icon-512-maskable.png',
+            sizes: '512x512',
+            type: 'image/png',
+            purpose: 'maskable',
+          },
+        ],
+      },
+      workbox: {
+        navigateFallback: '/index.html',
+        navigateFallbackDenylist: [/^\/api\//],
+        // Large expedition art stays out of precache; runtime cache handles images.
+        maximumFileSizeToCacheInBytes: 3 * 1024 * 1024,
+        globIgnores: ['**/expedition/**'],
+        runtimeCaching: [
+          {
+            urlPattern: ({ url }) => url.pathname.startsWith('/api/'),
+            handler: 'NetworkOnly',
+          },
+          {
+            urlPattern: ({ request }) => request.destination === 'image',
+            handler: 'StaleWhileRevalidate',
+            options: {
+              cacheName: 'ti4-images',
+              expiration: { maxEntries: 120, maxAgeSeconds: 60 * 60 * 24 * 14 },
+            },
+          },
+        ],
+        globPatterns: ['**/*.{js,css,html,ico,png,svg,webp,woff2}'],
+      },
+      // Lets you smoke-test SW on phone over LAN; install prompt still prefers HTTPS.
+      devOptions: {
+        enabled: true,
+        navigateFallback: 'index.html',
+      },
+    }),
+  ],
   test: {
     exclude: ['**/node_modules/**', '**/dist/**', '**/e2e/**'],
   },
@@ -179,6 +265,7 @@ export default defineConfig(({ mode }) => ({
           if (id.includes('react-dom') || id.includes('/react/') || id.endsWith('/react')) {
             return 'react-vendor';
           }
+          if (id.includes('workbox') || id.includes('virtual:pwa')) return 'pwa';
           return undefined;
         },
       },
@@ -190,7 +277,9 @@ export default defineConfig(({ mode }) => ({
       ignored: [
         '**/ti4_figurines_8_colors/**',
         '**/public/expedition/**',
-        '**/*.{png,webp,jpg,jpeg,gif,PNG,WEBP,JPG,JPEG,GIF}',
+        '**/public/factions/**',
+        '**/public/strategy-cards/**',
+        '**/public/tech-icons/**',
       ],
     },
   },

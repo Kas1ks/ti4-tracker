@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
+import brandMarkLg from '../assets/brand-mark-lg.png';
 import { ALL_FACTIONS } from '../data/gameData';
 import { ROLES } from '../sync/permissions';
 import { fetchRoomSnapshot } from '../sync/roomApi';
 import { loadSeatSecret } from '../sync/seatSecrets';
+import { PwaInstallBanner } from './PwaInstallBanner';
 
 /**
  * First screen: Create party / Join by code.
@@ -248,12 +250,21 @@ export function RoomHub({
     <div className="max-w-2xl mx-auto min-h-[70vh] flex flex-col justify-center py-10 md:py-16 space-y-10">
       <div className="space-y-4 text-center">
         <div className="inline-flex items-center justify-center gap-3">
-          <i className="fa-solid fa-khanda text-cyan-400 text-4xl md:text-5xl" />
+          <img
+            src={brandMarkLg}
+            alt=""
+            width={64}
+            height={64}
+            className="h-12 w-12 md:h-14 md:w-14 object-contain drop-shadow-[0_0_12px_rgba(34,211,238,0.35)]"
+            draggable={false}
+          />
           <h1 className="font-orbitron font-black text-4xl md:text-5xl text-white tracking-wider">
             TI4 TRACKER
           </h1>
         </div>
       </div>
+
+      <PwaInstallBanner />
 
       <div className="space-y-4">
         <button

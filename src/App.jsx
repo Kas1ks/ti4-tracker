@@ -1,4 +1,5 @@
 import { lazy, Suspense, useEffect, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import * as select from './game/selectors';
 import { useSyncedGame } from './sync/useSyncedGame';
 import { verifyHostSecret } from './sync/roomApi';
@@ -30,7 +31,7 @@ const GameBoard = lazy(() => import('./components/GameBoard').then(m => ({ defau
 const PlayerMobileConsole = lazy(() => import('./components/PlayerMobileConsole').then(m => ({ default: m.PlayerMobileConsole })));
 const ViewerMobileConsole = lazy(() => import('./components/ViewerMobileConsole').then(m => ({ default: m.ViewerMobileConsole })));
 const GameSummaryModal = lazy(() => import('./components/GameSummaryModal').then(m => ({ default: m.GameSummaryModal })));
-const StatsModal = lazy(() => import('./components/StatsModal').then(m => ({ default: m.StatsModal })));
+const StatsPage = lazy(() => import('./components/StatsModal').then(m => ({ default: m.StatsPage })));
 const StatusPhaseModal = lazy(() => import('./components/StatusPhaseModal').then(m => ({ default: m.StatusPhaseModal })));
 const ObjectiveScoringModal = lazy(() => import('./components/ObjectiveScoringModal').then(m => ({ default: m.ObjectiveScoringModal })));
 const EndGameModal = lazy(() => import('./components/EndGameModal').then(m => ({ default: m.EndGameModal })));
@@ -56,6 +57,10 @@ function BoardChunkFallback() {
 }
 
 function App() {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const isStatsRoute = location.pathname === '/stats';
+
   const { dialog, close, uiAlert, uiConfirm, uiPrompt, uiForm } = useAppDialog();
   const {
     game,
@@ -428,6 +433,35 @@ function App() {
     await leaveRoom();
   };
 
+  useEffect(() => {
+    if (!isStatsRoute) return undefined;
+    cloud.loadStatsHistory();
+    return undefined;
+  }, [isStatsRoute]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  if (isStatsRoute) {
+    return (
+      <>
+        <Suspense
+          fallback={(
+            <div className="min-h-screen bg-slate-950 flex items-center justify-center text-slate-400 font-orbitron">
+              <i className="fa-solid fa-spinner fa-spin text-2xl text-purple-400" aria-hidden="true" />
+            </div>
+          )}
+        >
+          <StatsPage
+            onBack={() => navigate('/')}
+            isStatsLoading={cloud.isStatsLoading}
+            globalHistory={cloud.globalHistory}
+            deleteSingleGame={cloud.deleteSingleGame}
+            clearAllStats={cloud.clearAllStats}
+          />
+        </Suspense>
+        <AppDialog dialog={dialog} onClose={close} />
+      </>
+    );
+  }
+
   return (
     <div
       className={`max-w-[1800px] mx-auto flex flex-col text-slate-100 ${
@@ -476,7 +510,7 @@ function App() {
         }
         onExport={cloud.exportGameToken}
         onOpenEndGame={() => ui.setShowEndGameModal(true)}
-        onOpenStats={cloud.openStatsModal}
+        onOpenStats={() => navigate('/stats')}
         onOpenEventLog={() => ui.setShowEventLog(true)}
         onOpenExpedition={useTe ? openExpeditionPanel : undefined}
         onOpenTech={isViewerClient ? undefined : () => {
@@ -825,17 +859,6 @@ function App() {
               if (showTechResearchModal) ui.ensureMinimized('techResearch');
               else ui.setShowTechModal(false);
             }}
-          />
-        </LazyWhen>
-
-        <LazyWhen active={cloud.showStatsModal}>
-          <StatsModal
-            showStatsModal={cloud.showStatsModal}
-            setShowStatsModal={cloud.setShowStatsModal}
-            isStatsLoading={cloud.isStatsLoading}
-            globalHistory={cloud.globalHistory}
-            deleteSingleGame={cloud.deleteSingleGame}
-            clearAllStats={cloud.clearAllStats}
           />
         </LazyWhen>
 

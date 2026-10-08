@@ -23,6 +23,16 @@ npm run dev
 
 Open the URL Vite prints (usually http://localhost:5173).
 
+Company stats live at `/stats` (react-router). Cloudflare assets use SPA `not_found_handling`, so deep links work after deploy.
+
+### PWA
+
+The app is installable (manifest + service worker via `vite-plugin-pwa`).
+
+- **Production (HTTPS):** Android Chrome can show «Install»; iPhone Safari → Share → Add to Home Screen.
+- **Local LAN (`http://192.168…`):** install prompt may be missing (browsers prefer HTTPS); «Add to Home Screen» as a shortcut still works. Full PWA install is best after `npm run deploy`.
+- `/api/*` is never cached by the service worker (NetworkOnly).
+
 ### Local cloud (optional)
 
 1. Copy `.env.example` → `.env.local`

@@ -17,7 +17,6 @@ import { cloudErrorMessage } from '../utils/cloudErrors';
 
 /** Stats, cloud saves and end-of-game upload — everything that talks to /api. */
 export function useCloudGame({ game, dispatch, getPlayerScore, uiAlert, uiConfirm, uiPrompt }) {
-  const [showStatsModal, setShowStatsModal] = useState(false);
   const [globalHistory, setGlobalHistory] = useState([]);
   const [isStatsLoading, setIsStatsLoading] = useState(false);
   const gameRef = useRef(game);
@@ -51,8 +50,8 @@ export function useCloudGame({ game, dispatch, getPlayerScore, uiAlert, uiConfir
     }
   };
 
-  const openStatsModal = async () => {
-    setShowStatsModal(true);
+  /** Load company history for the /stats page. */
+  const loadStatsHistory = async () => {
     setIsStatsLoading(true);
     try {
       const raw = isCloudConfigured ? await fetchCloudStats() : [];
@@ -203,11 +202,9 @@ export function useCloudGame({ game, dispatch, getPlayerScore, uiAlert, uiConfir
   };
 
   return {
-    showStatsModal,
-    setShowStatsModal,
     globalHistory,
     isStatsLoading,
-    openStatsModal,
+    loadStatsHistory,
     deleteSingleGame,
     clearAllStats,
     saveGameToCloud,

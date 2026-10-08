@@ -3,7 +3,6 @@ import { STRATEGY_CARDS } from '../data/gameData';
 import { formatTime } from '../utils/game';
 import { isCloudConfigured } from '../config';
 import { useEscapeKey } from '../hooks/useEscapeKey';
-import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
 import { buildAnalytics } from '../analytics/aggregate';
 import { buildFactionProfile, buildPlayerProfile } from '../analytics/profiles';
 import {
@@ -1205,16 +1204,15 @@ function HistoryList({ globalHistory, deleteSingleGame }) {
   );
 }
 
-export function StatsModal({
-  showStatsModal,
-  setShowStatsModal,
+/** Full-page company stats (route `/stats`). */
+export function StatsPage({
+  onBack,
   isStatsLoading,
   globalHistory,
   deleteSingleGame,
   clearAllStats,
 }) {
-  useEscapeKey(() => setShowStatsModal(false), showStatsModal);
-  useBodyScrollLock(showStatsModal);
+  useEscapeKey(() => onBack?.(), true);
   const [tab, setTab] = useState('analytics');
   const [filters, setFilters] = useState(DEFAULT_HISTORY_FILTERS);
   const [profileTarget, setProfileTarget] = useState(null);
@@ -1254,47 +1252,41 @@ export function StatsModal({
     setProfileTarget({ type: 'faction', key });
   };
 
-  if (!showStatsModal) return null;
-
   return (
-    <div
-      className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4 modal-overlay"
-      role="presentation"
-    >
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="stats-modal-title"
-        className="bg-slate-900 border border-purple-500/40 p-6 md:p-8 rounded-3xl max-w-5xl w-full space-y-5 shadow-[0_0_40px_rgba(168,85,247,0.2)] max-h-[90vh] overflow-y-auto relative modal-scroll"
-      >
-        <button
-          type="button"
-          onClick={() => setShowStatsModal(false)}
-          aria-label="Закрыть статистику"
-          className="absolute top-5 right-5 text-slate-400 hover:text-white text-xl"
-        >
-          <i className="fa-solid fa-xmark" aria-hidden="true" />
-        </button>
-
-        <div className="text-center space-y-1 pr-8">
-          <h3 id="stats-modal-title" className="font-orbitron font-black text-2xl md:text-3xl text-purple-400 uppercase">
-            Статистика Компании
-          </h3>
-          <p className="text-xs md:text-sm text-slate-400">
-            Аналитика игроков, фракций, целей и стратегий · {analytics.gameCount} парт.
-            {filteredHistory.length !== globalHistory.length && (
-              <span className="text-slate-500"> (из {globalHistory.length})</span>
-            )}
-          </p>
+    <div className="min-h-screen bg-slate-950 text-slate-100">
+      <div className="sticky top-0 z-20 border-b border-purple-500/30 bg-slate-950/95 backdrop-blur-md">
+        <div className="max-w-5xl mx-auto px-4 md:px-6 py-3 flex items-center gap-3">
+          <button
+            type="button"
+            onClick={onBack}
+            aria-label="Назад к игре"
+            className="inline-flex items-center gap-2 h-10 px-3 rounded-xl border border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800 text-xs font-bold transition"
+          >
+            <i className="fa-solid fa-arrow-left" aria-hidden="true" />
+            <span>Назад</span>
+          </button>
+          <div className="min-w-0 flex-1">
+            <h1 id="stats-page-title" className="font-orbitron font-black text-lg md:text-2xl text-purple-400 uppercase truncate">
+              Статистика Компании
+            </h1>
+            <p className="text-[11px] md:text-xs text-slate-500 truncate">
+              Аналитика игроков, фракций, целей и стратегий · {analytics.gameCount} парт.
+              {filteredHistory.length !== globalHistory.length && (
+                <span> (из {globalHistory.length})</span>
+              )}
+            </p>
+          </div>
         </div>
+      </div>
 
+      <main className="max-w-5xl mx-auto px-4 md:px-6 py-5 md:py-8 space-y-5">
         {isStatsLoading ? (
-          <div className="text-center py-12 text-slate-400 font-orbitron">
+          <div className="text-center py-16 text-slate-400 font-orbitron">
             <i className="fa-solid fa-spinner fa-spin text-2xl mb-2 text-purple-400" aria-hidden="true" />
             <div>Загрузка данных из облака...</div>
           </div>
         ) : globalHistory.length === 0 ? (
-          <div className="text-center py-12 text-slate-500">
+          <div className="text-center py-16 text-slate-500">
             {isCloudConfigured
               ? 'История игр пока пуста. Завершите хотя бы одну партию!'
               : 'Облачная статистика выключена (VITE_CLOUD_ENABLED=false).'}
@@ -1312,7 +1304,7 @@ export function StatsModal({
             />
             <ExportBar history={filteredHistory} />
 
-            <div className="flex gap-2 border-b border-slate-800 pb-1">
+            <div className="flex gap-2 border-b border-slate-800 pb-1 overflow-x-auto">
               {TABS.map((t) => (
                 <button
                   key={t.id}
@@ -1321,7 +1313,7 @@ export function StatsModal({
                     setTab(t.id);
                     if (t.id !== 'analytics') setProfileTarget(null);
                   }}
-                  className={`px-4 py-2 rounded-t-xl text-xs font-orbitron font-bold uppercase tracking-wide transition ${
+                  className={`px-4 py-2 rounded-t-xl text-xs font-orbitron font-bold uppercase tracking-wide transition flex-shrink-0 ${
                     tab === t.id
                       ? 'bg-purple-950/60 text-purple-300 border border-b-0 border-purple-700/50'
                       : 'text-slate-500 hover:text-slate-300'
@@ -1377,7 +1369,10 @@ export function StatsModal({
             </div>
           </div>
         )}
-      </div>
+      </main>
     </div>
   );
 }
+
+/** @deprecated Use StatsPage — kept for import compatibility. */
+export const StatsModal = StatsPage;

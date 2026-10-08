@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, useState } from 'react';
+import brandMark from '../assets/brand-mark.png';
 import { ActiveTurnBar } from './ActiveTurnBar';
 import { ROLE_LABELS, ROLES } from '../sync/permissions';
 import { formatTime } from '../utils/game';
@@ -169,7 +170,14 @@ export function GameHeader({
       <div className="flex items-center justify-between gap-2 md:gap-3 flex-nowrap">
         <div className="flex items-center gap-2 md:gap-4 min-w-0">
           <div className="flex items-center gap-2 md:gap-3 min-w-0">
-            <i className="fa-solid fa-khanda text-cyan-400 text-2xl md:text-3xl flex-shrink-0" />
+            <img
+              src={brandMark}
+              alt=""
+              width={32}
+              height={32}
+              className="h-7 w-7 md:h-9 md:w-9 flex-shrink-0 object-contain"
+              draggable={false}
+            />
             <span className={`font-orbitron font-black text-xl md:text-3xl text-white tracking-wider truncate ${hideTurnBarOnMobile ? 'max-md:text-base' : ''}`}>
               TI4 TRACKER
             </span>
