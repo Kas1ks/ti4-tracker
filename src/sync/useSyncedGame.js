@@ -23,6 +23,7 @@ import {
   undoStackDepth,
 } from './undoStack';
 import { parseRoomActionResult, parseRoomPublicView } from './roomContract';
+import { shouldApplySeq, softAuthorizeOptimistic } from './seqGate';
 
 function syncedReducer(state, action) {
   if (action?.type === '__REPLACE__') return action.state;
@@ -93,8 +94,8 @@ export function useSyncedGame() {
   const applyAuthoritativeState = useCallback((seq, state, extras = {}) => {
     if (!state) return false;
     if (!roomRef.current?.roomId) return false;
+    if (!shouldApplySeq(seq, seqRef.current)) return false;
     if (typeof seq === 'number') {
-      if (seq < seqRef.current) return false;
       seqRef.current = seq;
     }
     setGame({ type: '__REPLACE__', state });
@@ -426,12 +427,12 @@ export function useSyncedGame() {
         setRoomError('Только админ может это сделать');
         return;
       }
-      const gate = authorizeAction({
+      const gate = softAuthorizeOptimistic(authorizeAction({
         role: current.role,
         seatPlayerId: current.seatPlayerId,
         action: stamped,
         state: gameRef.current,
-      });
+      }));
       if (!gate.ok) {
         setRoomError(playerGateMessage(gate.error));
         return;
@@ -439,12 +440,12 @@ export function useSyncedGame() {
     }
 
     if (current.role === ROLES.ADMIN) {
-      const gate = authorizeAction({
+      const gate = softAuthorizeOptimistic(authorizeAction({
         role: current.role,
         seatPlayerId: current.seatPlayerId ?? null,
         action: stamped,
         state: gameRef.current,
-      });
+      }));
       if (!gate.ok) {
         setRoomError(
           gate.error === 'victory-locked'

@@ -1,7 +1,5 @@
-import { STRATEGY_CARDS } from '../data/gameData';
 import {
   EMPTY_STATUS_CHECKS,
-  EMPTY_OBJECTIVE_SCORING,
   EMPTY_STRATEGY_RESOLUTION,
   EMPTY_IMPERIAL_CLAIM,
   EMPTY_TECH_RESEARCH,
@@ -33,7 +31,6 @@ import { isVictoryActionAllowed, isVictoryReached } from './victory';
 import {
   mapPlayers,
   patchPlayer,
-  withDraft,
   withMeta,
   withObjectives,
   withPolitics,
@@ -44,24 +41,13 @@ import {
   activePlayer,
   activePlayers,
   areAllStrategiesPlayed,
-  canStartRound,
-  currentAgenda,
-  currentDraftPlayerId,
-  isDraftInProgress,
   nextSpeakerAfter,
   playersNotPassed,
   turnOrder,
 } from './selectors';
-
-const emptyAgenda = () => ({ type: null, votes: {}, locked: {} });
-
-/** Under one-vote law, a non-abstain ballot is always amount 1 (no planet bonuses). */
-function coerceAgendaVote(state, vote) {
-  if (!vote || typeof vote !== 'object') return vote;
-  if (!state.politics?.oneVoteLaw) return vote;
-  if (vote.choice === 'abstain') return { ...vote, amount: 0, planets: 0 };
-  return { ...vote, amount: 1, planets: 0 };
-}
+import { reduceDraftPhase } from './reducers/draftPhase';
+import { reducePoliticsPhase } from './reducers/politicsPhase';
+import { reduceStatusPhase } from './reducers/statusPhase';
 
 /** Naalu always goes last-to-act first, then lowest strategy card, then seat order. */
 function sortedForTurnOrder(players) {
@@ -77,16 +63,6 @@ function sortedForTurnOrder(players) {
     return a.id - b.id;
   });
 }
-
-const clearedDraft = {
-  queue: [],
-  assignments: {},
-  currentQueueIndex: 0,
-  pickOrder: [],
-  step: 'DRAFT',
-  showModal: false,
-  pickStartedAt: null,
-};
 
 const actionAt = (action) => (
   Number.isFinite(action?.at) ? action.at : Date.now()
@@ -155,39 +131,6 @@ function endRound(state, at = Date.now()) {
     checks: { ...EMPTY_STATUS_CHECKS },
     scoring: { active: false, responses: {}, orderIds: [], currentIdx: 0 },
   });
-}
-
-function startNewRound(state) {
-  const next = mapPlayers(
-    withMeta(state, { isAgendaPhasePending: false, roundNumber: state.meta.roundNumber + 1 }),
-    player => ({
-      ...player,
-      strategyPlayed: false,
-      playedCardIds: [],
-      passed: false,
-      cards: [],
-    }),
-  );
-
-  return withDraft(
-    withRound(next, {
-      active: false,
-      turnOrderIds: [],
-      activeTurnIdx: 0,
-      passed: {},
-      turnTime: 0,
-      turnStartedAt: null,
-      roundStartedAt: null,
-      turnPausedAccum: 0,
-      strategyActionTaken: false,
-      expeditionClaimedThisTurn: false,
-      expeditionClaimedSliceId: null,
-      strategyResolution: { ...EMPTY_STRATEGY_RESOLUTION },
-      imperialClaim: { ...EMPTY_IMPERIAL_CLAIM },
-      techResearch: { ...EMPTY_TECH_RESEARCH, picks: [], queueIds: [], byPlayer: {} },
-    }),
-    clearedDraft,
-  );
 }
 
 function startRound(state, at = Date.now()) {
@@ -506,256 +449,6 @@ function resolveStrategyResponse(state, playerId, choice, at = Date.now()) {
   return next;
 }
 
-function openDraft(state, at = Date.now()) {
-  if (isDraftInProgress(state)) return withDraft(state, { showModal: true });
-
-  const eligible = activePlayers(state);
-  if (eligible.length === 0 || canStartRound(state) || state.round.active) return state;
-
-  let speakerId = state.meta.speakerId;
-  let speakerIndex = eligible.findIndex(p => p.id === speakerId);
-  if (speakerIndex === -1) {
-    speakerId = eligible[0].id;
-    speakerIndex = 0;
-  }
-
-  const draftOrder = draftOrderFromSpeaker(eligible, speakerIndex);
-  const queue = buildFullDraftQueue(draftOrder, state.players.length);
-
-  return withDraft(withMeta(state, { speakerId }), {
-    queue,
-    assignments: {},
-    currentQueueIndex: 0,
-    pickOrder: [],
-    step: 'DRAFT',
-    showModal: true,
-    pickStartedAt: at,
-  });
-}
-
-/** Clockwise seat order starting from the speaker. */
-function draftOrderFromSpeaker(eligible, speakerIndex) {
-  return [...eligible.slice(speakerIndex), ...eligible.slice(0, speakerIndex)];
-}
-
-function buildFullDraftQueue(draftOrder, seatCount) {
-  const cardsPerPlayer = seatCount <= 4 ? 2 : 1;
-  const queue = [];
-  for (let pick = 0; pick < cardsPerPlayer; pick += 1) {
-    // Official snake for 3–4: second pass is counter-clockwise.
-    const order = pick === 1 ? [...draftOrder].reverse() : draftOrder;
-    order.forEach(player => queue.push(player.id));
-  }
-  return queue;
-}
-
-/**
- * After a mid-draft speaker change: keep completed picks, rebuild who still
- * needs to pick using the new speaker-clockwise order.
- */
-function realignDraftQueueToSpeaker(state) {
-  if (!isDraftInProgress(state) || state.draft.step === 'CONFIRM') return state;
-
-  const eligible = activePlayers(state);
-  if (eligible.length === 0) return state;
-
-  let speakerIndex = eligible.findIndex(p => p.id === state.meta.speakerId);
-  if (speakerIndex === -1) speakerIndex = 0;
-  const draftOrder = draftOrderFromSpeaker(eligible, speakerIndex);
-  const cardsPerPlayer = state.players.length <= 4 ? 2 : 1;
-
-  const assignedCount = new Map(eligible.map(p => [p.id, 0]));
-  Object.values(state.draft.assignments || {}).forEach((rawId) => {
-    const playerId = Number(rawId);
-    if (!assignedCount.has(playerId)) return;
-    assignedCount.set(playerId, assignedCount.get(playerId) + 1);
-  });
-
-  const remaining = [];
-  for (let pick = 0; pick < cardsPerPlayer; pick += 1) {
-    const order = pick === 1 ? [...draftOrder].reverse() : draftOrder;
-    order.forEach((player) => {
-      const have = assignedCount.get(player.id) || 0;
-      if (have < pick + 1) remaining.push(player.id);
-    });
-  }
-
-  const completed = (state.draft.pickOrder || [])
-    .map((cardId) => {
-      const raw = state.draft.assignments[cardId] ?? state.draft.assignments[String(cardId)];
-      return raw == null ? null : Number(raw);
-    })
-    .filter(id => Number.isFinite(id));
-
-  return withDraft(state, {
-    queue: [...completed, ...remaining],
-    currentQueueIndex: completed.length,
-    step: remaining.length === 0 ? 'CONFIRM' : 'DRAFT',
-  });
-}
-
-function setSpeaker(state, playerId) {
-  if (playerId == null) return state;
-  const target = state.players.find(p => p.id === playerId);
-  if (!target || target.eliminated) return state;
-  if (state.meta.speakerId === playerId) return state;
-
-  const next = withMeta(state, { speakerId: playerId });
-  return realignDraftQueueToSpeaker(next);
-}
-
-function pickCard(state, cardId, at = Date.now()) {
-  const playerId = currentDraftPlayerId(state);
-  if (playerId == null || state.draft.assignments[cardId] != null) return state;
-
-  let next = state;
-  const started = state.draft.pickStartedAt;
-  if (Number.isFinite(started)) {
-    const secs = Math.max(0, Math.floor((at - started) / 1000));
-    if (secs > 0) {
-      next = patchPlayer(next, playerId, p => ({ totalTime: (p.totalTime || 0) + secs }));
-    }
-  }
-
-  const nextIndex = next.draft.currentQueueIndex + 1;
-  const finished = nextIndex >= next.draft.queue.length;
-
-  return withDraft(next, {
-    assignments: { ...next.draft.assignments, [cardId]: playerId },
-    pickOrder: [...next.draft.pickOrder, cardId],
-    currentQueueIndex: finished ? next.draft.currentQueueIndex : nextIndex,
-    step: finished ? 'CONFIRM' : 'DRAFT',
-    pickStartedAt: finished ? null : at,
-  });
-}
-
-function undoPick(state, at = Date.now()) {
-  if (state.draft.pickOrder.length === 0) return state;
-
-  const pickOrder = state.draft.pickOrder.slice(0, -1);
-  const assignments = { ...state.draft.assignments };
-  delete assignments[state.draft.pickOrder[state.draft.pickOrder.length - 1]];
-
-  return withDraft(state, {
-    assignments,
-    pickOrder,
-    currentQueueIndex: pickOrder.length,
-    step: 'DRAFT',
-    pickStartedAt: at,
-  });
-}
-
-/** Hand out the drafted cards and grow the trade-good bonus on untaken ones. */
-function confirmDraft(state) {
-  const cardsByPlayer = new Map();
-  Object.entries(state.draft.assignments).forEach(([cardId, playerId]) => {
-    const owned = cardsByPlayer.get(playerId) || [];
-    owned.push(Number(cardId));
-    cardsByPlayer.set(playerId, owned);
-  });
-
-  const round = state.meta?.roundNumber || 1;
-  const newPicks = Object.entries(state.draft.assignments).map(([cardId, playerId]) => ({
-    round,
-    playerId: Number(playerId),
-    cardId: Number(cardId),
-  })).filter((p) => Number.isFinite(p.playerId) && Number.isFinite(p.cardId));
-
-  const nextPlayers = mapPlayers(state, player => {
-    const cardIds = (cardsByPlayer.get(player.id) || []).sort((a, b) => a - b);
-    return {
-      ...player,
-      cards: cardIds.map(id => STRATEGY_CARDS.find(card => card.id === id)).filter(Boolean),
-      lastMinInitiative: cardIds.length ? cardIds[0] : player.lastMinInitiative ?? 99,
-      playedCardIds: [],
-      strategyPlayed: false,
-    };
-  });
-
-  const takenIds = new Set(Object.keys(state.draft.assignments).map(Number));
-  const strategyCardBonuses = { ...state.draft.strategyCardBonuses };
-  STRATEGY_CARDS.forEach(card => {
-    strategyCardBonuses[card.id] = takenIds.has(card.id)
-      ? 0
-      : (strategyCardBonuses[card.id] || 0) + 1;
-  });
-
-  const prevHistory = Array.isArray(state.meta?.strategyPickHistory)
-    ? state.meta.strategyPickHistory
-    : [];
-
-  return withMeta(
-    withDraft(nextPlayers, { ...clearedDraft, strategyCardBonuses }),
-    { strategyPickHistory: [...prevHistory, ...newPicks] },
-  );
-}
-
-function confirmStatusPhase(state) {
-  const next = withStatusPhase(state, {
-    show: false,
-    checks: { ...EMPTY_STATUS_CHECKS },
-    scoring: { active: false, responses: {}, orderIds: [], currentIdx: 0 },
-  });
-
-  if (!next.meta.isPoliticsActive) return startNewRound(next);
-
-  const oneVoteLaw = !!next.politics?.oneVoteLaw;
-  return withPolitics(withMeta(next, { isAgendaPhasePending: true }), {
-    showModal: true,
-    step: oneVoteLaw ? 'VOTE' : 'SETUP',
-    agendas: [emptyAgenda()],
-    currentAgendaIndex: 0,
-    influenceLocked: {},
-    voteReversed: false,
-  });
-}
-
-function scoringOf(state) {
-  return state.statusPhase?.scoring || EMPTY_OBJECTIVE_SCORING;
-}
-
-function withScoring(state, scoringPatch) {
-  const scoring = { ...scoringOf(state), ...scoringPatch };
-  return withStatusPhase(state, { scoring });
-}
-
-function patchScoringResponse(state, playerId, patch) {
-  const scoring = scoringOf(state);
-  const prev = scoring.responses[playerId];
-  if (!prev) return state;
-  return withScoring(state, {
-    responses: {
-      ...scoring.responses,
-      [playerId]: { ...prev, ...patch },
-    },
-  });
-}
-
-function allScoringResolved(responses) {
-  const list = Object.values(responses);
-  return list.length > 0 && list.every(r => r.status === 'done' || r.status === 'passed');
-}
-
-function currentScoringPlayerId(scoring) {
-  if (!scoring?.active) return null;
-  const ids = scoring.orderIds || [];
-  return ids[scoring.currentIdx] ?? null;
-}
-
-function isScoringTurn(scoring, playerId) {
-  return currentScoringPlayerId(scoring) === playerId;
-}
-
-function finishScoringIfComplete(state) {
-  const scoring = scoringOf(state);
-  if (!scoring.active || !allScoringResolved(scoring.responses)) return state;
-  return withStatusPhase(state, {
-    show: true,
-    scoring: { ...scoring, active: false },
-    checks: { ...state.statusPhase.checks, scoreObjectives: true },
-  });
-}
-
 /** Remove a revealed objective from the board and its stage deck; reveal the next undrawn card if any. */
 function discardObjectiveAndRevealNext(state, objectiveId) {
   const removed = state.objectives.active.find(o => o.id === objectiveId);
@@ -779,156 +472,6 @@ function discardObjectiveAndRevealNext(state, objectiveId) {
     [deckKey]: deck,
     completions,
   });
-}
-
-/** After a player resolves, advance to the next pending seat in initiative order. */
-function advanceScoringTurn(state) {
-  const scoring = scoringOf(state);
-  if (allScoringResolved(scoring.responses)) {
-    return finishScoringIfComplete(state);
-  }
-  const nextIdx = (scoring.orderIds || []).findIndex(
-    id => scoring.responses[id]?.status === 'pending',
-  );
-  if (nextIdx < 0) return finishScoringIfComplete(state);
-  return withScoring(state, { currentIdx: nextIdx });
-}
-
-function scoringOrderIds(state) {
-  const active = activePlayers(state);
-  const activeIds = new Set(active.map(p => p.id));
-  const fromRound = (state.round.turnOrderIds || []).filter(id => activeIds.has(id));
-  if (fromRound.length > 0) return fromRound;
-  return sortedForTurnOrder(active).map(p => p.id);
-}
-
-function startObjectiveScoring(state) {
-  if (!state.statusPhase?.show) return state;
-  if (state.statusPhase.checks.scoreObjectives) return state;
-  if (scoringOf(state).active) return state;
-
-  const orderIds = scoringOrderIds(state);
-  const responses = {};
-  orderIds.forEach(id => {
-    responses[id] = { status: 'pending', publicId: null, secret: false };
-  });
-  // Include any active player missing from order (safety).
-  activePlayers(state).forEach(p => {
-    if (!responses[p.id]) {
-      responses[p.id] = { status: 'pending', publicId: null, secret: false };
-      orderIds.push(p.id);
-    }
-  });
-
-  if (Object.keys(responses).length === 0) {
-    return withStatusPhase(state, {
-      scoring: { active: false, responses: {}, orderIds: [], currentIdx: 0 },
-      checks: { ...state.statusPhase.checks, scoreObjectives: true },
-    });
-  }
-  return withScoring(state, { active: true, responses, orderIds, currentIdx: 0 });
-}
-
-function undoWindowScores(state, playerId, response) {
-  let next = state;
-  if (response.publicId) {
-    const key = `${playerId}_${response.publicId}`;
-    next = withObjectives(next, {
-      completions: { ...next.objectives.completions, [key]: false },
-    });
-  }
-  if (response.secret) {
-    next = patchPlayer(next, playerId, player => ({
-      secrets: Math.min(4, Math.max(0, player.secrets - 1)),
-    }));
-  }
-  return next;
-}
-
-function selectScoringPublic(state, playerId, objectiveId) {
-  const scoring = scoringOf(state);
-  if (!scoring.active || !isScoringTurn(scoring, playerId)) return state;
-  const response = scoring.responses[playerId];
-  if (!response || response.status !== 'pending') return state;
-  if (!state.objectives.active.some(o => o.id === objectiveId)) return state;
-
-  const key = `${playerId}_${objectiveId}`;
-  const alreadyOwned = !!state.objectives.completions[key] && response.publicId !== objectiveId;
-  if (alreadyOwned) return state;
-
-  let completions = { ...state.objectives.completions };
-  let publicId = response.publicId;
-
-  if (publicId === objectiveId) {
-    completions[key] = false;
-    publicId = null;
-  } else {
-    if (publicId) {
-      completions[`${playerId}_${publicId}`] = false;
-    }
-    completions[key] = true;
-    publicId = objectiveId;
-  }
-
-  return patchScoringResponse(
-    withObjectives(state, { completions }),
-    playerId,
-    { publicId },
-  );
-}
-
-function toggleScoringSecret(state, playerId) {
-  const scoring = scoringOf(state);
-  if (!scoring.active || !isScoringTurn(scoring, playerId)) return state;
-  const response = scoring.responses[playerId];
-  if (!response || response.status !== 'pending') return state;
-
-  const player = state.players.find(p => p.id === playerId);
-  if (!player) return state;
-
-  if (response.secret) {
-    return patchScoringResponse(
-      patchPlayer(state, playerId, p => ({
-        secrets: Math.min(4, Math.max(0, p.secrets - 1)),
-      })),
-      playerId,
-      { secret: false },
-    );
-  }
-
-  // Players score at most 3 secrets; a 4th is host-only via ADJUST_SECRETS.
-  if (player.secrets >= 3) return state;
-  return patchScoringResponse(
-    patchPlayer(state, playerId, p => ({
-      secrets: Math.min(3, p.secrets + 1),
-    })),
-    playerId,
-    { secret: true },
-  );
-}
-
-function confirmObjectiveScoring(state, playerId) {
-  const scoring = scoringOf(state);
-  if (!scoring.active || !isScoringTurn(scoring, playerId)) return state;
-  const response = scoring.responses[playerId];
-  if (!response || response.status !== 'pending') return state;
-  return advanceScoringTurn(patchScoringResponse(state, playerId, { status: 'done' }));
-}
-
-function passObjectiveScoring(state, playerId) {
-  const scoring = scoringOf(state);
-  if (!scoring.active || !isScoringTurn(scoring, playerId)) return state;
-  const response = scoring.responses[playerId];
-  if (!response || response.status !== 'pending') return state;
-
-  const cleared = undoWindowScores(state, playerId, response);
-  return advanceScoringTurn(
-    patchScoringResponse(cleared, playerId, {
-      status: 'passed',
-      publicId: null,
-      secret: false,
-    }),
-  );
 }
 
 function imperialClaimOf(state) {
@@ -1185,24 +728,6 @@ function toggleTech(state, playerId, techId) {
   return grantTech(state, playerId, techId);
 }
 
-function mapCurrentAgenda(state, fn) {
-  return withPolitics(state, {
-    agendas: state.politics.agendas.map((agenda, index) => (
-      index === state.politics.currentAgendaIndex ? fn(agenda) : agenda
-    )),
-  });
-}
-
-function nextAgenda(state) {
-  const nextIndex = state.politics.currentAgendaIndex + 1;
-  const agendas = state.politics.agendas[nextIndex]
-    ? state.politics.agendas
-    : [...state.politics.agendas, emptyAgenda()];
-
-  // Step is kept as-is: influence is entered once and reused for later agendas.
-  return withPolitics(state, { agendas, currentAgendaIndex: nextIndex });
-}
-
 function startingTechDraftOf(state) {
   return state.startingTechDraft || { ...EMPTY_STARTING_TECH_DRAFT, responses: {} };
 }
@@ -1243,6 +768,15 @@ export function gameReducer(state, action) {
   ) {
     return state;
   }
+
+  const draftResult = reduceDraftPhase(state, action);
+  if (draftResult != null) return draftResult;
+
+  const politicsResult = reducePoliticsPhase(state, action);
+  if (politicsResult != null) return politicsResult;
+
+  const statusResult = reduceStatusPhase(state, action);
+  if (statusResult != null) return statusResult;
 
   switch (action.type) {
     // --- Setup ---
@@ -1424,12 +958,6 @@ export function gameReducer(state, action) {
       return applyStartingTechDraftIfComplete(next);
     }
 
-    case 'SET_SPEAKER':
-      return setSpeaker(state, action.playerId);
-
-    case 'TOGGLE_POLITICS_ACTIVE':
-      return withMeta(state, { isPoliticsActive: !state.meta.isPoliticsActive });
-
     // --- Scoring ---
     case 'ADJUST_SECRETS':
       return patchPlayer(state, action.playerId, player => ({
@@ -1487,30 +1015,6 @@ export function gameReducer(state, action) {
       };
     }
 
-    case 'SET_INFLUENCE': {
-      const patch = {
-        influence: Math.max(0, Number(action.influence) || 0),
-      };
-      if (action.planets != null) {
-        patch.votePlanets = Math.max(0, Number(action.planets) || 0);
-      }
-      return patchPlayer(state, action.playerId, () => patch);
-    }
-
-    case 'LOCK_INFLUENCE':
-      return withPolitics(state, {
-        influenceLocked: {
-          ...(state.politics.influenceLocked || {}),
-          [action.playerId]: true,
-        },
-      });
-
-    case 'UNLOCK_INFLUENCE': {
-      const influenceLocked = { ...(state.politics.influenceLocked || {}) };
-      delete influenceLocked[action.playerId];
-      return withPolitics(state, { influenceLocked });
-    }
-
     case 'ADD_COMBAT_DAMAGE':
       return mapPlayers(state, player => (
         action.damageByPlayerId[player.id]
@@ -1535,27 +1039,6 @@ export function gameReducer(state, action) {
 
     case 'DISCARD_OBJECTIVE':
       return discardObjectiveAndRevealNext(state, action.objectiveId);
-
-    // --- Draft ---
-    case 'OPEN_DRAFT':
-      return openDraft(state, actionAt(action));
-
-    case 'SET_DRAFT_VISIBLE':
-      return withDraft(state, { showModal: !!action.visible });
-
-    case 'PICK_CARD':
-      return pickCard(state, action.cardId, actionAt(action));
-
-    case 'UNDO_PICK':
-      return undoPick(state, actionAt(action));
-
-    case 'REASSIGN_CARD':
-      return withDraft(state, {
-        assignments: { ...state.draft.assignments, [action.cardId]: Number(action.playerId) },
-      });
-
-    case 'CONFIRM_DRAFT':
-      return confirmDraft(state);
 
     // --- Round ---
     case 'START_ROUND':
@@ -1585,31 +1068,6 @@ export function gameReducer(state, action) {
       if (state.statusPhase?.show || state.statusPhase?.scoring?.active) return state;
       if (playersNotPassed(state).length > 0) return state;
       return endRound(state, actionAt(action));
-
-    // --- Status phase ---
-    case 'TOGGLE_STATUS_CHECK': {
-      // scoreObjectives is controlled by the scoring window, not the checklist click.
-      if (action.key === 'scoreObjectives') return state;
-      if (!Object.prototype.hasOwnProperty.call(EMPTY_STATUS_CHECKS, action.key)) return state;
-      return withStatusPhase(state, {
-        checks: { ...state.statusPhase.checks, [action.key]: !state.statusPhase.checks[action.key] },
-      });
-    }
-
-    case 'START_OBJECTIVE_SCORING':
-      return startObjectiveScoring(state);
-
-    case 'SELECT_SCORING_PUBLIC':
-      return selectScoringPublic(state, action.playerId, action.objectiveId);
-
-    case 'TOGGLE_SCORING_SECRET':
-      return toggleScoringSecret(state, action.playerId);
-
-    case 'CONFIRM_OBJECTIVE_SCORING':
-      return confirmObjectiveScoring(state, action.playerId);
-
-    case 'PASS_OBJECTIVE_SCORING':
-      return passObjectiveScoring(state, action.playerId);
 
     case 'SELECT_IMPERIAL_PUBLIC':
       return selectImperialPublic(state, action.playerId, action.objectiveId);
@@ -1661,97 +1119,6 @@ export function gameReducer(state, action) {
 
     case 'RESOLVE_THUNDERS_EDGE_CONTROL':
       return resolveThundersEdgeControl(state, action.playerId, action.controllerId);
-
-    case 'SET_STATUS_PHASE_VISIBLE':
-      return withStatusPhase(state, { show: !!action.visible });
-
-    case 'CONFIRM_STATUS_PHASE':
-      return confirmStatusPhase(state);
-
-    // --- Agenda phase ---
-    case 'SET_AGENDA_TYPE':
-      return mapCurrentAgenda(state, agenda => ({
-        ...agenda,
-        type: action.agendaType,
-        customChoices: action.agendaType === 'OTHER' ? [''] : undefined,
-      }));
-
-    case 'SET_AGENDA_CUSTOM_CHOICES':
-      return mapCurrentAgenda(state, agenda => ({ ...agenda, customChoices: action.choices }));
-
-    case 'SET_VOTE': {
-      const agenda = currentAgenda(state);
-      if (agenda?.locked?.[action.playerId]) return state;
-      const vote = coerceAgendaVote(state, action.vote);
-      return mapCurrentAgenda(state, a => ({
-        ...a,
-        votes: { ...a.votes, [action.playerId]: vote },
-      }));
-    }
-
-    case 'LOCK_VOTE': {
-      const agenda = currentAgenda(state);
-      if (!agenda || agenda.locked?.[action.playerId]) return state;
-      const prev = agenda.votes?.[action.playerId] || { choice: 'abstain', amount: 0 };
-      const vote = coerceAgendaVote(state, prev);
-      return mapCurrentAgenda(state, a => ({
-        ...a,
-        votes: { ...a.votes, [action.playerId]: vote },
-        locked: { ...a.locked, [action.playerId]: true },
-      }));
-    }
-
-    case 'TOGGLE_VOTE_REVERSED':
-      return withPolitics(state, { voteReversed: !state.politics.voteReversed });
-
-    case 'SET_VOTE_REVERSED':
-      return withPolitics(state, { voteReversed: !!action.reversed });
-
-    case 'TOGGLE_ONE_VOTE_LAW': {
-      const enabled = !state.politics?.oneVoteLaw;
-      const patch = { oneVoteLaw: enabled };
-      // Enabling skips influence entry; disabling returns to SETUP if still in agenda.
-      if (enabled && state.politics?.showModal && state.politics.step === 'SETUP') {
-        patch.step = 'VOTE';
-      }
-      if (!enabled && state.politics?.showModal && state.politics.step === 'VOTE') {
-        patch.step = 'SETUP';
-      }
-      return withPolitics(state, patch);
-    }
-
-    case 'SET_ONE_VOTE_LAW': {
-      const enabled = !!action.enabled;
-      const patch = { oneVoteLaw: enabled };
-      if (enabled && state.politics?.showModal && state.politics.step === 'SETUP') {
-        patch.step = 'VOTE';
-      }
-      if (!enabled && state.politics?.showModal && state.politics.step === 'VOTE') {
-        patch.step = 'SETUP';
-      }
-      return withPolitics(state, patch);
-    }
-
-    case 'SET_POLITICS_STEP':
-      return withPolitics(state, { step: action.step });
-
-    case 'NEXT_AGENDA':
-      return nextAgenda(state);
-
-    case 'FINISH_AGENDA_PHASE': {
-      let next = state;
-      if (action.playerId != null) {
-        next = withMeta(next, { speakerId: action.playerId });
-      }
-      return startNewRound(withPolitics(next, {
-        showModal: false,
-        influenceLocked: {},
-        voteReversed: false,
-      }));
-    }
-
-    case 'SET_POLITICS_VISIBLE':
-      return withPolitics(state, { showModal: !!action.visible });
 
     // --- Whole-document changes ---
     case 'LOAD_STATE':

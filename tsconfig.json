@@ -20,6 +20,10 @@
     "src/game/**/*.js",
     "src/sync/**/*.ts",
     "src/sync/**/*.js",
+    "worker/api.js",
+    "worker/jsonbin.js",
+    "worker/cryptoCodes.js",
+    "worker/secureCompare.js",
     "worker/rooms/**/*.js",
     "worker/rooms/**/*.ts"
   ],

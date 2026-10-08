@@ -2,6 +2,8 @@ import { clearGameSummary } from '../game/gameState';
 import { formatTime } from '../utils/game';
 import { useEscapeKey } from '../hooks/useEscapeKey';
 import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
+import { buildShareCardText } from '../analytics/shareCard';
+import { formatTechList } from '../analytics/techLabels';
 
 function readGameSummary() {
   try {
@@ -20,10 +22,24 @@ export function GameSummaryModal({ show, onClose }) {
     onClose();
   };
 
+  const copyShare = async () => {
+    const text = buildShareCardText(summary);
+    if (!text) return;
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      /* clipboard blocked */
+    }
+  };
+
   useEscapeKey(handleClose, !!(show && summary));
   useBodyScrollLock(!!(show && summary));
 
   if (!show || !summary) return null;
+
+  const politics = summary.politics;
+  const strategyPlays = summary.strategyPlays || [];
+  const digest = summary.eventDigest || [];
 
   return (
     <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 modal-overlay" role="presentation">
@@ -33,13 +49,24 @@ export function GameSummaryModal({ show, onClose }) {
         aria-labelledby="game-summary-title"
         className="bg-slate-900 border border-amber-800 rounded-2xl max-w-4xl w-full p-6 shadow-2xl shadow-amber-500/10 max-h-[90vh] overflow-y-auto modal-scroll"
       >
-        <div className="flex justify-between items-center mb-4 pb-3 border-b border-slate-800">
+        <div className="flex justify-between items-center mb-4 pb-3 border-b border-slate-800 gap-3">
           <h2 id="game-summary-title" className="font-orbitron text-lg font-bold text-amber-400 uppercase flex items-center gap-2">
             <i className="fa-solid fa-trophy" aria-hidden="true" /> Итоги Партии
           </h2>
-          <button type="button" onClick={handleClose} className="text-slate-500 hover:text-slate-300 transition" aria-label="Закрыть итоги партии">
-            <i className="fa-solid fa-xmark text-lg" aria-hidden="true" />
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={copyShare}
+              className="text-xs font-bold px-3 py-1.5 rounded-xl border border-cyan-800/70 bg-slate-950 text-cyan-300 hover:bg-slate-800 transition"
+              title="Скопировать карточку партии"
+            >
+              <i className="fa-solid fa-share-nodes mr-1.5" aria-hidden="true" />
+              Share
+            </button>
+            <button type="button" onClick={handleClose} className="text-slate-500 hover:text-slate-300 transition" aria-label="Закрыть итоги партии">
+              <i className="fa-solid fa-xmark text-lg" aria-hidden="true" />
+            </button>
+          </div>
         </div>
         <div className="space-y-4">
           <div className="text-center">
@@ -62,16 +89,17 @@ export function GameSummaryModal({ show, onClose }) {
               </div>
             )}
           </div>
-          <div className="bg-slate-950 p-4 rounded-xl border border-slate-800">
-            <table className="w-full text-left text-sm">
+          <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 overflow-x-auto">
+            <table className="w-full text-left text-sm min-w-[36rem]">
               <thead>
                 <tr className="border-b border-slate-800 text-slate-500 uppercase font-orbitron text-xs">
                   <th className="py-2">Игрок</th>
                   <th className="py-2 text-center">Фракция</th>
                   <th className="py-2 text-center">Счет</th>
                   <th className="py-2 text-left">Состав ПО</th>
+                  <th className="py-2 text-left">Тех</th>
                   <th className="py-2 text-center">Урон</th>
-                  <th className="py-2 text-right">Общее время</th>
+                  <th className="py-2 text-right">Время</th>
                 </tr>
               </thead>
               <tbody>
@@ -93,6 +121,9 @@ export function GameSummaryModal({ show, onClose }) {
                       {parts.length ? parts.join(' · ') : '—'}
                       {player.breakthrough && <span className="ml-2 text-violet-400">BT</span>}
                     </td>
+                    <td className="py-3 text-left text-[11px] text-sky-300/90 max-w-[10rem]">
+                      {formatTechList(player.techs, { limit: 4 }) || '—'}
+                    </td>
                     <td className="py-3 text-center font-orbitron font-bold text-xl text-red-400">{player.damageDealt || 0}</td>
                     <td className="py-3 text-right font-mono text-slate-300">{formatTime(player.totalTime || 0)}</td>
                   </tr>
@@ -101,6 +132,63 @@ export function GameSummaryModal({ show, onClose }) {
               </tbody>
             </table>
           </div>
+
+          {(politics?.agendas?.length > 0 || politics?.speakerTimeline?.length > 0) && (
+            <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 space-y-2">
+              <h3 className="font-orbitron text-xs font-bold uppercase text-slate-500 flex items-center gap-2">
+                <i className="fa-solid fa-gavel" aria-hidden="true" /> Политика
+              </h3>
+              {politics.speakerTimeline?.length > 0 && (
+                <p className="text-[11px] text-slate-400">
+                  Спикер: {politics.speakerTimeline.map((s) => s.name || s.player).filter(Boolean).join(' → ')}
+                </p>
+              )}
+              <ul className="space-y-1 text-[11px] text-slate-300">
+                {(politics.agendas || []).slice(0, 6).map((a, i) => (
+                  <li key={a.id || i}>
+                    <span className="text-purple-300 font-bold">{a.title || a.name || 'Повестка'}</span>
+                    {a.outcome ? <span className="text-slate-500"> — {a.outcome}</span> : null}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {strategyPlays.length > 0 && (
+            <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 space-y-2">
+              <h3 className="font-orbitron text-xs font-bold uppercase text-slate-500 flex items-center gap-2">
+                <i className="fa-solid fa-clone" aria-hidden="true" /> Стратегии в игре
+              </h3>
+              <ul className="space-y-1 text-[11px] text-slate-400 max-h-40 overflow-y-auto modal-scroll">
+                {strategyPlays.slice(0, 24).map((play, idx) => (
+                  <li key={`${play.cardId}-${play.at || idx}-${idx}`}>
+                    {play.round != null && <span className="text-slate-600 font-mono mr-1">R{play.round}</span>}
+                    <span className="text-amber-300/90">{play.cardName || play.cardId}</span>
+                    {' · '}
+                    {play.player || play.playerName || '—'}
+                    {play.role === 'secondary' ? ' (2°)' : play.role === 'pass' || play.passed ? ' (пас 2°)' : ''}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {digest.length > 0 && (
+            <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 space-y-2">
+              <h3 className="font-orbitron text-xs font-bold uppercase text-slate-500 flex items-center gap-2">
+                <i className="fa-solid fa-scroll" aria-hidden="true" /> Таймлайн
+              </h3>
+              <ul className="space-y-1 text-[11px] text-slate-400 max-h-48 overflow-y-auto modal-scroll font-mono">
+                {digest.slice(-30).map((e, idx) => (
+                  <li key={`${e.type}-${e.at}-${idx}`}>
+                    {e.round != null && <span className="text-slate-600">R{e.round} </span>}
+                    {e.text}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
           {Array.isArray(summary.roundTimes) && summary.roundTimes.length > 0 && (
             <div className="bg-slate-950 p-4 rounded-xl border border-slate-800">
               <h3 className="font-orbitron text-xs font-bold uppercase text-slate-500 mb-3 flex items-center gap-2">

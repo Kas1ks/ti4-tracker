@@ -24,6 +24,7 @@ import { ROLES } from './sync/permissions';
 import { playersNeedingStartingTechDraft } from './data/technologies';
 import { getTechSession } from './hooks/useTechSession';
 import { isVictoryReached, victoryWinners } from './game/victory';
+import { buildPhaseHub } from './app/phaseHub';
 
 const GameBoard = lazy(() => import('./components/GameBoard').then(m => ({ default: m.GameBoard })));
 const PlayerMobileConsole = lazy(() => import('./components/PlayerMobileConsole').then(m => ({ default: m.PlayerMobileConsole })));
@@ -239,8 +240,13 @@ function App() {
   }, [useTe, isGameActive, setShowExpeditionModal]);
 
   const openExpeditionPanel = () => {
-    ui.ensureExpanded('expedition');
+    ui.focusBlockingModal('expedition');
     setShowExpeditionModal(true);
+  };
+
+  const openPhaseModal = (id, extra) => {
+    ui.focusBlockingModal(id);
+    extra?.();
   };
 
   const mobileShell = (isPlayerClient || isViewerClient) && isGameActive;
@@ -250,42 +256,41 @@ function App() {
   // When scoring finishes: restore the status checklist.
   useEffect(() => {
     if (objectiveScoring?.active) {
-      ui.ensureMinimized('statusPhase');
-      ui.ensureExpanded('objectiveScoring');
+      ui.focusBlockingModal('objectiveScoring');
       return;
     }
     if (showStatusPhaseModal) {
-      ui.ensureExpanded('statusPhase');
+      ui.focusBlockingModal('statusPhase');
     }
   }, [objectiveScoring?.active, showStatusPhaseModal]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (strategyResolution?.active) {
-      ui.ensureExpanded('strategyResolution');
+      ui.focusBlockingModal('strategyResolution');
     }
   }, [strategyResolution?.active]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (showStartingTechHostModal) {
-      ui.ensureExpanded('startingTechDraft');
+      ui.focusBlockingModal('startingTechDraft');
     }
   }, [showStartingTechHostModal]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (showStartingTechPlayerModal) {
-      ui.ensureExpanded('startingTechPlayer');
+      ui.focusBlockingModal('startingTechPlayer');
     }
   }, [startingTechDraft?.active, mySeatPlayer?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (showImperialClaimModal) {
-      ui.ensureExpanded('imperialClaim');
+      ui.focusBlockingModal('imperialClaim');
     }
   }, [showImperialClaimModal]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (showTechResearchModal) {
-      ui.ensureExpanded('techResearch');
+      ui.focusBlockingModal('techResearch');
       ui.setShowTechModal(false);
     }
   }, [showTechResearchModal]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -309,9 +314,21 @@ function App() {
   };
 
   /** Prompt + server check for ROOM_CREATE_SECRET. Returns secret or null if cancelled/failed. */
-  const unlockAsHost = async ({ title } = {}) => {
+  const unlockAsHost = async ({ title, forcePrompt = false, softSolo = false } = {}) => {
+    const { getHostWriteToken, setHostWriteToken } = await import('./sync/hostWriteToken');
+    const cached = getHostWriteToken();
+    if (!forcePrompt && cached) {
+      try {
+        await verifyHostSecret(cached);
+        return cached;
+      } catch {
+        setHostWriteToken('');
+      }
+    }
     const createSecret = await uiPrompt(
-      'Введите код доступа',
+      softSolo
+        ? 'Код доступа хоста (запрашивается один раз за сессию браузера):'
+        : 'Введите код доступа',
       {
         title: title || 'Код доступа',
         inputType: 'password',
@@ -327,6 +344,7 @@ function App() {
     }
     try {
       await verifyHostSecret(String(createSecret));
+      setHostWriteToken(String(createSecret));
       return String(createSecret);
     } catch (err) {
       const code = String(err.message || err);
@@ -363,7 +381,10 @@ function App() {
   };
 
   const handlePlaySolo = async () => {
-    const createSecret = await unlockAsHost({ title: 'Играть без комнаты' });
+    const createSecret = await unlockAsHost({
+      title: 'Играть без комнаты',
+      softSolo: true,
+    });
     if (!createSecret) return;
     setSoloSetup(true);
   };
@@ -586,6 +607,17 @@ function App() {
                   onOpenProduction={() => ui.setShowProductionCalculator(true)}
                   usePok={usePok}
                   useTe={useTe}
+                  logEvents={game?.log?.events || []}
+                  phaseHub={buildPhaseHub({
+                    showDraftModal,
+                    showPoliticsModal,
+                    strategyResolutionActive: !!strategyResolution?.active,
+                    objectiveScoringActive: !!objectiveScoring?.active,
+                    showStatusPhaseModal,
+                    includeStatus: true,
+                    openPhaseModal,
+                    openEventLog: () => ui.setShowEventLog(true),
+                  })}
                 />
               </Suspense>
             )}
@@ -608,6 +640,17 @@ function App() {
                   resolvingCardId={strategyResolution?.cardId ?? null}
                   usePok={usePok}
                   useTe={useTe}
+                  logEvents={game?.log?.events || []}
+                  phaseHub={buildPhaseHub({
+                    showDraftModal,
+                    showPoliticsModal,
+                    strategyResolutionActive: !!strategyResolution?.active,
+                    objectiveScoringActive: !!objectiveScoring?.active,
+                    showStatusPhaseModal,
+                    includeStatus: false,
+                    openPhaseModal,
+                    openEventLog: () => ui.setShowEventLog(true),
+                  })}
                 />
               </Suspense>
             )}
@@ -1021,7 +1064,7 @@ function App() {
             })}
             onMinimize={() => ui.toggleMinimize('expedition')}
             onClose={() => {
-              ui.ensureExpanded('expedition');
+              ui.focusBlockingModal('expedition');
               ui.setShowExpeditionModal(false);
             }}
           />
@@ -1061,7 +1104,9 @@ function App() {
         expeditionActive={false}
         startingTechDraftActive={showStartingTechHostModal}
         startingTechPlayerActive={startingTechPlayerPending}
-        onRestore={ui.toggleMinimize}
+        onRestore={(id) => {
+          ui.focusBlockingModal(id);
+        }}
       />
       <AppDialog dialog={dialog} onClose={close} />
     </div>

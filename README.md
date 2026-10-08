@@ -57,9 +57,9 @@ Vite serves `/api/*` via a local middleware that keeps secrets on the Node side.
 | POST | `/api/rooms/:id/actions` | Body `{ action }` — server applies the game reducer |
 | GET | `/api/rooms/:id/events` | SSE stream of state updates |
 | GET | `/api/stats` | Game history |
-| POST | `/api/stats` | Append finished game record (alias: `POST /api/game`) |
-| POST | `/api/game` | Append finished game → `{ ok: true }` |
-| POST | `/api/saves` | Save in-progress game → `{ code }` |
+| POST | `/api/stats` | Append finished game; body `{ record, createSecret }` (alias: `POST /api/game`) |
+| POST | `/api/game` | Same as `/api/stats` → `{ ok: true }` |
+| POST | `/api/saves` | Save in-progress game; body `{ state, createSecret }` → `{ code }` |
 | GET | `/api/saves/:code` | Load save |
 | DELETE | `/api/stats/:id` | Body `{ "pin" }` |
 | DELETE | `/api/stats` | Clear history; body `{ "pin" }` |
@@ -68,6 +68,7 @@ Vite serves `/api/*` via a local middleware that keeps secrets on the Node side.
 
 - **Solo** still works on one device via `localStorage`.
 - **Create party** and **solo / load save** ask for `ROOM_CREATE_SECRET` (host only). Guests use **Join by code** — no secret.
+- **Cloud writes** (`POST /api/stats`, `/api/saves`) also require `createSecret` (same host secret). Deletes still use `ADMIN_PIN`. Seat secrets are **8** Crockford characters (CSPRNG).
 - Game actions sync through the server reducer; `TICK` (turn timer) stays local.
 - `npm run dev`: rooms are **in-memory** on the Vite process (two tabs work; restart clears rooms). Set `ROOM_CREATE_SECRET` in `.env.local` / `.dev.vars`.
 - Production: one Cloudflare **Durable Object** per room (`GAME_ROOMS` in `wrangler.toml`). First deploy applies migration `v1-game-rooms`.

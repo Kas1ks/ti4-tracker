@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { ALL_FACTIONS, STRATEGY_CARDS } from '../data/gameData';
 import { formatTime } from '../utils/game';
 import { areAllStrategiesPlayed, isStrategyCardPlayed } from '../game/selectors';
+import { LiveEventTicker } from './LiveEventTicker';
+import { PhaseHubChips } from './PhaseHubChips';
 import { PlayerTechSheet, TechPips } from './TechSheet';
 
 const TABS = [
@@ -55,6 +57,8 @@ export function PlayerMobileConsole({
   onOpenProduction,
   usePok = false,
   useTe = false,
+  phaseHub = [],
+  logEvents = [],
 }) {
   const [tab, setTab] = useState('turn');
   const [tableSortMode, setTableSortMode] = useState('initiative');
@@ -91,6 +95,8 @@ export function PlayerMobileConsole({
           }`}
           aria-hidden={tab !== 'turn'}
         >
+          <PhaseHubChips phases={phaseHub} className="mb-1" />
+          <LiveEventTicker events={logEvents} />
           <TurnTab
             me={me}
             seatSecret={seatSecret}
@@ -297,11 +303,28 @@ function TurnTab({
 
       {me && seatSecret && (
         <div className="rounded-2xl border border-amber-700/40 bg-amber-950/15 px-3 py-2.5 flex items-center justify-between gap-3">
-          <div>
+          <div className="min-w-0">
             <div className="text-[10px] font-bold uppercase tracking-wider text-amber-500">Код места</div>
             <div className="text-[11px] text-slate-500">Для входа с другого устройства</div>
+            <div className="font-orbitron font-black text-xl text-amber-300 tracking-[0.15em] mt-1 break-all">
+              {seatSecret}
+            </div>
           </div>
-          <div className="font-orbitron font-black text-xl text-amber-300 tracking-[0.2em]">{seatSecret}</div>
+          <button
+            type="button"
+            className="flex-shrink-0 inline-flex items-center justify-center h-10 w-10 rounded-xl border border-amber-700/50 bg-slate-950 text-amber-300"
+            aria-label="Скопировать код места"
+            title="Скопировать"
+            onClick={() => {
+              try {
+                navigator.clipboard.writeText(String(seatSecret));
+              } catch {
+                /* clipboard may be blocked */
+              }
+            }}
+          >
+            <i className="fa-solid fa-copy" aria-hidden="true" />
+          </button>
         </div>
       )}
 

@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { ALL_FACTIONS, STRATEGY_CARDS } from '../data/gameData';
 import { formatTime } from '../utils/game';
 import { areAllStrategiesPlayed, isStrategyCardPlayed } from '../game/selectors';
+import { LiveEventTicker } from './LiveEventTicker';
+import { PhaseHubChips } from './PhaseHubChips';
 import { PlayerTechSheet, TechPips } from './TechSheet';
 
 const TABS = [
@@ -40,6 +42,8 @@ export function ViewerMobileConsole({
   resolvingCardId = null,
   usePok = false,
   useTe = false,
+  phaseHub = [],
+  logEvents = [],
 }) {
   const [tab, setTab] = useState('turn');
   const [techSheetPlayerId, setTechSheetPlayerId] = useState(null);
@@ -61,6 +65,8 @@ export function ViewerMobileConsole({
           }`}
           aria-hidden={tab !== 'turn'}
         >
+          <PhaseHubChips phases={phaseHub} className="mb-1" />
+          <LiveEventTicker events={logEvents} />
           <ViewerTurnTab
             turnOrder={turnOrder}
             activePlayer={activePlayer}

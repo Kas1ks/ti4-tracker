@@ -252,6 +252,7 @@ export function GameHeader({
                     canPhases={canPhases}
                     canExport={canExport}
                     canEndGame={canEndGame}
+                    canCombat={canCombat}
                     isPoliticsActive={isPoliticsActive}
                     onTogglePolitics={onTogglePolitics}
                     onExport={onExport}
@@ -259,6 +260,8 @@ export function GameHeader({
                     onOpenEventLog={onOpenEventLog}
                     onOpenTech={onOpenTech}
                     onOpenExpedition={onOpenExpedition}
+                    onOpenCombat={onOpenCombat}
+                    onOpenStats={onOpenStats}
                   />
                 )}
                 {undoButton}
@@ -287,143 +290,73 @@ export function GameHeader({
                 {leaveButton}
               </div>
 
-              {/* Mobile: full classic controls (unchanged layout) */}
+              {/* Mobile: primary phase controls + overflow for secondary tools */}
               <div className="flex md:hidden items-center gap-2 flex-nowrap justify-end">
                 {leaveButton}
-                {canUndoLast && (
+                {undoButton}
+                {canPhases && (
                   <button
                     type="button"
-                    onClick={onUndoLast}
-                    disabled={!canUndo}
-                    title={canUndo ? 'Отменить последнее действие' : 'Нечего отменять'}
-                    aria-label="Отменить"
-                    className={`inline-flex items-center justify-center h-9 w-9 rounded-xl border transition shadow ${
-                      canUndo
-                        ? 'bg-slate-950 hover:bg-orange-950/50 border-orange-800/70 text-orange-300'
-                        : 'bg-slate-900 border-slate-800 text-slate-600 cursor-not-allowed'
-                    }`}
+                    onClick={onOpenDraft}
+                    disabled={roundActive || isDraftLocked}
+                    title={isDraftLocked ? 'Карты уже выбраны — дождитесь конца раунда' : undefined}
+                    aria-label="Драфт стратегий"
+                    className="bg-amber-500 hover:bg-amber-400 disabled:bg-slate-800 disabled:text-slate-600 disabled:border-slate-800 text-slate-950 font-bold px-3 py-2 rounded-xl text-xs transition border border-amber-400/30 shadow-md flex items-center gap-1.5"
                   >
-                    <i className="fa-solid fa-rotate-left" aria-hidden="true" />
+                    <i className="fa-solid fa-layer-group" aria-hidden="true" />
+                    Драфт
                   </button>
                 )}
                 {canPhases && (
-                  <div className="flex items-center gap-2 bg-slate-950 border border-slate-800 px-3 py-1.5 rounded-xl">
-                    <span className={`font-bold text-xs uppercase ${isPoliticsActive ? 'text-purple-400' : 'text-slate-500'}`}>
-                      Пол.
-                    </span>
+                  !roundActive ? (
                     <button
                       type="button"
-                      onClick={onTogglePolitics}
-                      title={isPoliticsActive ? 'Деактивировать фазу политики' : 'Активировать фазу политики (после взятия Мекатола)'}
-                      className={`w-9 h-5 rounded-full flex items-center transition-colors px-0.5 ${isPoliticsActive ? 'bg-purple-600 justify-end' : 'bg-slate-700 justify-start'}`}
+                      onClick={onStartRound}
+                      disabled={!canStartRound}
+                      aria-label="Начать раунд"
+                      className={`font-bold px-3 py-2 rounded-xl text-xs transition shadow-md flex items-center gap-1.5 ${
+                        canStartRound
+                          ? 'bg-emerald-600 hover:bg-emerald-500 text-white'
+                          : 'bg-slate-800 text-slate-600 cursor-not-allowed'
+                      }`}
                     >
-                      <span className="w-4 h-4 bg-white rounded-full block shadow-md" />
+                      <i className="fa-solid fa-play" aria-hidden="true" />
+                      Раунд
                     </button>
-                  </div>
-                )}
-
-                {canPhases && (
-                  <div className="flex gap-2 flex-wrap">
+                  ) : (
                     <button
                       type="button"
-                      onClick={onOpenDraft}
-                      disabled={roundActive || isDraftLocked}
-                      title={isDraftLocked ? 'Карты уже выбраны — дождитесь конца раунда' : undefined}
-                      className="bg-amber-500 hover:bg-amber-400 disabled:bg-slate-800 disabled:text-slate-600 disabled:border-slate-800 text-slate-950 font-bold px-3 py-2 rounded-xl text-xs transition border border-amber-400/30 shadow-md flex items-center gap-1.5"
+                      onClick={onEndRound}
+                      disabled={!canEndRound}
+                      title={canEndRound ? undefined : endRoundDisabledTitle}
+                      aria-label="Завершить раунд"
+                      className={`font-bold px-3 py-2 rounded-xl text-xs transition shadow-md flex items-center gap-1.5 ${
+                        canEndRound
+                          ? 'bg-indigo-600 hover:bg-indigo-500 text-white'
+                          : 'bg-slate-800 text-slate-600 cursor-not-allowed'
+                      }`}
                     >
-                      <i className="fa-solid fa-layer-group" />
-                      Драфт
+                      <i className="fa-solid fa-flag-checkered" aria-hidden="true" />
+                      Конец
                     </button>
-
-                    {!roundActive ? (
-                      <button
-                        type="button"
-                        onClick={onStartRound}
-                        disabled={!canStartRound}
-                        className={`font-bold px-3 py-2 rounded-xl text-xs transition shadow-md flex items-center gap-1.5 ${
-                          canStartRound
-                            ? 'bg-emerald-600 hover:bg-emerald-500 text-white'
-                            : 'bg-slate-800 text-slate-600 cursor-not-allowed'
-                        }`}
-                      >
-                        <i className="fa-solid fa-play" />
-                        Раунд
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={onEndRound}
-                        disabled={!canEndRound}
-                        title={canEndRound ? undefined : endRoundDisabledTitle}
-                        className={`font-bold px-3 py-2 rounded-xl text-xs transition shadow-md flex items-center gap-1.5 ${
-                          canEndRound
-                            ? 'bg-indigo-600 hover:bg-indigo-500 text-white'
-                            : 'bg-slate-800 text-slate-600 cursor-not-allowed'
-                        }`}
-                      >
-                        <i className="fa-solid fa-flag-checkered" />
-                        Конец
-                      </button>
-                    )}
-                  </div>
+                  )
                 )}
-
-                {canExport && (
-                  <button
-                    type="button"
-                    onClick={onExport}
-                    className="bg-cyan-950/80 hover:bg-cyan-900 text-cyan-400 font-extrabold px-3 py-2 rounded-xl text-xs border border-cyan-800 transition flex items-center gap-1.5 shadow"
-                    title="Скопировать токен партии"
-                  >
-                    <i className="fa-solid fa-share-nodes" />
-                  </button>
-                )}
-
-                {onOpenTech && (
-                  <button
-                    type="button"
-                    onClick={onOpenTech}
-                    className="inline-flex items-center justify-center h-9 w-9 rounded-xl bg-slate-950 hover:bg-slate-800 text-sky-300 border border-sky-800/60 transition shadow"
-                    title="Технологии"
-                    aria-label="Технологии"
-                  >
-                    <i className="fa-solid fa-atom" />
-                  </button>
-                )}
-
-                {onOpenExpedition && (
-                  <button
-                    type="button"
-                    onClick={onOpenExpedition}
-                    className="inline-flex items-center justify-center h-9 w-9 rounded-xl bg-slate-950 hover:bg-slate-800 text-amber-300 border border-amber-800/60 transition shadow"
-                    title="Экспедиция Грозового рубежа"
-                    aria-label="Экспедиция"
-                  >
-                    <i className="fa-solid fa-mountain" />
-                  </button>
-                )}
-
-                {onOpenEventLog && (
-                  <button
-                    type="button"
-                    onClick={onOpenEventLog}
-                    className="inline-flex items-center justify-center h-9 w-9 rounded-xl bg-slate-950 hover:bg-slate-800 text-slate-300 border border-slate-700 transition shadow"
-                    title="Журнал партии"
-                    aria-label="Журнал партии"
-                  >
-                    <i className="fa-solid fa-scroll" />
-                  </button>
-                )}
-
-                {canEndGame && (
-                  <button
-                    type="button"
-                    onClick={onOpenEndGame}
-                    className="bg-red-900/80 hover:bg-red-800 text-red-200 font-extrabold px-3 py-2 rounded-xl text-xs border border-red-700 transition flex items-center gap-1.5 shadow"
-                  >
-                    <i className="fa-solid fa-square-xmark" />
-                  </button>
-                )}
+                <HeaderMoreMenu
+                  compact
+                  canPhases={canPhases}
+                  canExport={canExport}
+                  canEndGame={canEndGame}
+                  canCombat={canCombat}
+                  isPoliticsActive={isPoliticsActive}
+                  onTogglePolitics={onTogglePolitics}
+                  onExport={onExport}
+                  onOpenEndGame={onOpenEndGame}
+                  onOpenEventLog={onOpenEventLog}
+                  onOpenTech={onOpenTech}
+                  onOpenExpedition={onOpenExpedition}
+                  onOpenCombat={onOpenCombat}
+                  onOpenStats={onOpenStats}
+                />
               </div>
             </>
           ) : (
@@ -469,9 +402,11 @@ export function GameHeader({
 }
 
 function HeaderMoreMenu({
+  compact = false,
   canPhases,
   canExport,
   canEndGame,
+  canCombat = false,
   isPoliticsActive,
   onTogglePolitics,
   onExport,
@@ -479,6 +414,8 @@ function HeaderMoreMenu({
   onOpenEventLog,
   onOpenTech,
   onOpenExpedition,
+  onOpenCombat,
+  onOpenStats,
 }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef(null);
@@ -512,15 +449,22 @@ function HeaderMoreMenu({
         aria-haspopup="menu"
         aria-expanded={open}
         aria-controls={menuId}
+        aria-label="Ещё"
         onClick={() => setOpen(v => !v)}
-        className={`${CTRL} ${
+        className={`${CTRL} ${compact ? 'w-9 px-0' : ''} ${
           open
             ? 'bg-slate-800 border-slate-600 text-white'
             : 'bg-slate-950 hover:bg-slate-800 border-slate-700 text-slate-300'
         }`}
       >
-        <span>Ещё</span>
-        <i className={`fa-solid fa-chevron-down text-[10px] transition ${open ? 'rotate-180' : ''}`} />
+        {compact ? (
+          <i className="fa-solid fa-ellipsis-vertical" aria-hidden="true" />
+        ) : (
+          <>
+            <span>Ещё</span>
+            <i className={`fa-solid fa-chevron-down text-[10px] transition ${open ? 'rotate-180' : ''}`} />
+          </>
+        )}
       </button>
 
       {open && (
@@ -541,6 +485,7 @@ function HeaderMoreMenu({
                   type="button"
                   onClick={() => onTogglePolitics()}
                   title={isPoliticsActive ? 'Выключить фазу политики' : 'Включить фазу политики'}
+                  aria-label="Переключить политику"
                   className={`w-9 h-5 rounded-full flex items-center transition-colors px-0.5 flex-shrink-0 ${
                     isPoliticsActive ? 'bg-purple-600 justify-end' : 'bg-slate-700 justify-start'
                   }`}
@@ -562,6 +507,30 @@ function HeaderMoreMenu({
             >
               <i className="fa-solid fa-share-nodes w-4 text-center text-cyan-400" />
               <span className="flex-1">Код игры</span>
+            </button>
+          )}
+
+          {onOpenStats && (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={runAndClose(onOpenStats)}
+              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left text-sm font-semibold text-slate-200 hover:bg-slate-900 transition"
+            >
+              <i className="fa-solid fa-chart-pie w-4 text-center text-purple-400" />
+              <span className="flex-1">Статистика</span>
+            </button>
+          )}
+
+          {canCombat && onOpenCombat && (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={runAndClose(onOpenCombat)}
+              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left text-sm font-semibold text-slate-200 hover:bg-slate-900 transition"
+            >
+              <i className="fa-solid fa-crosshairs w-4 text-center text-red-400" />
+              <span className="flex-1">Бой</span>
             </button>
           )}
 

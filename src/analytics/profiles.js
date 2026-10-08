@@ -140,6 +140,35 @@ function techStatsForSeats(entries) {
     .sort((a, b) => b.games - a.games || b.wins - a.wins);
 }
 
+/** Secondary strategy play / pass rates for seats across games. */
+function secondaryEngagementForEntries(entries) {
+  let secondaryPlays = 0;
+  let secondaryPasses = 0;
+  let gamesWithPlays = 0;
+  entries.forEach(({ game, seat }) => {
+    const plays = Array.isArray(game.strategyPlays) ? game.strategyPlays : [];
+    if (!plays.length) return;
+    const mine = plays.filter((p) => {
+      const byName = seat.name && p.player === seat.name;
+      const byId = seat.playerId != null && p.playerId === seat.playerId;
+      return byName || byId;
+    });
+    if (!mine.length) return;
+    gamesWithPlays += 1;
+    mine.forEach((p) => {
+      if (p.role === 'secondary' || p.choice === 'play') secondaryPlays += 1;
+      if (p.role === 'pass' || p.choice === 'pass' || p.passed) secondaryPasses += 1;
+    });
+  });
+  const opportunities = secondaryPlays + secondaryPasses;
+  return {
+    gamesWithPlays,
+    secondaryPlays,
+    secondaryPasses,
+    engagementRate: opportunities > 0 ? pct(secondaryPlays, opportunities) : 0,
+  };
+}
+
 /** Deep profile for one player key (normalized name). */
 export function buildPlayerProfile(history, rawKey) {
   const list = normalizeHistory(history);
@@ -156,6 +185,7 @@ export function buildPlayerProfile(history, rawKey) {
     vpMix: vpMixForSeats(entries),
     strategies: strategyStatsForSeats(entries).slice(0, 8),
     techs: techStatsForSeats(entries).slice(0, 12),
+    secondary: secondaryEngagementForEntries(entries),
     recentGames: entries
       .slice()
       .reverse()
@@ -217,6 +247,7 @@ export function buildFactionProfile(history, factionKeyRaw) {
     vpMix: vpMixForSeats(entries),
     strategies: strategyStatsForSeats(entries).slice(0, 8),
     techs: techStatsForSeats(entries).slice(0, 12),
+    secondary: secondaryEngagementForEntries(entries),
     players: [...playersMap.values()]
       .map((row) => ({ ...row, winRate: pct(row.wins, row.games) }))
       .sort((a, b) => b.games - a.games || b.wins - a.wins),

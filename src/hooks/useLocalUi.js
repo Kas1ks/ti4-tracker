@@ -1,5 +1,20 @@
 import { useState } from 'react';
 
+/** Process modals that should not stack expanded at once. */
+export const BLOCKING_MODAL_IDS = [
+  'draft',
+  'politics',
+  'combat',
+  'statusPhase',
+  'objectiveScoring',
+  'strategyResolution',
+  'imperialClaim',
+  'techResearch',
+  'expedition',
+  'startingTechDraft',
+  'startingTechPlayer',
+];
+
 /** Ephemeral UI that never syncs to other devices. */
 export function useLocalUi() {
   const [showEndGameModal, setShowEndGameModal] = useState(false);
@@ -30,6 +45,18 @@ export function useLocalUi() {
     setMinimizedModals(prev => (prev[modalName] ? { ...prev, [modalName]: false } : prev));
   };
 
+  /** Expand one blocking modal; dock the rest so only one process fills the screen. */
+  const focusBlockingModal = (modalName) => {
+    setMinimizedModals((prev) => {
+      const next = { ...prev };
+      for (const id of BLOCKING_MODAL_IDS) {
+        if (id === modalName) next[id] = false;
+        else next[id] = true;
+      }
+      return next;
+    });
+  };
+
   const toggleExpand = (id) => {
     setExpandedObjectives(prev => ({ ...prev, [id]: !prev[id] }));
   };
@@ -57,7 +84,7 @@ export function useLocalUi() {
     showExpeditionModal, setShowExpeditionModal,
     showTechModal, setShowTechModal,
     techViewPlayerId, setTechViewPlayerId,
-    minimizedModals, toggleMinimize, ensureMinimized, ensureExpanded,
+    minimizedModals, toggleMinimize, ensureMinimized, ensureExpanded, focusBlockingModal,
     combatOpponentId, setCombatOpponentId,
     combatHits, setCombatHits,
     combatRound, setCombatRound,

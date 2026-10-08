@@ -79,6 +79,10 @@ function resolveServerEnv(mode) {
   const fileSecrets = readCloudSecrets();
   // Process / .env wins over cloud.local.json so CI and Playwright can inject secrets.
   return {
+    // Local middleware maps legacy VITE_* into non-VITE names so Worker code
+    // does not need production VITE_ fallbacks.
+    ALLOW_VITE_SECRET_FALLBACK: '1',
+    DEV: 'true',
     JSONBIN_BIN_ID:
       env.JSONBIN_BIN_ID ||
       env.VITE_JSONBIN_BIN_ID ||

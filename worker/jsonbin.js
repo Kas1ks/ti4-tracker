@@ -1,3 +1,7 @@
+import { randomSaveCode } from './cryptoCodes.js';
+import { allowViteSecretFallback } from './rooms/roomCreateAuth.js';
+import { timingSafeEqualString } from './secureCompare.js';
+
 export function parseCloudBin(data) {
   if (Array.isArray(data)) {
     return { history: data, saves: {} };
@@ -32,16 +36,30 @@ export function isJsonBinConfigured(env) {
   return Boolean(resolveBinId(env) && resolveMasterKey(env));
 }
 
-function resolveBinId(env) {
-  return env?.JSONBIN_BIN_ID || env?.VITE_JSONBIN_BIN_ID || '';
+export function resolveBinId(env) {
+  const primary = env?.JSONBIN_BIN_ID || '';
+  if (primary) return primary;
+  if (allowViteSecretFallback(env)) return env?.VITE_JSONBIN_BIN_ID || '';
+  return '';
 }
 
-function resolveMasterKey(env) {
-  return env?.JSONBIN_MASTER_KEY || env?.VITE_JSONBIN_MASTER_KEY || '';
+export function resolveMasterKey(env) {
+  const primary = env?.JSONBIN_MASTER_KEY || '';
+  if (primary) return primary;
+  if (allowViteSecretFallback(env)) return env?.VITE_JSONBIN_MASTER_KEY || '';
+  return '';
 }
 
-function resolveAdminPin(env) {
-  return env?.ADMIN_PIN || env?.VITE_ADMIN_PIN || '';
+export function resolveAdminPin(env) {
+  const primary = env?.ADMIN_PIN || '';
+  if (primary) return primary;
+  if (allowViteSecretFallback(env)) return env?.VITE_ADMIN_PIN || '';
+  return '';
+}
+
+export function adminPinMatches(env, pin) {
+  const expected = resolveAdminPin(env);
+  return Boolean(expected) && typeof pin === 'string' && timingSafeEqualString(pin, expected);
 }
 
 export async function getCloudBin(env) {
@@ -70,8 +88,30 @@ export async function putCloudBin(env, { history, saves }) {
   }
 }
 
-export function makeSaveCode() {
-  return Math.random().toString(36).substring(2, 7);
+/** Per-isolate serial queue so concurrent get→mutate→put do not clobber each other. */
+let cloudWriteChain = Promise.resolve();
+
+/**
+ * Serialize read-modify-write against the shared bin.
+ * @template T
+ * @param {object} env
+ * @param {(bin: { history: any[], saves: Record<string, any> }) => T | Promise<T>} mutator
+ * @returns {Promise<T>}
+ */
+export function withCloudBinLock(env, mutator) {
+  const run = cloudWriteChain.then(async () => {
+    const bin = await getCloudBin(env);
+    const history = Array.isArray(bin.history) ? bin.history.slice() : [];
+    const saves = bin.saves && typeof bin.saves === 'object' ? { ...bin.saves } : {};
+    const result = await mutator({ history, saves });
+    await putCloudBin(env, { history, saves });
+    return result;
+  });
+  // Keep the chain alive even if a write fails.
+  cloudWriteChain = run.then(() => undefined, () => undefined);
+  return run;
 }
 
-export { resolveAdminPin, resolveBinId, resolveMasterKey };
+export function makeSaveCode() {
+  return randomSaveCode(10);
+}

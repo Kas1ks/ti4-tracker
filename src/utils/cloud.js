@@ -1,4 +1,5 @@
 import { isCloudConfigured } from '../config';
+import { getHostWriteToken } from '../sync/hostWriteToken';
 
 async function api(path, options = {}) {
   const response = await fetch(path, {
@@ -44,26 +45,38 @@ function ensureCloud() {
   }
 }
 
+function requireWriteToken(createSecret) {
+  const token = createSecret || getHostWriteToken();
+  if (!token) {
+    const err = new Error('write-token-required');
+    err.status = 403;
+    err.data = { error: 'write-token-required' };
+    throw err;
+  }
+  return token;
+}
+
 export async function fetchCloudStats() {
   ensureCloud();
   const data = await api('/api/stats');
   return Array.isArray(data?.history) ? data.history : [];
 }
 
-export async function postGameRecord(record) {
+export async function postGameRecord(record, { createSecret } = {}) {
   ensureCloud();
-  // Prefer /api/stats (same collection as the history GET). /api/game remains a Worker alias.
+  const token = requireWriteToken(createSecret);
   await api('/api/stats', {
     method: 'POST',
-    body: JSON.stringify(record),
+    body: JSON.stringify({ record, createSecret: token }),
   });
 }
 
-export async function createCloudSave(state) {
+export async function createCloudSave(state, { createSecret } = {}) {
   ensureCloud();
+  const token = requireWriteToken(createSecret);
   const data = await api('/api/saves', {
     method: 'POST',
-    body: JSON.stringify({ state }),
+    body: JSON.stringify({ state, createSecret: token }),
   });
   return data.code;
 }

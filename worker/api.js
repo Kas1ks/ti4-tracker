@@ -1,21 +1,24 @@
 import {
+  adminPinMatches,
   getCloudBin,
   isJsonBinConfigured,
   makeSaveCode,
-  putCloudBin,
   resolveAdminPin,
   resolveBinId,
   resolveMasterKey,
+  withCloudBinLock,
 } from './jsonbin.js';
 import { handleRoomsApi } from './rooms/roomsApi.js';
 import { assertRoomCreateAllowed, resolveRoomCreateSecret } from './rooms/roomCreateAuth.js';
+import { clientKey, consumeRateLimit } from './secureCompare.js';
 
-function json(data, status = 200) {
+function json(data, status = 200, extraHeaders = {}) {
   return new Response(JSON.stringify(data), {
     status,
     headers: {
       'Content-Type': 'application/json; charset=utf-8',
       'Cache-Control': 'no-store',
+      ...extraHeaders,
     },
   });
 }
@@ -28,9 +31,31 @@ async function readJsonBody(request) {
   }
 }
 
-function pinMatches(env, pin) {
-  const expected = resolveAdminPin(env);
-  return Boolean(expected) && pin === expected;
+function rateLimited(request, bucket, opts) {
+  const key = `${bucket}:${clientKey(request)}`;
+  const result = consumeRateLimit(key, opts);
+  if (!result.ok) {
+    return json(
+      { error: 'rate-limited', retryAfterMs: result.retryAfterMs },
+      429,
+      { 'Retry-After': String(Math.ceil(result.retryAfterMs / 1000)) },
+    );
+  }
+  return null;
+}
+
+function assertCloudWrite(env, body) {
+  return assertRoomCreateAllowed(env, body?.createSecret ?? body?.writeToken ?? '');
+}
+
+/** Strip auth fields from a flat game-record POST body. */
+function extractGameRecord(body) {
+  if (body?.record && typeof body.record === 'object' && !Array.isArray(body.record)) {
+    return body.record;
+  }
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return null;
+  const { createSecret: _c, writeToken: _w, record: _r, ...rest } = body;
+  return Object.keys(rest).length ? rest : null;
 }
 
 /**
@@ -66,7 +91,6 @@ export async function handleApi(request, env) {
       hasMasterKey: Boolean(resolveMasterKey(env)),
       hasAdminPin: Boolean(resolveAdminPin(env)),
       hasRoomCreateSecret: Boolean(resolveRoomCreateSecret(env)),
-      // Names only (no values) — helps confirm the secret is bound to this Worker.
       roomCreateSecretKeys: {
         ROOM_CREATE_SECRET: Boolean(env?.ROOM_CREATE_SECRET),
         VITE_ROOM_CREATE_SECRET: Boolean(env?.VITE_ROOM_CREATE_SECRET),
@@ -74,7 +98,6 @@ export async function handleApi(request, env) {
     });
   }
 
-  // Live rooms do not need JSONBin — handle before the cloud gate.
   if (pathname === '/api/rooms' || pathname.startsWith('/api/rooms/')) {
     try {
       const roomResponse = await handleRoomsApi(request, env);
@@ -85,8 +108,9 @@ export async function handleApi(request, env) {
     }
   }
 
-  // Same secret as room create — unlock solo / local host actions.
   if (method === 'POST' && pathname === '/api/host-unlock') {
+    const limited = rateLimited(request, 'host-unlock', { limit: 30, windowMs: 60_000 });
+    if (limited) return limited;
     const body = await readJsonBody(request);
     const gate = assertRoomCreateAllowed(env, body?.createSecret);
     if (!gate.ok) return json({ error: gate.error }, gate.status);
@@ -99,7 +123,7 @@ export async function handleApi(request, env) {
       hasBinId: Boolean(resolveBinId(env)),
       hasMasterKey: Boolean(resolveMasterKey(env)),
       hasAdminPin: Boolean(resolveAdminPin(env)),
-      hint: 'Add Worker runtime Secrets JSONBIN_BIN_ID + JSONBIN_MASTER_KEY (VITE_ prefix also ok). Build-only vars are not enough.',
+      hint: 'Add Worker runtime Secrets JSONBIN_BIN_ID + JSONBIN_MASTER_KEY (no VITE_ prefix in production).',
     }, 503);
   }
 
@@ -109,32 +133,35 @@ export async function handleApi(request, env) {
       return json({ history });
     }
 
-    // Append finished game to history (canonical). /api/game kept as alias.
     if (method === 'POST' && (pathname === '/api/stats' || pathname === '/api/game')) {
+      const limited = rateLimited(request, 'cloud-write', { limit: 40, windowMs: 60_000 });
+      if (limited) return limited;
       const body = await readJsonBody(request);
-      const record = body?.record && typeof body.record === 'object' && !Array.isArray(body.record)
-        ? body.record
-        : body;
-      if (!record || typeof record !== 'object' || Array.isArray(record)) {
-        return json({ error: 'invalid-body' }, 400);
-      }
-      const { history, saves } = await getCloudBin(env);
-      history.unshift(record);
-      await putCloudBin(env, { history, saves });
+      const gate = assertCloudWrite(env, body);
+      if (!gate.ok) return json({ error: gate.error }, gate.status);
+      const gameRecord = extractGameRecord(body);
+      if (!gameRecord) return json({ error: 'invalid-body' }, 400);
+      await withCloudBinLock(env, ({ history }) => {
+        history.unshift(gameRecord);
+      });
       return json({ ok: true }, 201);
     }
 
     if (method === 'POST' && pathname === '/api/saves') {
+      const limited = rateLimited(request, 'cloud-write', { limit: 40, windowMs: 60_000 });
+      if (limited) return limited;
       const body = await readJsonBody(request);
-      const snap = body?.state ?? body;
+      const gate = assertCloudWrite(env, body);
+      if (!gate.ok) return json({ error: gate.error }, gate.status);
+      const snap = body?.state ?? null;
       if (!snap || typeof snap !== 'object' || Array.isArray(snap)) {
         return json({ error: 'invalid-body' }, 400);
       }
-      const { history, saves } = await getCloudBin(env);
       let code = typeof body?.code === 'string' ? body.code.trim() : '';
       if (!code) code = makeSaveCode();
-      saves[code] = snap;
-      await putCloudBin(env, { history, saves });
+      await withCloudBinLock(env, ({ saves }) => {
+        saves[code] = snap;
+      });
       return json({ code }, 201);
     }
 
@@ -149,26 +176,34 @@ export async function handleApi(request, env) {
     }
 
     if (method === 'DELETE' && pathname === '/api/stats') {
+      const limited = rateLimited(request, 'admin-pin', { limit: 15, windowMs: 60_000 });
+      if (limited) return limited;
       const body = await readJsonBody(request);
-      if (!pinMatches(env, body?.pin)) {
+      if (!adminPinMatches(env, body?.pin)) {
         return json({ error: 'unauthorized' }, 401);
       }
-      const { saves } = await getCloudBin(env);
-      await putCloudBin(env, { history: [], saves });
+      await withCloudBinLock(env, ({ history }) => {
+        history.length = 0;
+      });
       return json({ ok: true, history: [] });
     }
 
     const gameMatch = pathname.match(/^\/api\/stats\/([^/]+)$/);
     if (method === 'DELETE' && gameMatch) {
+      const limited = rateLimited(request, 'admin-pin', { limit: 15, windowMs: 60_000 });
+      if (limited) return limited;
       const body = await readJsonBody(request);
-      if (!pinMatches(env, body?.pin)) {
+      if (!adminPinMatches(env, body?.pin)) {
         return json({ error: 'unauthorized' }, 401);
       }
       const gameIdRaw = decodeURIComponent(gameMatch[1]);
       const gameId = Number(gameIdRaw);
-      const { history, saves } = await getCloudBin(env);
-      const updated = history.filter((g) => String(g.id) !== String(gameIdRaw) && g.id !== gameId);
-      await putCloudBin(env, { history: updated, saves });
+      const updated = await withCloudBinLock(env, ({ history }) => {
+        const next = history.filter((g) => String(g.id) !== String(gameIdRaw) && g.id !== gameId);
+        history.length = 0;
+        history.push(...next);
+        return [...next];
+      });
       return json({ ok: true, history: updated });
     }
 

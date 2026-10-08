@@ -3,6 +3,8 @@ import { isCloudConfigured } from '../config';
 import { stampGameState } from '../game/gameState';
 import { rememberObjectiveIds } from '../game/objectiveHistory';
 import { buildGameRecord, normalizeHistory } from '../analytics/gameRecord';
+import { getHostWriteToken, setHostWriteToken } from '../sync/hostWriteToken';
+import { verifyHostSecret } from '../sync/roomApi';
 import {
   clearCloudStats,
   createCloudSave,
@@ -20,6 +22,34 @@ export function useCloudGame({ game, dispatch, getPlayerScore, uiAlert, uiConfir
   const [isStatsLoading, setIsStatsLoading] = useState(false);
   const gameRef = useRef(game);
   gameRef.current = game;
+
+  const ensureWriteToken = async () => {
+    const cached = getHostWriteToken();
+    if (cached) return cached;
+    const createSecret = await uiPrompt('Введите код доступа хоста для записи в облако:', {
+      title: 'Код доступа',
+      inputType: 'password',
+      placeholder: 'ROOM_CREATE_SECRET',
+      confirmLabel: 'Продолжить',
+      variant: 'info',
+    });
+    if (createSecret === null) return null;
+    if (!String(createSecret).trim()) {
+      await uiAlert('Код доступа не может быть пустым.', { title: 'Ошибка', variant: 'danger' });
+      return null;
+    }
+    try {
+      await verifyHostSecret(String(createSecret));
+      setHostWriteToken(String(createSecret));
+      return String(createSecret);
+    } catch (err) {
+      await uiAlert(cloudErrorMessage(err, 'Неверный код доступа'), {
+        title: 'Ошибка',
+        variant: 'danger',
+      });
+      return null;
+    }
+  };
 
   const openStatsModal = async () => {
     setShowStatsModal(true);
@@ -100,7 +130,15 @@ export function useCloudGame({ game, dispatch, getPlayerScore, uiAlert, uiConfir
     }
 
     try {
-      await postGameRecord(gameRecord);
+      const token = await ensureWriteToken();
+      if (!token) {
+        await uiAlert(
+          'Итоги партии сохранены на этом устройстве. Облачная запись отменена (нет кода доступа).',
+          { title: 'Локальное сохранение', variant: 'info' },
+        );
+        return true;
+      }
+      await postGameRecord(gameRecord, { createSecret: token });
       await uiAlert('Партия успешно сохранена в общую статистику!', {
         title: 'Сохранено',
         variant: 'success',
@@ -125,7 +163,9 @@ export function useCloudGame({ game, dispatch, getPlayerScore, uiAlert, uiConfir
       return;
     }
     try {
-      const saveId = await createCloudSave(stampGameState(game));
+      const token = await ensureWriteToken();
+      if (!token) return;
+      const saveId = await createCloudSave(stampGameState(game), { createSecret: token });
       navigator.clipboard.writeText(saveId);
       await uiAlert(`Партия сохранена! Код сохранения: ${saveId} (скопирован в буфер обмена)`, {
         title: 'Код сохранения',

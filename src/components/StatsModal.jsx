@@ -15,6 +15,8 @@ import {
 } from '../analytics/compare';
 import { DEFAULT_HISTORY_FILTERS, filterHistory } from '../analytics/filter';
 import { downloadCsv, gamesToCsv, playersToCsv } from '../analytics/exportCsv';
+import { formatTechList } from '../analytics/techLabels';
+import { buildShareCardText } from '../analytics/shareCard';
 
 const TABS = [
   { id: 'analytics', label: 'Аналитика' },
@@ -241,7 +243,7 @@ function ProfilePanel({ profile, onBack, onOpenPlayer, onOpenFaction }) {
         </div>
       </div>
 
-      <div className="grid sm:grid-cols-3 gap-2 text-center text-xs">
+      <div className="grid sm:grid-cols-4 gap-2 text-center text-xs">
         <div className="rounded-xl border border-slate-800 bg-slate-950 p-3">
           <div className="text-slate-500 uppercase text-[10px]">Победы</div>
           <div className="font-orbitron font-bold text-amber-400 text-lg">{profile.wins}</div>
@@ -253,6 +255,19 @@ function ProfilePanel({ profile, onBack, onOpenPlayer, onOpenFaction }) {
         <div className="rounded-xl border border-slate-800 bg-slate-950 p-3">
           <div className="text-slate-500 uppercase text-[10px]">Breakthrough</div>
           <div className="font-orbitron font-bold text-violet-300 text-lg">{profile.breakthroughRate}%</div>
+        </div>
+        <div className="rounded-xl border border-slate-800 bg-slate-950 p-3">
+          <div className="text-slate-500 uppercase text-[10px]">2° стратегии</div>
+          <div className="font-orbitron font-bold text-cyan-300 text-lg">
+            {profile.secondary?.gamesWithPlays
+              ? `${profile.secondary.engagementRate}%`
+              : '—'}
+          </div>
+          {profile.secondary?.gamesWithPlays > 0 && (
+            <div className="text-[10px] text-slate-600 mt-0.5">
+              {profile.secondary.secondaryPlays}/{profile.secondary.secondaryPlays + profile.secondary.secondaryPasses}
+            </div>
+          )}
         </div>
       </div>
 
@@ -1076,12 +1091,27 @@ function GameDetail({ game }) {
               .map((p) => (
                 <li key={p.name}>
                   <span className="text-slate-300 font-bold">{p.name}:</span>{' '}
-                  {p.techs.join(', ')}
+                  {formatTechList(p.techs)}
                 </li>
               ))}
           </ul>
         </div>
       )}
+
+      <button
+        type="button"
+        className="text-[11px] font-bold text-cyan-400 hover:text-cyan-300"
+        onClick={() => {
+          try {
+            navigator.clipboard.writeText(buildShareCardText(game));
+          } catch {
+            /* ignore */
+          }
+        }}
+      >
+        <i className="fa-solid fa-share-nodes mr-1" aria-hidden="true" />
+        Скопировать карточку партии
+      </button>
     </div>
   );
 }

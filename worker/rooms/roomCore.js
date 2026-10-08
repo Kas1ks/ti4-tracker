@@ -7,6 +7,11 @@ import {
   pushUndoSnapshot,
   undoStackDepth,
 } from '../../src/sync/undoStack';
+import {
+  randomHostKey,
+  randomRoomId,
+  randomSeatSecret,
+} from '../cryptoCodes.js';
 
 export { LOCAL_ONLY_ACTIONS, ROLES };
 
@@ -16,28 +21,15 @@ export const ROOM_IDLE_TTL_MS = 48 * 60 * 60 * 1000;
 export const ROOM_ENDED_TTL_MS = 2 * 60 * 60 * 1000;
 
 export function makeRoomId() {
-  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-  let id = '';
-  for (let i = 0; i < 6; i += 1) {
-    id += alphabet[Math.floor(Math.random() * alphabet.length)];
-  }
-  return id;
+  return randomRoomId();
 }
 
 export function makeHostKey() {
-  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
-    return crypto.randomUUID().replace(/-/g, '');
-  }
-  return `host_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+  return randomHostKey();
 }
 
 export function makeSeatSecret() {
-  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-  let secret = '';
-  for (let i = 0; i < 4; i += 1) {
-    secret += alphabet[Math.floor(Math.random() * alphabet.length)];
-  }
-  return secret;
+  return randomSeatSecret(8);
 }
 
 /**

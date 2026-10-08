@@ -83,7 +83,7 @@ describe('roomCore', () => {
     const first = joinRoom(room, { role: ROLES.PLAYER, seatPlayerId: 1 });
     expect(first.ok).toBe(true);
     expect(first.reclaimed).toBe(false);
-    expect(first.seatSecret).toMatch(/^[A-Z0-9]{4}$/);
+    expect(first.seatSecret).toMatch(/^[A-Z0-9]{8}$/);
     room = first.room;
     const oldToken = first.sessionToken;
     const secret = first.seatSecret;

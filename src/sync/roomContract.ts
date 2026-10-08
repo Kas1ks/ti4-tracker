@@ -40,16 +40,23 @@ export function isRecord(value: unknown): value is Record<string, unknown> {
  */
 export function parseRoomPublicView(raw: unknown): RoomPublicView | null {
   if (!isRecord(raw)) return null;
-  if (typeof raw.roomId !== 'string' || !raw.roomId) return null;
-  if (typeof raw.seq !== 'number' || !Number.isFinite(raw.seq)) return null;
+  if (typeof raw.roomId !== 'string' || !raw.roomId || raw.roomId.length > 32) return null;
+  if (typeof raw.seq !== 'number' || !Number.isFinite(raw.seq) || raw.seq < 0) return null;
   if (!isRecord(raw.state)) return null;
 
-  const claimedSeats = Array.isArray(raw.claimedSeats) ? raw.claimedSeats : [];
+  // Soft shape check — full normalize happens in gameState.
+  const state = raw.state;
+  if (state.players != null && !Array.isArray(state.players)) return null;
+  if (state.players && state.players.length > 16) return null;
+  if (state.meta != null && !isRecord(state.meta)) return null;
+  if (state.version != null && typeof state.version !== 'number') return null;
+
+  const claimedSeats = Array.isArray(raw.claimedSeats) ? raw.claimedSeats.slice(0, 16) : [];
 
   return {
     roomId: raw.roomId,
     seq: raw.seq,
-    state: raw.state as unknown as GameState,
+    state: state as unknown as GameState,
     updatedAt: typeof raw.updatedAt === 'string' ? raw.updatedAt : null,
     createdAt: typeof raw.createdAt === 'string' ? raw.createdAt : null,
     lastActivityAt: typeof raw.lastActivityAt === 'string' ? raw.lastActivityAt : null,
