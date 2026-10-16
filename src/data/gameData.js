@@ -22,7 +22,7 @@ export const ALL_FACTIONS = [
   { id: 'naazrokha', name: 'Альянс Нааз-Роха', color: '#10b981', exp: 'pok', iconUrl: '/factions/naaz-rokha-alliance.webp' },
   { id: 'nomad', name: 'Кочевник (Nomad)', color: '#f43f5e', exp: 'pok', iconUrl: '/factions/nomad.webp' },
   { id: 'titans', name: 'Титаны Ула', color: '#a1a1aa', exp: 'pok', iconUrl: '/factions/titans-of-ul.webp' },
-  { id: 'vuilraith', name: 'Кабала Вуил’Райт', color: '#b91c1c', exp: 'pok', iconUrl: '/factions/vuil-raith-cabal.webp' },
+  { id: 'vuilraith', name: 'Кабал Вуил’Райт', color: '#b91c1c', exp: 'pok', iconUrl: '/factions/vuil-raith-cabal.webp' },
   { id: 'keleres_argent', name: 'Совет Келерес (Аргенты)', color: '#38bdf8', exp: 'te', iconUrl: '/factions/council-keleres-argent.webp' },
   { id: 'keleres_mentak', name: 'Совет Келерес (Ментак)', color: '#38bdf8', exp: 'te', iconUrl: '/factions/council-keleres-mentak.webp' },
   { id: 'keleres_xxcha', name: 'Совет Келерес (Ззча)', color: '#38bdf8', exp: 'te', iconUrl: '/factions/council-keleres-xxcha.webp' },
@@ -34,14 +34,14 @@ export const ALL_FACTIONS = [
 ];
 
 export const STRATEGY_CARDS = [
-  { id: 1, name: '1. Лидерство', initiative: 1, color: 'border-red-500 bg-red-950/50 text-red-300', imageUrl: '/strategy-cards/1.webp' },
-  { id: 2, name: '2. Дипломатия', initiative: 2, color: 'border-amber-500 bg-amber-950/50 text-amber-300', imageUrl: '/strategy-cards/2.webp' },
-  { id: 3, name: '3. Политика', initiative: 3, color: 'border-yellow-500 bg-yellow-950/50 text-yellow-300', imageUrl: '/strategy-cards/3.webp' },
-  { id: 4, name: '4. Строительство', initiative: 4, color: 'border-emerald-500 bg-emerald-950/50 text-emerald-300', imageUrl: '/strategy-cards/4.webp' },
-  { id: 5, name: '5. Торговля', initiative: 5, color: 'border-teal-500 bg-teal-950/50 text-teal-300', imageUrl: '/strategy-cards/5.webp' },
-  { id: 6, name: '6. Война', initiative: 6, color: 'border-cyan-500 bg-cyan-950/50 text-cyan-300', imageUrl: '/strategy-cards/6.webp' },
-  { id: 7, name: '7. Технологии', initiative: 7, color: 'border-blue-500 bg-blue-950/50 text-blue-300', imageUrl: '/strategy-cards/7.webp' },
-  { id: 8, name: '8. Экспансия', initiative: 8, color: 'border-purple-500 bg-purple-950/50 text-purple-300', imageUrl: '/strategy-cards/8.webp' },
+  { id: 1, name: '1. Лидерство', initiative: 1, color: 'border-red-500 bg-red-950/50 text-red-300', imageUrl: '/strategy-cards-2.0/1.png?v=src' },
+  { id: 2, name: '2. Дипломатия', initiative: 2, color: 'border-amber-500 bg-amber-950/50 text-amber-300', imageUrl: '/strategy-cards-2.0/2.png?v=src' },
+  { id: 3, name: '3. Политика', initiative: 3, color: 'border-yellow-500 bg-yellow-950/50 text-yellow-300', imageUrl: '/strategy-cards-2.0/3.png?v=src' },
+  { id: 4, name: '4. Строительство', initiative: 4, color: 'border-emerald-500 bg-emerald-950/50 text-emerald-300', imageUrl: '/strategy-cards-2.0/4.png?v=src' },
+  { id: 5, name: '5. Торговля', initiative: 5, color: 'border-teal-500 bg-teal-950/50 text-teal-300', imageUrl: '/strategy-cards-2.0/5.png?v=src' },
+  { id: 6, name: '6. Война', initiative: 6, color: 'border-cyan-500 bg-cyan-950/50 text-cyan-300', imageUrl: '/strategy-cards-2.0/6.png?v=src' },
+  { id: 7, name: '7. Технологии', initiative: 7, color: 'border-blue-500 bg-blue-950/50 text-blue-300', imageUrl: '/strategy-cards-2.0/7.png?v=src' },
+  { id: 8, name: '8. Экспансия', initiative: 8, color: 'border-purple-500 bg-purple-950/50 text-purple-300', imageUrl: '/strategy-cards-2.0/8.png?v=src' },
 ];
 
 export const PLAYER_COLORS = [

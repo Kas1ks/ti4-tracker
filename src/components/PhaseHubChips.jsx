@@ -17,8 +17,8 @@ export function PhaseHubChips({
           onClick={phase.onOpen}
           className={`inline-flex items-center gap-1.5 rounded-xl border px-2.5 py-1.5 text-[11px] font-bold uppercase tracking-wide transition ${
             phase.urgent
-              ? 'border-amber-500/70 bg-amber-950/50 text-amber-200 animate-pulse'
-              : 'border-slate-700 bg-slate-950 text-slate-300 hover:border-slate-500 hover:text-white'
+              ? 'border-[var(--game-line-gold)] bg-[rgba(201,162,39,0.16)] text-[var(--game-gold-bright)] animate-pulse'
+              : 'border-[var(--game-line)] bg-[rgba(8,10,16,0.82)] text-[var(--game-text)] hover:border-[var(--game-line-gold)] hover:text-[var(--game-gold-bright)]'
           }`}
         >
           {phase.icon ? <i className={`fa-solid ${phase.icon}`} aria-hidden="true" /> : null}

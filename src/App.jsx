@@ -12,11 +12,13 @@ import { useLocalUi } from './hooks/useLocalUi';
 import { useGameDialogs } from './hooks/useGameDialogs';
 import { AppDialog } from './components/AppDialog';
 import { GameHeader } from './components/GameHeader';
+import { ActiveTurnBar } from './components/ActiveTurnBar';
 import { MinimizedModalControls } from './components/MinimizedModalControls';
 import { LazyWhen } from './components/LazyWhen';
 import { RoomHub } from './components/RoomHub';
 import { GuestLobby } from './components/GuestLobby';
 import { SetupScreen } from './components/SetupScreen';
+import { HubCosmosBackdrop } from './components/HubCosmosBackdrop';
 import { StrategyResolutionBanner } from './components/StrategyResolutionBanner';
 import { StartingTechDraftBanner } from './components/StartingTechDraftBanner';
 import { SyncStatusBanner } from './components/SyncStatusBanner';
@@ -257,6 +259,12 @@ function App() {
   const mobileShell = (isPlayerClient || isViewerClient) && isGameActive;
   useVisualViewportShell(mobileShell);
 
+  useEffect(() => {
+    if (!isGameActive) return undefined;
+    document.body.classList.add('hub-cinematic');
+    return () => document.body.classList.remove('hub-cinematic');
+  }, [isGameActive]);
+
   // During objective scoring: tuck status checklist, open scoring modal.
   // When scoring finishes: restore the status checklist.
   useEffect(() => {
@@ -444,8 +452,8 @@ function App() {
       <>
         <Suspense
           fallback={(
-            <div className="min-h-screen bg-slate-950 flex items-center justify-center text-slate-400 font-orbitron">
-              <i className="fa-solid fa-spinner fa-spin text-2xl text-purple-400" aria-hidden="true" />
+            <div className="min-h-screen flex items-center justify-center text-[var(--hub-muted)] bg-[var(--hub-ink)]">
+              <i className="fa-solid fa-spinner fa-spin text-2xl text-[var(--hub-gold-bright)]" aria-hidden="true" />
             </div>
           )}
         >
@@ -462,14 +470,19 @@ function App() {
     );
   }
 
+  const fullBleedShell = showHub || showAdminSetup || showGuestLobby || isGameActive;
+
   return (
     <div
-      className={`max-w-[1800px] mx-auto flex flex-col text-slate-100 ${
+      className={`${fullBleedShell ? 'w-full max-w-none' : 'max-w-[1800px] mx-auto'} flex flex-col text-slate-100 ${
         mobileShell
-          ? 'player-app-frame min-h-screen max-md:min-h-0 md:relative md:h-auto md:max-h-none md:overflow-visible md:px-8 max-md:px-0'
-          : 'min-h-screen px-3 md:px-8'
+          ? 'player-app-frame game-shell min-h-screen max-md:min-h-0 md:relative md:h-auto md:max-h-none md:overflow-visible md:px-8 max-md:px-0'
+          : fullBleedShell
+            ? `min-h-screen px-0${isGameActive ? ' game-shell' : ''}`
+            : 'min-h-screen px-3 md:px-8'
       }`}
     >
+      {isGameActive && <HubCosmosBackdrop />}
       <SyncStatusBanner
         roomError={hasRoomSession ? roomError : null}
         syncLink={hasRoomSession ? syncLink : 'idle'}
@@ -487,62 +500,50 @@ function App() {
         />
       )}
 
-      <GameHeader
-        isGameActive={isGameActive}
-        roundNumber={roundNumber}
-        roundTime={roundTime}
-        isPoliticsActive={isPoliticsActive}
-        onTogglePolitics={() => dispatch({ type: 'TOGGLE_POLITICS_ACTIVE' })}
-        roundActive={roundActive}
-        isDraftLocked={isDraftLocked}
-        canStartRound={canStartRound && !victoryLocked}
-        onOpenDraft={() => dispatch({ type: 'OPEN_DRAFT' })}
-        onStartRound={() => dispatch({ type: 'START_ROUND' })}
-        onEndRound={() => dispatch({ type: 'END_ROUND' })}
-        canEndRound={canEndRound && !victoryLocked}
-        victoryLocked={victoryLocked}
-        endRoundDisabledTitle={
-          victoryLocked
-            ? 'Партия остановлена — достигнута цель ПО'
-            : showStatusPhaseModal || objectiveScoring?.active
-              ? 'Сначала завершите фазу статуса'
-              : 'Сначала все игроки должны спасовать'
-        }
-        onExport={cloud.exportGameToken}
-        onOpenEndGame={() => ui.setShowEndGameModal(true)}
-        onOpenStats={() => navigate('/stats')}
-        onOpenEventLog={() => ui.setShowEventLog(true)}
-        onOpenExpedition={useTe ? openExpeditionPanel : undefined}
-        onOpenTech={isViewerClient ? undefined : () => {
-          ui.setTechViewPlayerId(perms?.seatPlayerId ?? activePlayer?.id ?? players[0]?.id ?? null);
-          ui.setShowTechModal(true);
-        }}
-        onUndoLast={() => dispatch({ type: 'UNDO_LAST' })}
-        canUndo={canUndo}
-        turnOrder={turnOrder}
-        activePlayer={activePlayer}
-        passed={passed}
-        strategyCards={strategyCards}
-        allStrategiesPlayed={allStrategiesPlayed}
-        strategyActionTaken={!!strategyActionTaken || !!imperialClaim?.active || !!techResearch?.active}
-        strategyResolutionActive={!!strategyResolution?.active}
-        resolvingCardId={strategyResolution?.cardId ?? null}
-        imperialClaimActive={!!imperialClaim?.active}
-        techResearchActive={!!techResearch?.active}
-        onPlayStrategy={dialogs.playStrategyCard}
-        turnTime={turnTime}
-        onNextTurn={() => dispatch({ type: 'NEXT_TURN' })}
-        onPassTurn={dialogs.passTurn}
-        onOpenCombat={ui.openCombatModal}
-        room={room}
-        roomStatus={roomStatus}
-        perms={perms}
-        hideTurnBarOnMobile={isPlayerClient || isViewerClient}
-        onLeaveRoom={perms?.role === ROLES.VIEWER ? handleLeaveRoom : undefined}
-      />
+      {!showHub && !showAdminSetup && (
+        <GameHeader
+          isGameActive={isGameActive}
+          roundNumber={roundNumber}
+          roundTime={roundTime}
+          isPoliticsActive={isPoliticsActive}
+          onTogglePolitics={() => dispatch({ type: 'TOGGLE_POLITICS_ACTIVE' })}
+          roundActive={roundActive}
+          isDraftLocked={isDraftLocked}
+          canStartRound={canStartRound && !victoryLocked}
+          onOpenDraft={() => dispatch({ type: 'OPEN_DRAFT' })}
+          onStartRound={() => dispatch({ type: 'START_ROUND' })}
+          onEndRound={() => dispatch({ type: 'END_ROUND' })}
+          canEndRound={canEndRound && !victoryLocked}
+          victoryLocked={victoryLocked}
+          endRoundDisabledTitle={
+            victoryLocked
+              ? 'Партия остановлена — достигнута цель ПО'
+              : showStatusPhaseModal || objectiveScoring?.active
+                ? 'Сначала завершите фазу статуса'
+                : 'Сначала все игроки должны спасовать'
+          }
+          onExport={cloud.exportGameToken}
+          onOpenEndGame={() => ui.setShowEndGameModal(true)}
+          onOpenStats={() => navigate('/stats')}
+          onOpenEventLog={() => ui.setShowEventLog(true)}
+          onOpenExpedition={useTe ? openExpeditionPanel : undefined}
+          onOpenTech={isViewerClient ? undefined : () => {
+            ui.setTechViewPlayerId(perms?.seatPlayerId ?? activePlayer?.id ?? players[0]?.id ?? null);
+            ui.setShowTechModal(true);
+          }}
+          onUndoLast={() => dispatch({ type: 'UNDO_LAST' })}
+          canUndo={canUndo}
+          onOpenCombat={ui.openCombatModal}
+          room={room}
+          roomStatus={roomStatus}
+          perms={perms}
+          compactBrand={isPlayerClient || isViewerClient}
+          onLeaveRoom={perms?.role === ROLES.VIEWER ? handleLeaveRoom : undefined}
+        />
+      )}
 
       <main
-        className={`py-6 flex-grow space-y-8 ${
+        className={`${showHub || showAdminSetup || showGuestLobby ? 'flex-grow p-0' : `py-6 flex-grow space-y-6${isGameActive ? ' px-3 md:px-8 max-w-[1800px] mx-auto w-full box-border' : ''}`} ${
           mobileShell
             ? 'md:px-0 max-md:py-0 max-md:space-y-0 max-md:flex-1 max-md:min-h-0 max-md:overflow-hidden max-md:flex max-md:flex-col'
             : ''
@@ -557,6 +558,7 @@ function App() {
             onPlaySolo={handlePlaySolo}
             importGameToken={handleImportGameToken}
             uiPrompt={uiPrompt}
+            onOpenStats={() => navigate('/stats')}
           />
         )}
 
@@ -580,6 +582,7 @@ function App() {
             players={players}
             updatePlayer={(playerId, patch) => dispatch({ type: 'UPDATE_PLAYER', playerId, patch })}
             addPlayer={dialogs.addPlayer}
+            ensurePlayerCount={dialogs.ensurePlayerCount}
             removePlayer={(playerId) => dispatch({ type: 'REMOVE_PLAYER', playerId })}
             availableFactions={dialogs.availableFactions}
             isFactionTaken={(factionId, playerId) => select.isFactionTaken(game, factionId, playerId)}
@@ -590,12 +593,52 @@ function App() {
             roomError={roomError}
             claimedSeats={room?.claimedSeats || []}
             onLeaveRoom={handleLeaveRoom}
+            onOpenStats={() => navigate('/stats')}
+            onPlaySolo={handlePlaySolo}
+            importGameToken={handleImportGameToken}
             isSolo={soloSetup && !hasRoomSession}
           />
         )}
 
         {isGameActive && (
           <>
+            {activePlayer
+              && turnOrder.length > 0
+              && !passed[activePlayer.id]
+              && (perms?.role === ROLES.ADMIN || perms?.role === ROLES.PLAYER || perms?.role === ROLES.VIEWER)
+              && (
+              <div className={mobileShell ? 'hidden md:block' : undefined}>
+                <ActiveTurnBar
+                  activePlayer={activePlayer}
+                  strategyCards={strategyCards}
+                  allStrategiesPlayed={allStrategiesPlayed}
+                  strategyActionTaken={!!strategyActionTaken || !!imperialClaim?.active || !!techResearch?.active}
+                  strategyResolutionActive={
+                    !!strategyResolution?.active || !!imperialClaim?.active || !!techResearch?.active
+                  }
+                  resolvingCardId={strategyResolution?.cardId ?? null}
+                  onPlayStrategy={dialogs.playStrategyCard}
+                  turnTime={turnTime}
+                  onNextTurn={() => dispatch({ type: 'NEXT_TURN' })}
+                  onPassTurn={dialogs.passTurn}
+                  onOpenCombat={ui.openCombatModal}
+                  canPlay={
+                    !victoryLocked
+                    && (perms?.role === ROLES.ADMIN || perms?.role === ROLES.PLAYER)
+                    && (!perms?.seatPlayerId || activePlayer?.id === perms.seatPlayerId)
+                  }
+                  canNextTurn={
+                    !victoryLocked
+                    && (perms?.role === ROLES.ADMIN || perms?.role === ROLES.PLAYER)
+                    && (!perms?.seatPlayerId || activePlayer?.id === perms.seatPlayerId)
+                    && !strategyResolution?.active
+                    && !imperialClaim?.active
+                    && !techResearch?.active
+                  }
+                  canCombat={perms?.role === ROLES.ADMIN && !victoryLocked}
+                />
+              </div>
+            )}
             {isPlayerClient && (
               <Suspense fallback={<BoardChunkFallback />}>
                 <PlayerMobileConsole
@@ -967,6 +1010,7 @@ function App() {
             show={ui.showSpeakerSelectionModal}
             activePlayer={activePlayer}
             activePlayers={activePlayers}
+            speakerId={speakerId}
             onSelectSpeaker={(playerId) => {
               dispatch({ type: 'SET_SPEAKER', playerId });
               dispatch({ type: 'PLAY_STRATEGY', cardId: 3 });

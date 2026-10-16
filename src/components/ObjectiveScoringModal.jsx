@@ -202,7 +202,7 @@ export function ObjectiveScoringModal({
         role="dialog"
         aria-modal="true"
         aria-labelledby="objective-scoring-title"
-        className="hidden md:flex bg-slate-900 border border-amber-500/40 rounded-3xl w-full max-w-5xl max-h-[90vh] overflow-hidden shadow-[0_0_40px_rgba(245,158,11,0.2)] flex-col"
+        className="hidden md:flex game-modal-panel w-full max-w-5xl max-h-[90vh] overflow-hidden flex-col"
       >
         <div className="flex justify-between items-center gap-3 px-5 py-4 border-b border-slate-800 flex-shrink-0">
           <div className="min-w-0">

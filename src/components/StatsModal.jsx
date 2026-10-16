@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { STRATEGY_CARDS } from '../data/gameData';
 import { formatTime } from '../utils/game';
 import { isCloudConfigured } from '../config';
@@ -16,9 +16,13 @@ import { DEFAULT_HISTORY_FILTERS, filterHistory } from '../analytics/filter';
 import { downloadCsv, gamesToCsv, playersToCsv } from '../analytics/exportCsv';
 import { formatTechList } from '../analytics/techLabels';
 import { buildShareCardText } from '../analytics/shareCard';
+import { HubCosmosBackdrop } from './HubCosmosBackdrop';
 
 const TABS = [
-  { id: 'analytics', label: 'Аналитика' },
+  { id: 'overview', label: 'Обзор' },
+  { id: 'players', label: 'Игроки' },
+  { id: 'factions', label: 'Фракции' },
+  { id: 'meta', label: 'Мета' },
   { id: 'compare', label: 'Сравнение' },
   { id: 'history', label: 'История' },
 ];
@@ -50,34 +54,33 @@ function formatAvgTime(seconds) {
 
 function Section({ title, icon, children, empty }) {
   return (
-    <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 space-y-3">
-      <h4 className="font-orbitron font-bold text-sm uppercase mb-1 flex items-center gap-2 text-slate-200">
+    <section className="stats-section">
+      <h4 className="stats-section-title">
         <i className={`fa-solid ${icon}`} aria-hidden="true" />
         {title}
       </h4>
       {empty ? (
-        <p className="text-xs text-slate-500 py-2">{empty}</p>
+        <p className="stats-muted">{empty}</p>
       ) : children}
-    </div>
+    </section>
   );
 }
 
 function FilterBar({ filters, onChange, filteredCount, totalCount }) {
   return (
-    <div className="flex flex-wrap items-end gap-3 bg-slate-950/80 border border-slate-800 rounded-2xl p-3">
-      <label className="flex flex-col gap-1 text-[10px] font-bold uppercase tracking-wider text-slate-500">
+    <div className="stats-filter-bar">
+      <label className="stats-field">
         Дополнения
         <select
           value={filters.expansions}
           onChange={(e) => onChange({ ...filters, expansions: e.target.value })}
-          className="bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 min-w-[7rem]"
         >
           {EXPANSION_OPTIONS.map((o) => (
             <option key={o.value} value={o.value}>{o.label}</option>
           ))}
         </select>
       </label>
-      <label className="flex flex-col gap-1 text-[10px] font-bold uppercase tracking-wider text-slate-500">
+      <label className="stats-field">
         Игроков
         <select
           value={filters.playerCount ?? ''}
@@ -85,25 +88,23 @@ function FilterBar({ filters, onChange, filteredCount, totalCount }) {
             ...filters,
             playerCount: e.target.value === '' ? null : Number(e.target.value),
           })}
-          className="bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 min-w-[5rem]"
         >
           {PLAYER_COUNT_OPTIONS.map((o) => (
             <option key={o.value || 'any'} value={o.value}>{o.label}</option>
           ))}
         </select>
       </label>
-      <label className="flex flex-col gap-1 text-[10px] font-bold uppercase tracking-wider text-slate-500 flex-1 min-w-[8rem]">
+      <label className="stats-field stats-field--grow">
         Победитель
         <input
           type="search"
           value={filters.winner}
           onChange={(e) => onChange({ ...filters, winner: e.target.value })}
           placeholder="Имя…"
-          className="bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-200"
         />
       </label>
-      <div className="text-[11px] text-slate-500 pb-1.5 ml-auto">
-        Показано <span className="text-slate-300 font-bold">{filteredCount}</span>
+      <div className="stats-filter-count">
+        Показано <strong>{filteredCount}</strong>
         {' / '}
         {totalCount}
       </div>
@@ -114,23 +115,23 @@ function FilterBar({ filters, onChange, filteredCount, totalCount }) {
 function ExportBar({ history }) {
   const disabled = !history.length;
   return (
-    <div className="flex flex-wrap gap-2">
+    <div className="stats-export-bar">
       <button
         type="button"
         disabled={disabled}
         onClick={() => downloadCsv('ti4-games.csv', gamesToCsv(history))}
-        className="text-xs px-3 py-1.5 rounded-xl border border-slate-700 bg-slate-900 text-slate-300 hover:border-cyan-700 hover:text-cyan-300 disabled:opacity-40 disabled:cursor-not-allowed transition"
+        className="stats-chip-btn"
       >
-        <i className="fa-solid fa-file-csv mr-1.5" aria-hidden="true" />
+        <i className="fa-solid fa-file-csv" aria-hidden="true" />
         CSV партий
       </button>
       <button
         type="button"
         disabled={disabled}
         onClick={() => downloadCsv('ti4-players.csv', playersToCsv(history))}
-        className="text-xs px-3 py-1.5 rounded-xl border border-slate-700 bg-slate-900 text-slate-300 hover:border-cyan-700 hover:text-cyan-300 disabled:opacity-40 disabled:cursor-not-allowed transition"
+        className="stats-chip-btn"
       >
-        <i className="fa-solid fa-file-csv mr-1.5" aria-hidden="true" />
+        <i className="fa-solid fa-file-csv" aria-hidden="true" />
         CSV игроков
       </button>
     </div>
@@ -146,8 +147,8 @@ function ScoreBreakdownInline({ breakdown }) {
     breakdown.support ? `supp. ${breakdown.support}` : null,
     breakdown.extra ? `др. ${breakdown.extra}` : null,
   ].filter(Boolean);
-  if (!parts.length) return <span className="text-slate-600">—</span>;
-  return <span className="text-slate-500">{parts.join(' · ')}</span>;
+  if (!parts.length) return <span className="is-muted">—</span>;
+  return <span className="is-muted">{parts.join(' · ')}</span>;
 }
 
 /** Simple horizontal bar chart — no chart library. */
@@ -160,18 +161,18 @@ function BarList({ items, valueKey = 'value', labelKey = 'label', max: maxOverri
       {list.map((item) => {
         const value = Number(item[valueKey]) || 0;
         const pctWidth = Math.max(0, Math.min(100, (value / max) * 100));
-        const color = item.color || 'bg-cyan-500';
+        const color = item.color || 'stats-bar-fill';
         return (
-          <li key={item.id || item[labelKey]} className="space-y-1">
-            <div className="flex justify-between gap-2 text-[11px]">
-              <span className="text-slate-300 truncate">{item[labelKey]}</span>
-              <span className="text-slate-500 flex-shrink-0 font-mono">
+          <li key={item.id || item[labelKey]} className="stats-bar-item">
+            <div className="stats-bar-meta">
+              <span className="stats-bar-label">{item[labelKey]}</span>
+              <span className="stats-bar-value">
                 {value}{suffix}
                 {item.right != null ? ` · ${item.right}` : ''}
               </span>
             </div>
-            <div className="h-2 rounded-full bg-slate-800 overflow-hidden">
-              <div className={`h-full rounded-full ${color}`} style={{ width: `${pctWidth}%` }} />
+            <div className="stats-bar-track">
+              <div className={`stats-bar-fill-el ${color}`} style={{ width: `${pctWidth}%` }} />
             </div>
           </li>
         );
@@ -189,16 +190,16 @@ function VpMixBars({ vpMix, title = 'Состав ПО' }) {
     );
   }
   const bars = [
-    { id: 'obj', label: 'Цели', value: vpMix.avgObjectives, share: vpMix.shareObjectives, color: 'bg-amber-400' },
-    { id: 'sec', label: 'Секретки', value: vpMix.avgSecrets, share: vpMix.shareSecrets, color: 'bg-violet-400' },
-    { id: 'cus', label: 'Хранители', value: vpMix.avgCustodians, share: vpMix.shareCustodians, color: 'bg-cyan-400' },
-    { id: 'sup', label: 'Support', value: vpMix.avgSupport, share: vpMix.shareSupport, color: 'bg-emerald-400' },
-    { id: 'ext', label: 'Прочее', value: vpMix.avgExtra, share: vpMix.shareExtra, color: 'bg-slate-400' },
+    { id: 'obj', label: 'Цели', value: vpMix.avgObjectives, share: vpMix.shareObjectives, color: 'stats-bar-fill' },
+    { id: 'sec', label: 'Секретки', value: vpMix.avgSecrets, share: vpMix.shareSecrets, color: 'stats-bar-fill is-soft' },
+    { id: 'cus', label: 'Хранители', value: vpMix.avgCustodians, share: vpMix.shareCustodians, color: 'stats-bar-fill' },
+    { id: 'sup', label: 'Support', value: vpMix.avgSupport, share: vpMix.shareSupport, color: 'stats-bar-fill is-soft' },
+    { id: 'ext', label: 'Прочее', value: vpMix.avgExtra, share: vpMix.shareExtra, color: 'stats-bar-fill is-muted' },
   ].map((b) => ({ ...b, right: `${b.share}%` }));
 
   return (
     <Section title={title} icon="fa-chart-pie">
-      <p className="text-[11px] text-slate-500 -mt-1">
+      <p className="stats-note">
         Среднее по {vpMix.gamesWithDetail} сиденьям · итог ≈ {vpMix.avgTotal} ПО
       </p>
       <BarList items={bars} />
@@ -211,66 +212,60 @@ function ProfilePanel({ profile, onBack, onOpenPlayer, onOpenFaction }) {
   const isPlayer = profile.type === 'player';
 
   return (
-    <div className="space-y-5">
-      <div className="flex items-start justify-between gap-3">
+    <div className="stats-body stats-stack">
+      <div className="stats-profile-head">
         <div>
-          <button
-            type="button"
-            onClick={onBack}
-            className="text-xs text-slate-500 hover:text-cyan-300 transition mb-2 inline-flex items-center gap-1.5"
-          >
+          <button type="button" onClick={onBack} className="stats-text-btn">
             <i className="fa-solid fa-arrow-left" aria-hidden="true" />
-            К аналитике
+            {isPlayer ? 'К игрокам' : 'К фракциям'}
           </button>
-          <h4 className="font-orbitron font-black text-xl text-white">
-            {isPlayer ? profile.name : profile.name}
-          </h4>
-          <p className="text-xs text-slate-500 mt-0.5">
+          <h4 className="stats-profile-name">{profile.name}</h4>
+          <p className="stats-note">
             {isPlayer ? 'Профиль игрока' : 'Профиль фракции'}
             {' · '}
             {isPlayer ? `${profile.games} игр` : `${profile.picks} пиков`}
             {' · '}
-            WR {isPlayer ? profile.winRate : profile.winRate}%
+            WR {profile.winRate}%
           </p>
         </div>
-        <div className="text-right text-xs space-y-1">
-          <div className="text-amber-400 font-orbitron font-bold text-2xl">
+        <div className="stats-profile-score">
+          <div className="stats-profile-score-value">
             {isPlayer ? profile.avgScore : profile.avgVp}
-            <span className="text-sm text-slate-500 ml-1">ср. ПО</span>
+            <span>ср. ПО</span>
           </div>
-          <div className="text-slate-500">⏱ {formatAvgTime(profile.avgGameTime)}</div>
+          <div className="stats-note">{formatAvgTime(profile.avgGameTime)}</div>
         </div>
       </div>
 
-      <div className="grid sm:grid-cols-4 gap-2 text-center text-xs">
-        <div className="rounded-xl border border-slate-800 bg-slate-950 p-3">
-          <div className="text-slate-500 uppercase text-[10px]">Победы</div>
-          <div className="font-orbitron font-bold text-amber-400 text-lg">{profile.wins}</div>
+      <div className="stats-kpi-grid">
+        <div className="stats-kpi">
+          <div className="stats-kpi-label">Победы</div>
+          <div className="stats-kpi-value is-gold">{profile.wins}</div>
         </div>
-        <div className="rounded-xl border border-slate-800 bg-slate-950 p-3">
-          <div className="text-slate-500 uppercase text-[10px]">Урон</div>
-          <div className="font-orbitron font-bold text-red-400 text-lg">{profile.avgDamage}</div>
+        <div className="stats-kpi">
+          <div className="stats-kpi-label">Урон</div>
+          <div className="stats-kpi-value is-danger">{profile.avgDamage}</div>
         </div>
-        <div className="rounded-xl border border-slate-800 bg-slate-950 p-3">
-          <div className="text-slate-500 uppercase text-[10px]">Breakthrough</div>
-          <div className="font-orbitron font-bold text-violet-300 text-lg">{profile.breakthroughRate}%</div>
+        <div className="stats-kpi">
+          <div className="stats-kpi-label">Breakthrough</div>
+          <div className="stats-kpi-value">{profile.breakthroughRate}%</div>
         </div>
-        <div className="rounded-xl border border-slate-800 bg-slate-950 p-3">
-          <div className="text-slate-500 uppercase text-[10px]">2° стратегии</div>
-          <div className="font-orbitron font-bold text-cyan-300 text-lg">
+        <div className="stats-kpi">
+          <div className="stats-kpi-label">2° стратегии</div>
+          <div className="stats-kpi-value is-gold">
             {profile.secondary?.gamesWithPlays
               ? `${profile.secondary.engagementRate}%`
               : '—'}
           </div>
           {profile.secondary?.gamesWithPlays > 0 && (
-            <div className="text-[10px] text-slate-600 mt-0.5">
+            <div className="stats-kpi-sub">
               {profile.secondary.secondaryPlays}/{profile.secondary.secondaryPlays + profile.secondary.secondaryPasses}
             </div>
           )}
         </div>
       </div>
 
-      <div className="grid md:grid-cols-2 gap-4">
+      <div className="stats-grid-2">
         <VpMixBars vpMix={profile.vpMix} title="Откуда ПО" />
         <Section
           title="Стратегии"
@@ -283,7 +278,7 @@ function ProfilePanel({ profile, onBack, onOpenPlayer, onOpenFaction }) {
               label: s.name,
               value: s.picks,
               right: `WR ${s.winRate}%`,
-              color: 'bg-cyan-500',
+              color: 'stats-bar-fill',
             }))}
           />
         </Section>
@@ -300,24 +295,24 @@ function ProfilePanel({ profile, onBack, onOpenPlayer, onOpenFaction }) {
             label: t.name,
             value: t.games,
             right: `WR ${t.winRate}%`,
-            color: 'bg-sky-500',
+            color: 'stats-bar-fill',
           }))}
         />
       </Section>
 
       {isPlayer && profile.factions?.length > 0 && (
         <Section title="Фракции" icon="fa-planet-ringed">
-          <ul className="space-y-1.5 text-xs">
+          <ul className="stats-list">
             {profile.factions.map((f) => (
-              <li key={f.id || f.name} className="flex justify-between gap-2 border-b border-slate-800/50 py-1.5">
+              <li key={f.id || f.name} className="stats-list-row">
                 <button
                   type="button"
                   onClick={() => onOpenFaction?.(f.id || f.name)}
-                  className="text-slate-200 hover:text-cyan-300 font-bold truncate text-left"
+                  className="stats-link"
                 >
                   {f.name}
                 </button>
-                <span className="text-slate-500 flex-shrink-0">{f.games} игр · WR {f.winRate}%</span>
+                <span className="stats-list-meta">{f.games} игр · WR {f.winRate}%</span>
               </li>
             ))}
           </ul>
@@ -326,17 +321,17 @@ function ProfilePanel({ profile, onBack, onOpenPlayer, onOpenFaction }) {
 
       {!isPlayer && profile.players?.length > 0 && (
         <Section title="Игроки на фракции" icon="fa-users">
-          <ul className="space-y-1.5 text-xs">
+          <ul className="stats-list">
             {profile.players.map((p) => (
-              <li key={p.key} className="flex justify-between gap-2 border-b border-slate-800/50 py-1.5">
+              <li key={p.key} className="stats-list-row">
                 <button
                   type="button"
                   onClick={() => onOpenPlayer?.(p.key)}
-                  className="text-slate-200 hover:text-cyan-300 font-bold truncate text-left"
+                  className="stats-link"
                 >
                   {p.name}
                 </button>
-                <span className="text-slate-500 flex-shrink-0">{p.games} игр · WR {p.winRate}%</span>
+                <span className="stats-list-meta">{p.games} игр · WR {p.winRate}%</span>
               </li>
             ))}
           </ul>
@@ -344,17 +339,14 @@ function ProfilePanel({ profile, onBack, onOpenPlayer, onOpenFaction }) {
       )}
 
       <Section title="Недавние партии" icon="fa-clock-rotate-left" empty={!profile.recentGames?.length ? 'Нет партий.' : null}>
-        <ul className="space-y-1.5 text-xs">
+        <ul className="stats-list">
           {(profile.recentGames || []).map((g, idx) => (
-            <li
-              key={`${g.id}-${idx}`}
-              className="flex justify-between gap-2 border-b border-slate-800/50 py-1.5"
-            >
-              <span className="text-slate-400 truncate">
+            <li key={`${g.id}-${idx}`} className="stats-list-row">
+              <span className="stats-list-main">
                 {g.date || '—'}
                 {isPlayer ? ` · ${g.faction || '—'}` : ` · ${g.player || '—'}`}
               </span>
-              <span className={`flex-shrink-0 font-mono ${g.isWinner ? 'text-amber-400' : 'text-slate-500'}`}>
+              <span className={`stats-list-meta mono${g.isWinner ? ' is-win' : ''}`}>
                 {g.score} ПО{g.isWinner ? ' ★' : ''}
               </span>
             </li>
@@ -379,27 +371,23 @@ function FactionStrategyHeatmap({ matrix }) {
 
   return (
     <Section title="Фракция × стратегия" icon="fa-table-cells">
-      <p className="text-[11px] text-slate-500 -mt-1">
+      <p className="stats-note">
         Частота пиков в драфте · {matrix.gamesWithPicks} парт. · насыщенность = число пиков
       </p>
-      <div className="overflow-x-auto">
-        <table className="text-[10px] border-collapse min-w-full">
+      <div className="stats-scroll">
+        <table className="stats-heatmap">
           <thead>
             <tr>
-              <th className="p-1 text-left text-slate-500 sticky left-0 bg-slate-950 z-10">Фракция</th>
+              <th className="stats-heatmap-sticky">Фракция</th>
               {cards.map((c) => (
-                <th key={c.id} className="p-1 text-center text-slate-500 font-mono w-8" title={c.name}>
-                  {c.id}
-                </th>
+                <th key={c.id} title={c.name}>{c.id}</th>
               ))}
             </tr>
           </thead>
           <tbody>
             {factions.map((f) => (
-              <tr key={f.key} className="border-t border-slate-800/60">
-                <td className="p-1 pr-2 text-slate-300 font-bold truncate max-w-[7rem] sticky left-0 bg-slate-950 z-10">
-                  {f.name}
-                </td>
+              <tr key={f.key}>
+                <td className="stats-heatmap-sticky is-name">{f.name}</td>
                 {cards.map((c) => {
                   const cell = cellAt(f.key, c.id);
                   const n = cell?.picks || 0;
@@ -408,15 +396,13 @@ function FactionStrategyHeatmap({ matrix }) {
                     ? `${f.name} · ${c.name}: ${n} пик., WR ${cell.winRate}%`
                     : '';
                   return (
-                    <td key={c.id} className="p-0.5">
+                    <td key={c.id}>
                       <div
-                        className="h-7 min-w-[1.75rem] rounded-md flex items-center justify-center font-mono text-[10px] border border-slate-800/80"
-                        style={{
-                          backgroundColor: n
-                            ? `rgba(34, 211, 238, ${0.12 + intensity * 0.75})`
-                            : 'rgba(15, 23, 42, 0.5)',
-                          color: n ? '#a5f3fc' : '#334155',
-                        }}
+                        className={`stats-heat-cell${n ? ' has-value' : ''}`}
+                        style={n ? {
+                          backgroundColor: `rgba(201, 162, 39, ${0.12 + intensity * 0.72})`,
+                          color: intensity > 0.45 ? '#1a1408' : 'var(--hub-gold-bright)',
+                        } : undefined}
                         title={title}
                       >
                         {n || '·'}
@@ -444,23 +430,21 @@ function DurationTrendChart({ trend, avgSeconds }) {
   const maxSec = Math.max(...trend.map((t) => t.actionSeconds), 1);
   return (
     <Section title="Длительность партий" icon="fa-hourglass-half">
-      <p className="text-[11px] text-slate-500 -mt-1">
+      <p className="stats-note">
         Сумма времени фаз действий · ср. {formatAvgTime(avgSeconds)} на партию
       </p>
-      <ul className="space-y-1.5 max-h-48 overflow-y-auto modal-scroll">
+      <ul className="stats-trend-list modal-scroll">
         {trend.map((row) => (
-          <li key={row.id} className="flex items-center gap-2 text-[11px]">
-            <span className="text-slate-500 w-20 truncate flex-shrink-0">{row.date || '—'}</span>
-            <div className="flex-1 h-2 rounded-full bg-slate-800 overflow-hidden">
+          <li key={row.id} className="stats-trend-row">
+            <span className="stats-trend-date">{row.date || '—'}</span>
+            <div className="stats-bar-track">
               <div
-                className="h-full rounded-full bg-teal-500/80"
+                className="stats-bar-fill-el stats-bar-fill"
                 style={{ width: `${(row.actionSeconds / maxSec) * 100}%` }}
               />
             </div>
-            <span className="font-mono text-slate-400 w-14 text-right flex-shrink-0">
-              {formatTime(row.actionSeconds)}
-            </span>
-            <span className="text-slate-600 w-8 text-right flex-shrink-0">{row.rounds}R</span>
+            <span className="stats-trend-time">{formatTime(row.actionSeconds)}</span>
+            <span className="stats-trend-rounds">{row.rounds}R</span>
           </li>
         ))}
       </ul>
@@ -501,27 +485,23 @@ function CompareTab({ history, analytics, onOpenPlayer, onOpenFaction }) {
   ];
 
   return (
-    <div className="space-y-5">
-      <div className="flex flex-wrap gap-2 items-center">
-        <span className="text-[10px] font-bold uppercase text-slate-500">Сравнить</span>
+    <div className="stats-body stats-stack">
+      <div className="stats-compare-toolbar">
+        <span className="stats-toolbar-label">Сравнить</span>
         {['player', 'faction'].map((m) => (
           <button
             key={m}
             type="button"
             onClick={() => { setMode(m); setSelected([]); }}
-            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${
-              mode === m
-                ? 'bg-purple-950/70 text-purple-300 border border-purple-700/50'
-                : 'bg-slate-900 text-slate-500 border border-slate-800'
-            }`}
+            className={`stats-pill${mode === m ? ' is-on' : ''}`}
           >
             {m === 'player' ? 'Игроков' : 'Фракции'}
           </button>
         ))}
-        <span className="text-[10px] text-slate-600 ml-auto">до 3</span>
+        <span className="stats-toolbar-hint">до 3</span>
       </div>
 
-      <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto modal-scroll">
+      <div className="stats-pill-cloud modal-scroll">
         {options.map((o) => {
           const active = selected.includes(o.key);
           return (
@@ -529,11 +509,7 @@ function CompareTab({ history, analytics, onOpenPlayer, onOpenFaction }) {
               key={o.key}
               type="button"
               onClick={() => toggle(o.key)}
-              className={`px-2.5 py-1 rounded-lg text-xs font-bold border transition ${
-                active
-                  ? 'bg-cyan-950/60 text-cyan-300 border-cyan-700/50'
-                  : 'bg-slate-950 text-slate-400 border-slate-800 hover:border-slate-600'
-              }`}
+              className={`stats-pill${active ? ' is-on' : ''}`}
             >
               {o.label}
             </button>
@@ -542,18 +518,18 @@ function CompareTab({ history, analytics, onOpenPlayer, onOpenFaction }) {
       </div>
 
       {selected.length < 2 ? (
-        <p className="text-sm text-slate-500 text-center py-8">Выберите минимум двух для сравнения.</p>
+        <p className="stats-state stats-state--compact">Выберите минимум двух для сравнения.</p>
       ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
+        <div className="stats-scroll">
+          <table className="stats-table">
             <thead>
-              <tr className="border-b border-slate-800 text-slate-500 uppercase font-orbitron">
-                <th className="py-2 pr-3">Метрика</th>
+              <tr>
+                <th>Метрика</th>
                 {profiles.map((p) => (
-                  <th key={p.key} className="py-2 text-center px-2">
+                  <th key={p.key} className="is-center">
                     <button
                       type="button"
-                      className="text-cyan-300 hover:text-white font-bold"
+                      className="stats-link"
                       onClick={() => (
                         mode === 'player'
                           ? onOpenPlayer?.(p.key)
@@ -568,27 +544,25 @@ function CompareTab({ history, analytics, onOpenPlayer, onOpenFaction }) {
             </thead>
             <tbody>
               {metrics.map((m) => (
-                <tr key={m.label} className="border-b border-slate-800/50">
-                  <td className="py-2 text-slate-500">{m.label}</td>
+                <tr key={m.label}>
+                  <td className="is-muted">{m.label}</td>
                   {profiles.map((p) => (
-                    <td key={p.key} className="py-2 text-center font-mono text-slate-200 px-2">
-                      {m.get(p)}
-                    </td>
+                    <td key={p.key} className="is-center mono">{m.get(p)}</td>
                   ))}
                 </tr>
               ))}
-              <tr className="border-b border-slate-800/50">
-                <td className="py-2 text-slate-500">Цели (ср.)</td>
+              <tr>
+                <td className="is-muted">Цели (ср.)</td>
                 {profiles.map((p) => (
-                  <td key={p.key} className="py-2 text-center text-amber-300/90 px-2">
+                  <td key={p.key} className="is-center is-gold">
                     {p.vpMix?.gamesWithDetail ? p.vpMix.avgObjectives : '—'}
                   </td>
                 ))}
               </tr>
               <tr>
-                <td className="py-2 text-slate-500">Секретки (ср.)</td>
+                <td className="is-muted">Секретки (ср.)</td>
                 {profiles.map((p) => (
-                  <td key={p.key} className="py-2 text-center text-violet-300/90 px-2">
+                  <td key={p.key} className="is-center is-gold">
                     {p.vpMix?.gamesWithDetail ? p.vpMix.avgSecrets : '—'}
                   </td>
                 ))}
@@ -601,66 +575,319 @@ function CompareTab({ history, analytics, onOpenPlayer, onOpenFaction }) {
   );
 }
 
-function AnalyticsTables({ analytics, onOpenPlayer, onOpenFaction, durationTrend, avgDurationSec, factionMatrix }) {
-  const {
-    players, factions, objectives, strategy, vpSources, techs, politics, strategyExecution,
-  } = analytics;
+function OverviewPanel({
+  analytics,
+  durationTrend,
+  avgDurationSec,
+  recentGames,
+  onOpenPlayer,
+  onOpenFaction,
+  onGoTab,
+}) {
+  const { players = [], factions = [], gameCount } = analytics;
+  const topPlayers = players.slice(0, 5);
+  const topFactions = factions.slice(0, 5);
+  const recent = (recentGames || []).slice(0, 4);
+  const leader = players[0];
 
   return (
-    <div className="space-y-6">
-      <div className="grid md:grid-cols-2 gap-4">
-        <DurationTrendChart trend={durationTrend} avgSeconds={avgDurationSec} />
-        <VpMixBars vpMix={vpSources} title="Состав ПО (компания)" />
+    <div className="stats-body stats-stack">
+      <div className="stats-overview-kpis">
+        <div className="stats-kpi">
+          <div className="stats-kpi-label">Партий</div>
+          <div className="stats-kpi-value is-gold">{gameCount}</div>
+        </div>
+        <div className="stats-kpi">
+          <div className="stats-kpi-label">Игроков</div>
+          <div className="stats-kpi-value">{players.length}</div>
+        </div>
+        <div className="stats-kpi">
+          <div className="stats-kpi-label">Фракций</div>
+          <div className="stats-kpi-value">{factions.length}</div>
+        </div>
+        <div className="stats-kpi">
+          <div className="stats-kpi-label">Ср. длительность</div>
+          <div className="stats-kpi-value">{formatAvgTime(avgDurationSec)}</div>
+        </div>
+        <div className="stats-kpi">
+          <div className="stats-kpi-label">Лидер WR</div>
+          <div className="stats-kpi-value is-gold">
+            {leader ? (
+              <button type="button" className="stats-link" onClick={() => onOpenPlayer?.(leader.key)}>
+                {leader.name}
+              </button>
+            ) : '—'}
+          </div>
+          {leader && <div className="stats-kpi-sub">WR {leader.winRate}% · {leader.wins} поб.</div>}
+        </div>
       </div>
 
-      <FactionStrategyHeatmap matrix={factionMatrix} />
+      <div className="stats-grid-2">
+        <Section title="Топ игроков" icon="fa-trophy" empty={!topPlayers.length ? 'Нет данных.' : null}>
+          <ul className="stats-list">
+            {topPlayers.map((p, idx) => (
+              <li key={p.key} className="stats-list-row">
+                <button type="button" className="stats-link" onClick={() => onOpenPlayer?.(p.key)}>
+                  <span className="stats-rank">{idx + 1}.</span> {p.name}
+                </button>
+                <span className="stats-list-meta">
+                  {p.wins} поб. · WR {p.winRate}% · {p.avgScore} ПО
+                </span>
+              </li>
+            ))}
+          </ul>
+        </Section>
+        <Section title="Топ фракций" icon="fa-planet-ringed" empty={!topFactions.length ? 'Нет данных.' : null}>
+          <ul className="stats-list">
+            {topFactions.map((f, idx) => (
+              <li key={f.key} className="stats-list-row">
+                <button type="button" className="stats-link" onClick={() => onOpenFaction?.(f.key)}>
+                  <span className="stats-rank">{idx + 1}.</span> {f.name}
+                </button>
+                <span className="stats-list-meta">
+                  {f.wins} поб. · WR {f.winRate}% · {f.picks} пик.
+                </span>
+              </li>
+            ))}
+          </ul>
+        </Section>
+      </div>
 
-      <div className="grid md:grid-cols-2 gap-4">
+      <div className="stats-grid-2">
+        <DurationTrendChart trend={durationTrend} avgSeconds={avgDurationSec} />
+        <VpMixBars vpMix={analytics.vpSources} title="Состав ПО (компания)" />
+      </div>
+
+      <Section title="Недавние партии" icon="fa-clock-rotate-left" empty={!recent.length ? 'Нет партий.' : null}>
+        <ul className="stats-list">
+          {recent.map((g) => (
+            <li key={g.id} className="stats-list-row">
+              <span className="stats-list-main">
+                {g.date}
+                <span className="is-muted">
+                  {' · '}{g.playerCount || (g.players || []).length} игр. · {g.roundsCount}R
+                </span>
+              </span>
+              <span className="stats-list-meta is-gold">
+                {g.winner}{g.winningFaction ? ` (${g.winningFaction})` : ''}
+              </span>
+            </li>
+          ))}
+        </ul>
+        <button type="button" className="stats-text-btn" onClick={() => onGoTab?.('history')}>
+          Открыть всю историю
+          <i className="fa-solid fa-arrow-right" aria-hidden="true" />
+        </button>
+      </Section>
+    </div>
+  );
+}
+
+function PlayersPanel({ players, onOpenPlayer, onOpenFaction }) {
+  return (
+    <div className="stats-body stats-stack">
+      <Section title="Игроки" icon="fa-users" empty={!players?.length ? 'Нет данных об игроках.' : null}>
+        <p className="stats-note">
+          Главные показатели компании. Нажмите имя — профиль с уроном, стратегиями и партиями.
+        </p>
+        <div className="stats-scroll">
+          <table className="stats-table">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Игрок</th>
+                <th className="is-center">Игр</th>
+                <th className="is-center">Поб.</th>
+                <th className="is-center">WR</th>
+                <th className="is-center">Ср. ПО</th>
+                <th className="is-right">Ср. время</th>
+                <th>Топ фракции</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(players || []).map((p, idx) => (
+                <tr key={p.key}>
+                  <td className="is-center stats-rank">{idx + 1}</td>
+                  <td>
+                    <button type="button" onClick={() => onOpenPlayer?.(p.key)} className="stats-link">
+                      {p.name}
+                    </button>
+                  </td>
+                  <td className="is-center is-muted">{p.games}</td>
+                  <td className="is-center is-gold">{p.wins}</td>
+                  <td className="is-center is-gold">{p.winRate}%</td>
+                  <td className="is-center">{p.avgScore}</td>
+                  <td className="is-right mono">{formatAvgTime(p.avgGameTime)}</td>
+                  <td className="stats-factions-cell">
+                    {(p.factions || []).slice(0, 2).map((f) => (
+                      <div key={f.id || f.name}>
+                        <button
+                          type="button"
+                          onClick={() => onOpenFaction?.(f.id || String(f.name || '').toLowerCase())}
+                          className="stats-link is-soft"
+                        >
+                          {f.name}
+                        </button>
+                        <span className="is-muted"> · {f.wins}/{f.games}</span>
+                      </div>
+                    ))}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Section>
+    </div>
+  );
+}
+
+function FactionsPanel({ factions, onOpenFaction }) {
+  return (
+    <div className="stats-body stats-stack">
+      <Section title="Фракции" icon="fa-planet-ringed" empty={!factions?.length ? 'Нет данных о фракциях.' : null}>
+        <p className="stats-note">
+          Пики и win rate. Нажмите фракцию — профиль с игроками, стратегиями и недавними партиями.
+        </p>
+        <div className="stats-scroll">
+          <table className="stats-table">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Фракция</th>
+                <th className="is-center">Пиков</th>
+                <th className="is-center">Поб.</th>
+                <th className="is-center">WR</th>
+                <th className="is-center">Ср. ПО</th>
+                <th className="is-center">Ср. раунд</th>
+                <th className="is-right">Ср. время</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(factions || []).map((f, idx) => (
+                <tr key={f.key}>
+                  <td className="is-center stats-rank">{idx + 1}</td>
+                  <td>
+                    <button type="button" onClick={() => onOpenFaction?.(f.key)} className="stats-link">
+                      {f.name}
+                    </button>
+                  </td>
+                  <td className="is-center is-muted">{f.picks}</td>
+                  <td className="is-center is-gold">{f.wins}</td>
+                  <td className="is-center is-gold">{f.winRate}%</td>
+                  <td className="is-center">{f.avgVp}</td>
+                  <td className="is-center is-muted">{f.avgRounds}</td>
+                  <td className="is-right mono">{formatAvgTime(f.avgGameTime)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Section>
+    </div>
+  );
+}
+
+function MetaPanel({ analytics, factionMatrix }) {
+  const {
+    objectives = {},
+    strategy = {},
+    techs,
+    politics,
+    strategyExecution,
+  } = analytics;
+  const mostScored = objectives.mostScored || [];
+  const rarelyScored = objectives.rarelyScored || [];
+  const strategyCards = strategy.cards || [];
+
+  return (
+    <div className="stats-body stats-stack">
+      <p className="stats-note">
+        Глубже по метаигре: стратегии, цели, технологии и политика. Для людей и фракций — вкладки выше.
+      </p>
+
+      <div className="stats-grid-2">
         <Section
           title="Пики стратегий"
           icon="fa-chart-simple"
-          empty={!strategy.cards?.length ? 'Нет данных о драфте.' : null}
+          empty={!strategyCards.length ? 'Нет данных о драфте.' : null}
         >
           <BarList
-            items={(strategy.cards || []).slice(0, 8).map((c) => ({
+            items={strategyCards.slice(0, 8).map((c) => ({
               id: c.cardId,
               label: c.name,
               value: c.picks,
               right: `WR ${c.winRateWhenPicked}%`,
-              color: 'bg-amber-500',
+              color: 'stats-bar-fill',
             }))}
           />
         </Section>
+        <Section
+          title="Технологии"
+          icon="fa-microchip"
+          empty={
+            !techs?.gamesWithTechs
+              ? 'Нет данных о технологиях. Появятся после новых партий (schema v3 + techIds).'
+              : null
+          }
+        >
+          {techs?.gamesWithTechs > 0 && (
+            <>
+              <p className="stats-note">
+                На основе {techs.gamesWithTechs} парт. с зафиксированными техами
+              </p>
+              <BarList
+                items={(techs.top || []).map((t) => ({
+                  id: t.id,
+                  label: t.name,
+                  value: t.games,
+                  right: `WR ${t.winRate}%`,
+                  color: 'stats-bar-fill is-soft',
+                }))}
+              />
+            </>
+          )}
+        </Section>
       </div>
 
-      <Section
-        title="Технологии"
-        icon="fa-microchip"
-        empty={
-          !techs?.gamesWithTechs
-            ? 'Нет данных о технологиях. Появятся после новых партий (schema v3 + techIds).'
-            : null
-        }
-      >
-        {techs?.gamesWithTechs > 0 && (
-          <>
-            <p className="text-[11px] text-slate-500 -mt-1">
-              На основе {techs.gamesWithTechs} парт. с зафиксированными техами
-            </p>
-            <BarList
-              items={(techs.top || []).map((t) => ({
-                id: t.id,
-                label: t.name,
-                value: t.games,
-                right: `WR ${t.winRate}%`,
-                color: 'bg-sky-500',
-              }))}
-            />
-          </>
-        )}
-      </Section>
+      <FactionStrategyHeatmap matrix={factionMatrix} />
 
-      <div className="grid md:grid-cols-2 gap-4">
+      <div className="stats-grid-2">
+        <Section
+          title="Цели — чаще всего"
+          icon="fa-bullseye"
+          empty={mostScored.length === 0 ? 'Нет данных по целям.' : null}
+        >
+          <ul className="stats-list">
+            {mostScored.map((o) => (
+              <li key={o.id} className="stats-list-row">
+                <span className="stats-list-main" title={o.title}>{o.title}</span>
+                <span className="stats-list-meta">
+                  {o.scoreEvents}× · {o.scoreRatePct}%
+                </span>
+              </li>
+            ))}
+          </ul>
+        </Section>
+        <Section
+          title="Цели — редко"
+          icon="fa-ghost"
+          empty={rarelyScored.length === 0 ? 'Нет данных по целям.' : null}
+        >
+          <ul className="stats-list">
+            {rarelyScored.map((o) => (
+              <li key={o.id} className="stats-list-row">
+                <span className="stats-list-main" title={o.title}>{o.title}</span>
+                <span className="stats-list-meta">
+                  {o.revealed} показ. · {o.scoreRatePct}%
+                </span>
+              </li>
+            ))}
+          </ul>
+        </Section>
+      </div>
+
+      <div className="stats-grid-2">
         <Section
           title="Политика"
           icon="fa-gavel"
@@ -671,22 +898,22 @@ function AnalyticsTables({ analytics, onOpenPlayer, onOpenFaction, durationTrend
           }
         >
           {politics?.gamesWithPolitics > 0 && (
-            <ul className="space-y-2 text-xs text-slate-300">
-              <li className="flex justify-between border-b border-slate-800/50 pb-1.5">
-                <span className="text-slate-500">Партий с политикой</span>
-                <span className="font-mono">{politics.gamesWithPolitics}</span>
+            <ul className="stats-list">
+              <li className="stats-list-row">
+                <span className="stats-list-main is-muted">Партий с политикой</span>
+                <span className="stats-list-meta mono">{politics.gamesWithPolitics}</span>
               </li>
-              <li className="flex justify-between border-b border-slate-800/50 pb-1.5">
-                <span className="text-slate-500">WR спикера = победитель</span>
-                <span className="font-orbitron text-cyan-400">{politics.speakerWinRate}%</span>
+              <li className="stats-list-row">
+                <span className="stats-list-main is-muted">WR спикера = победитель</span>
+                <span className="stats-list-meta is-gold">{politics.speakerWinRate}%</span>
               </li>
-              <li className="flex justify-between border-b border-slate-800/50 pb-1.5">
-                <span className="text-slate-500">Ср. законов / партия</span>
-                <span className="font-mono">{politics.avgAgendasPerGame}</span>
+              <li className="stats-list-row">
+                <span className="stats-list-main is-muted">Ср. законов / партия</span>
+                <span className="stats-list-meta mono">{politics.avgAgendasPerGame}</span>
               </li>
-              <li className="flex justify-between">
-                <span className="text-slate-500">Закон «1 голос»</span>
-                <span className="font-mono">{politics.oneVoteGames} парт.</span>
+              <li className="stats-list-row">
+                <span className="stats-list-main is-muted">Закон «1 голос»</span>
+                <span className="stats-list-meta mono">{politics.oneVoteGames} парт.</span>
               </li>
             </ul>
           )}
@@ -702,7 +929,7 @@ function AnalyticsTables({ analytics, onOpenPlayer, onOpenFaction, durationTrend
         >
           {strategyExecution?.gamesWithPlays > 0 && (
             <>
-              <p className="text-[11px] text-slate-500 -mt-1">
+              <p className="stats-note">
                 Primary + secondary · {strategyExecution.gamesWithPlays} парт.
               </p>
               <BarList
@@ -711,7 +938,7 @@ function AnalyticsTables({ analytics, onOpenPlayer, onOpenFaction, durationTrend
                   label: c.name.replace(/^\d+\.\s*/, ''),
                   value: c.primaryPlays,
                   right: `2° ${c.secondaryPlays}/${c.secondaryPlays + c.secondaryPasses}`,
-                  color: 'bg-purple-500',
+                  color: 'stats-bar-fill',
                 }))}
               />
             </>
@@ -719,182 +946,38 @@ function AnalyticsTables({ analytics, onOpenPlayer, onOpenFaction, durationTrend
         </Section>
       </div>
 
-      <Section title="Игроки" icon="fa-users" empty={players.length === 0 ? 'Нет данных об игроках.' : null}>
-        <p className="text-[11px] text-slate-500 -mt-1">Нажмите имя, чтобы открыть профиль</p>
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs md:text-sm">
-            <thead>
-              <tr className="border-b border-slate-800 text-slate-500 uppercase font-orbitron">
-                <th className="py-2 pr-2">Игрок</th>
-                <th className="py-2 text-center">Игр</th>
-                <th className="py-2 text-center">Поб.</th>
-                <th className="py-2 text-center">WR</th>
-                <th className="py-2 text-center">Ср. ПО</th>
-                <th className="py-2 text-center">Урон</th>
-                <th className="py-2 text-center">BT%</th>
-                <th className="py-2 text-right">Ср. время</th>
-                <th className="py-2 text-right">Ср. / раунд</th>
-                <th className="py-2 text-center">Хран.</th>
-                <th className="py-2 text-center">Элим.</th>
-                <th className="py-2 text-left pl-2">Фракции</th>
-              </tr>
-            </thead>
-            <tbody>
-              {players.map((p) => (
-                <tr key={p.key} className="border-b border-slate-800/50 align-top">
-                  <td className="py-2.5 font-bold pr-2">
-                    <button
-                      type="button"
-                      onClick={() => onOpenPlayer?.(p.key)}
-                      className="text-white hover:text-cyan-300 transition"
-                    >
-                      {p.name}
-                    </button>
-                  </td>
-                  <td className="py-2.5 text-center text-slate-400">{p.games}</td>
-                  <td className="py-2.5 text-center text-amber-400 font-bold">{p.wins}</td>
-                  <td className="py-2.5 text-center font-orbitron text-cyan-400">{p.winRate}%</td>
-                  <td className="py-2.5 text-center text-slate-300">{p.avgScore}</td>
-                  <td className="py-2.5 text-center text-red-400/90">{p.avgDamage}</td>
-                  <td className="py-2.5 text-center text-violet-300">{p.breakthroughRate}%</td>
-                  <td className="py-2.5 text-right font-mono text-slate-300">{formatAvgTime(p.avgGameTime)}</td>
-                  <td className="py-2.5 text-right font-mono text-slate-400">{formatAvgTime(p.avgTurnTime)}</td>
-                  <td className="py-2.5 text-center text-cyan-400/80">{p.custodiansGames || '—'}</td>
-                  <td className="py-2.5 text-center text-slate-400">
-                    {p.avgElimRound != null ? p.avgElimRound : '—'}
-                  </td>
-                  <td className="py-2.5 text-left text-[11px] text-slate-400 pl-2 max-w-[180px]">
-                    {p.factions.slice(0, 3).map((f) => (
-                      <div key={f.id || f.name} className="truncate">
-                        <button
-                          type="button"
-                          onClick={() => onOpenFaction?.(f.id || String(f.name || '').toLowerCase())}
-                          className="hover:text-cyan-300 transition"
-                        >
-                          {f.name}
-                        </button>
-                        <span className="text-slate-600"> · {f.games}/{f.wins}</span>
-                      </div>
-                    ))}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </Section>
-
-      <Section title="Фракции" icon="fa-planet-ringed" empty={factions.length === 0 ? 'Нет данных о фракциях.' : null}>
-        <p className="text-[11px] text-slate-500 -mt-1">Нажмите название, чтобы открыть профиль</p>
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs md:text-sm">
-            <thead>
-              <tr className="border-b border-slate-800 text-slate-500 uppercase font-orbitron">
-                <th className="py-2">Фракция</th>
-                <th className="py-2 text-center">Пиков</th>
-                <th className="py-2 text-center">Поб.</th>
-                <th className="py-2 text-center">WR</th>
-                <th className="py-2 text-center">Ср. ПО</th>
-                <th className="py-2 text-center">Урон</th>
-                <th className="py-2 text-center">BT%</th>
-                <th className="py-2 text-center">Ср. раунд</th>
-                <th className="py-2 text-right">Ср. время</th>
-              </tr>
-            </thead>
-            <tbody>
-              {factions.map((f) => (
-                <tr key={f.key} className="border-b border-slate-800/50">
-                  <td className="py-2.5 font-bold">
-                    <button
-                      type="button"
-                      onClick={() => onOpenFaction?.(f.key)}
-                      className="text-slate-200 hover:text-cyan-300 transition"
-                    >
-                      {f.name}
-                    </button>
-                  </td>
-                  <td className="py-2.5 text-center text-slate-400">{f.picks}</td>
-                  <td className="py-2.5 text-center text-amber-400 font-bold">{f.wins}</td>
-                  <td className="py-2.5 text-center font-orbitron text-emerald-400">{f.winRate}%</td>
-                  <td className="py-2.5 text-center text-slate-300">{f.avgVp}</td>
-                  <td className="py-2.5 text-center text-red-400/90">{f.avgDamage}</td>
-                  <td className="py-2.5 text-center text-violet-300">{f.breakthroughRate}%</td>
-                  <td className="py-2.5 text-center text-slate-400">{f.avgRounds}</td>
-                  <td className="py-2.5 text-right font-mono text-slate-300">{formatAvgTime(f.avgGameTime)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </Section>
-
-      <div className="grid md:grid-cols-2 gap-4">
-        <Section
-          title="Цели — чаще всего"
-          icon="fa-bullseye"
-          empty={objectives.mostScored.length === 0 ? 'Нет данных по целям.' : null}
-        >
-          <ul className="space-y-1.5 text-xs">
-            {objectives.mostScored.map((o) => (
-              <li key={o.id} className="flex justify-between gap-2 border-b border-slate-800/60 py-1.5">
-                <span className="text-slate-200 truncate" title={o.title}>{o.title}</span>
-                <span className="text-slate-500 flex-shrink-0">
-                  {o.scoreEvents}× · {o.scoreRatePct}%
-                </span>
-              </li>
-            ))}
-          </ul>
-        </Section>
-        <Section
-          title="Цели — редко"
-          icon="fa-ghost"
-          empty={objectives.rarelyScored.length === 0 ? 'Нет данных по целям.' : null}
-        >
-          <ul className="space-y-1.5 text-xs">
-            {objectives.rarelyScored.map((o) => (
-              <li key={o.id} className="flex justify-between gap-2 border-b border-slate-800/60 py-1.5">
-                <span className="text-slate-200 truncate" title={o.title}>{o.title}</span>
-                <span className="text-slate-500 flex-shrink-0">
-                  {o.revealed} показ. · {o.scoreRatePct}%
-                </span>
-              </li>
-            ))}
-          </ul>
-        </Section>
-      </div>
-
       <Section
         title="Карты стратегий"
         icon="fa-layer-group"
         empty={
-          strategy.gamesWithPicks === 0
+          !strategy.gamesWithPicks
             ? 'Нет данных о драфте стратегий. Появятся после новых партий (сбор strategyPicks).'
             : null
         }
       >
         {strategy.gamesWithPicks > 0 && (
-          <div className="overflow-x-auto">
-            <p className="text-[11px] text-slate-500 mb-2">
+          <div className="stats-scroll">
+            <p className="stats-note">
               На основе {strategy.gamesWithPicks} парт. с историей драфта
             </p>
-            <table className="w-full text-left text-xs md:text-sm">
+            <table className="stats-table">
               <thead>
-                <tr className="border-b border-slate-800 text-slate-500 uppercase font-orbitron">
-                  <th className="py-2">Карта</th>
-                  <th className="py-2 text-center">Пиков</th>
-                  <th className="py-2 text-center">Ср. раунд</th>
-                  <th className="py-2 text-right">WR при пике</th>
+                <tr>
+                  <th>Карта</th>
+                  <th className="is-center">Пиков</th>
+                  <th className="is-center">Ср. раунд</th>
+                  <th className="is-right">WR при пике</th>
                 </tr>
               </thead>
               <tbody>
-                {strategy.cards.map((c) => (
-                  <tr key={c.cardId} className="border-b border-slate-800/50">
-                    <td className="py-2.5 font-bold text-slate-200">{c.name}</td>
-                    <td className="py-2.5 text-center text-slate-400">{c.picks}</td>
-                    <td className="py-2.5 text-center text-slate-300">
+                {strategyCards.map((c) => (
+                  <tr key={c.cardId}>
+                    <td className="is-strong">{c.name}</td>
+                    <td className="is-center is-muted">{c.picks}</td>
+                    <td className="is-center">
                       {c.avgRoundPicked != null ? c.avgRoundPicked : '—'}
                     </td>
-                    <td className="py-2.5 text-right font-orbitron text-cyan-400">{c.winRateWhenPicked}%</td>
+                    <td className="is-right is-gold">{c.winRateWhenPicked}%</td>
                   </tr>
                 ))}
               </tbody>
@@ -920,41 +1003,41 @@ function GameDetail({ game }) {
   const scoredObjectives = (game.objectives || []).filter((o) => (o.scoredBy || []).length > 0);
 
   return (
-    <div className="mt-3 space-y-3 border-t border-slate-800 pt-3">
-      <div className="overflow-x-auto">
-        <table className="w-full text-left text-[11px]">
+    <div className="stats-game-detail">
+      <div className="stats-scroll">
+        <table className="stats-table is-compact">
           <thead>
-            <tr className="text-slate-500 uppercase border-b border-slate-800">
-              <th className="py-1.5 pr-2">Игрок</th>
-              <th className="py-1.5">Фракция</th>
-              <th className="py-1.5 text-center">ПО</th>
-              <th className="py-1.5 text-left">Состав</th>
-              <th className="py-1.5 text-center">Секр.</th>
-              <th className="py-1.5 text-center">Урон</th>
-              <th className="py-1.5 text-center">BT</th>
-              <th className="py-1.5 text-right">Время</th>
+            <tr>
+              <th>Игрок</th>
+              <th>Фракция</th>
+              <th className="is-center">ПО</th>
+              <th>Состав</th>
+              <th className="is-center">Секр.</th>
+              <th className="is-center">Урон</th>
+              <th className="is-center">BT</th>
+              <th className="is-right">Время</th>
             </tr>
           </thead>
           <tbody>
             {[...(game.players || [])]
               .sort((a, b) => (b.score || 0) - (a.score || 0))
               .map((p) => (
-                <tr key={p.name} className="border-b border-slate-800/40">
-                  <td className={`py-1.5 font-bold pr-2 ${p.isWinner ? 'text-amber-400' : 'text-slate-200'}`}>
+                <tr key={p.name}>
+                  <td className={p.isWinner ? 'is-gold is-strong' : 'is-strong'}>
                     {p.name}
-                    {p.eliminated && <span className="ml-1 text-rose-400/80 font-normal">элим.</span>}
+                    {p.eliminated && <span className="stats-elim"> элим.</span>}
                   </td>
-                  <td className="py-1.5 text-slate-400">{p.faction || '—'}</td>
-                  <td className="py-1.5 text-center font-orbitron text-cyan-400">{p.score}</td>
-                  <td className="py-1.5"><ScoreBreakdownInline breakdown={p.scoreBreakdown} /></td>
-                  <td className="py-1.5 text-center text-violet-300/90 font-mono">
+                  <td className="is-muted">{p.faction || '—'}</td>
+                  <td className="is-center is-gold">{p.score}</td>
+                  <td><ScoreBreakdownInline breakdown={p.scoreBreakdown} /></td>
+                  <td className="is-center mono">
                     {p.secretsScoredVp > 0 || p.secretsHeld > 0
                       ? `${p.secretsScoredVp ?? 0}/${p.secretsHeld ?? 0}`
                       : '—'}
                   </td>
-                  <td className="py-1.5 text-center text-red-400">{p.damageDealt || 0}</td>
-                  <td className="py-1.5 text-center text-violet-300">{p.breakthrough ? '✓' : '—'}</td>
-                  <td className="py-1.5 text-right font-mono text-slate-400">{formatTime(p.totalTime || 0)}</td>
+                  <td className="is-center is-danger">{p.damageDealt || 0}</td>
+                  <td className="is-center">{p.breakthrough ? '✓' : '—'}</td>
+                  <td className="is-right mono is-muted">{formatTime(p.totalTime || 0)}</td>
                 </tr>
               ))}
           </tbody>
@@ -962,13 +1045,13 @@ function GameDetail({ game }) {
       </div>
 
       {scoredObjectives.length > 0 && (
-        <div>
-          <div className="text-[10px] font-bold uppercase text-slate-500 mb-1.5">Заскоренные цели</div>
-          <ul className="space-y-1 text-[11px]">
+        <div className="stats-detail-block">
+          <div className="stats-detail-label">Заскоренные цели</div>
+          <ul className="stats-list">
             {scoredObjectives.map((o) => (
-              <li key={o.id} className="flex justify-between gap-2 text-slate-300">
-                <span className="truncate">{o.title}</span>
-                <span className="text-slate-500 flex-shrink-0">{(o.scoredBy || []).join(', ')}</span>
+              <li key={o.id} className="stats-list-row">
+                <span className="stats-list-main">{o.title}</span>
+                <span className="stats-list-meta">{(o.scoredBy || []).join(', ')}</span>
               </li>
             ))}
           </ul>
@@ -976,20 +1059,20 @@ function GameDetail({ game }) {
       )}
 
       {picksByRound.length > 0 && (
-        <div>
-          <div className="text-[10px] font-bold uppercase text-slate-500 mb-1.5">Драфт стратегий</div>
-          <div className="space-y-2">
+        <div className="stats-detail-block">
+          <div className="stats-detail-label">Драфт стратегий</div>
+          <div className="stats-stack-sm">
             {picksByRound.map(([round, picks]) => (
-              <div key={round} className="text-[11px]">
-                <div className="text-slate-500 font-bold mb-0.5">Раунд {round}</div>
-                <div className="flex flex-wrap gap-1.5">
+              <div key={round}>
+                <div className="stats-note is-strong">Раунд {round}</div>
+                <div className="stats-chip-row">
                   {picks.map((pick, idx) => (
                     <span
                       key={`${round}-${pick.cardId}-${pick.player}-${idx}`}
-                      className="px-2 py-0.5 rounded-md bg-slate-900 border border-slate-800 text-slate-300"
+                      className="stats-tag"
                     >
                       {cardNameById.get(pick.cardId) || `#${pick.cardId}`}
-                      <span className="text-slate-600"> · {pick.player}</span>
+                      <span> · {pick.player}</span>
                     </span>
                   ))}
                 </div>
@@ -1000,27 +1083,27 @@ function GameDetail({ game }) {
       )}
 
       {(game.supports || []).length > 0 && (
-        <div className="text-[11px] text-slate-400">
-          <span className="text-slate-500 font-bold uppercase text-[10px] mr-2">Support</span>
-          {game.supports.map((s) => `${s.from} → ${s.holder}`).join(' · ')}
+        <div className="stats-detail-block">
+          <span className="stats-detail-label">Support</span>
+          <span className="stats-note">
+            {game.supports.map((s) => `${s.from} → ${s.holder}`).join(' · ')}
+          </span>
         </div>
       )}
 
       {game.politics?.finalSpeaker && (
-        <div className="text-[11px] space-y-1.5">
-          <div className="text-[10px] font-bold uppercase text-slate-500">Политика</div>
-          <div className="text-slate-300">
-            Спикер: <span className="text-cyan-300 font-bold">{game.politics.finalSpeaker}</span>
-            {game.politics.oneVoteLaw && (
-              <span className="ml-2 text-amber-400/90">· закон 1 голос</span>
-            )}
+        <div className="stats-detail-block">
+          <div className="stats-detail-label">Политика</div>
+          <div className="stats-note">
+            Спикер: <strong className="is-gold">{game.politics.finalSpeaker}</strong>
+            {game.politics.oneVoteLaw && <span> · закон 1 голос</span>}
           </div>
           {(game.politics.agendas || []).length > 0 && (
-            <ul className="space-y-1 text-slate-400">
+            <ul className="stats-list">
               {game.politics.agendas.map((a) => (
-                <li key={a.index} className="flex justify-between gap-2">
-                  <span className="truncate">{a.label}</span>
-                  <span className="flex-shrink-0 font-mono text-slate-500">
+                <li key={a.index} className="stats-list-row">
+                  <span className="stats-list-main">{a.label}</span>
+                  <span className="stats-list-meta mono">
                     {a.for}/{a.against} · {a.voters} гол.
                   </span>
                 </li>
@@ -1031,16 +1114,16 @@ function GameDetail({ game }) {
       )}
 
       {(game.strategyPlays || []).length > 0 && (
-        <div>
-          <div className="text-[10px] font-bold uppercase text-slate-500 mb-1.5">Розыгрыш стратегий</div>
-          <ul className="space-y-1 text-[11px] text-slate-400 max-h-40 overflow-y-auto modal-scroll">
+        <div className="stats-detail-block">
+          <div className="stats-detail-label">Розыгрыш стратегий</div>
+          <ul className="stats-list modal-scroll stats-list--scroll">
             {game.strategyPlays.map((play, idx) => (
-              <li key={`${play.round}-${play.cardId}-${play.player}-${idx}`} className="flex justify-between gap-2">
-                <span className="truncate text-slate-300">
-                  {play.round != null && <span className="text-slate-600">R{play.round} · </span>}
+              <li key={`${play.round}-${play.cardId}-${play.player}-${idx}`} className="stats-list-row">
+                <span className="stats-list-main">
+                  {play.round != null && <span className="is-muted">R{play.round} · </span>}
                   {play.card?.replace(/^\d+\.\s*/, '') || play.card}
                 </span>
-                <span className="flex-shrink-0">
+                <span className="stats-list-meta">
                   {play.role === 'secondary' ? '2° ' : ''}
                   {play.player}
                   {play.outcome === 'passed' ? ' · пас' : ''}
@@ -1052,14 +1135,11 @@ function GameDetail({ game }) {
       )}
 
       {Array.isArray(game.roundTimes) && game.roundTimes.length > 0 && (
-        <div>
-          <div className="text-[10px] font-bold uppercase text-slate-500 mb-1.5">Время по раундам</div>
-          <div className="flex flex-wrap gap-1.5">
+        <div className="stats-detail-block">
+          <div className="stats-detail-label">Время по раундам</div>
+          <div className="stats-chip-row">
             {game.roundTimes.map((entry) => (
-              <span
-                key={entry.round}
-                className="px-2 py-1 rounded-md bg-slate-900 border border-slate-800 text-[11px] font-mono text-cyan-300/90"
-              >
+              <span key={entry.round} className="stats-tag stats-tag--gold mono">
                 R{entry.round}: {formatTime(entry.seconds || 0)}
               </span>
             ))}
@@ -1068,12 +1148,12 @@ function GameDetail({ game }) {
       )}
 
       {(game.eventDigest || []).length > 0 && (
-        <div>
-          <div className="text-[10px] font-bold uppercase text-slate-500 mb-1.5">Журнал (фрагмент)</div>
-          <ul className="space-y-0.5 text-[10px] text-slate-500 max-h-36 overflow-y-auto modal-scroll font-mono">
+        <div className="stats-detail-block">
+          <div className="stats-detail-label">Журнал (фрагмент)</div>
+          <ul className="stats-digest modal-scroll">
             {game.eventDigest.slice(-20).map((e, idx) => (
-              <li key={`${e.type}-${e.at}-${idx}`} className="truncate">
-                {e.round != null && <span className="text-slate-600">R{e.round} </span>}
+              <li key={`${e.type}-${e.at}-${idx}`}>
+                {e.round != null && <span className="is-muted">R{e.round} </span>}
                 {e.text}
               </li>
             ))}
@@ -1082,15 +1162,16 @@ function GameDetail({ game }) {
       )}
 
       {(game.players || []).some((p) => (p.techs || []).length > 0) && (
-        <div>
-          <div className="text-[10px] font-bold uppercase text-slate-500 mb-1.5">Технологии</div>
-          <ul className="space-y-1 text-[11px] text-slate-400">
+        <div className="stats-detail-block">
+          <div className="stats-detail-label">Технологии</div>
+          <ul className="stats-list">
             {(game.players || [])
               .filter((p) => (p.techs || []).length > 0)
               .map((p) => (
-                <li key={p.name}>
-                  <span className="text-slate-300 font-bold">{p.name}:</span>{' '}
-                  {formatTechList(p.techs)}
+                <li key={p.name} className="stats-list-row">
+                  <span className="stats-list-main">
+                    <strong>{p.name}:</strong> {formatTechList(p.techs)}
+                  </span>
                 </li>
               ))}
           </ul>
@@ -1099,7 +1180,7 @@ function GameDetail({ game }) {
 
       <button
         type="button"
-        className="text-[11px] font-bold text-cyan-400 hover:text-cyan-300"
+        className="stats-text-btn"
         onClick={() => {
           try {
             navigator.clipboard.writeText(buildShareCardText(game));
@@ -1108,7 +1189,7 @@ function GameDetail({ game }) {
           }
         }}
       >
-        <i className="fa-solid fa-share-nodes mr-1" aria-hidden="true" />
+        <i className="fa-solid fa-share-nodes" aria-hidden="true" />
         Скопировать карточку партии
       </button>
     </div>
@@ -1119,38 +1200,36 @@ function HistoryList({ globalHistory, deleteSingleGame }) {
   const [expandedId, setExpandedId] = useState(null);
 
   return (
-    <div className="space-y-3">
+    <div className="stats-history">
       {globalHistory.map((g) => {
         const open = expandedId === g.id;
         return (
-          <div key={g.id} className="bg-slate-950 p-3.5 rounded-xl border border-slate-800/80 space-y-2">
-            <div className="flex items-center justify-between text-xs border-b border-slate-800 pb-2 gap-2">
+          <article key={g.id} className="stats-history-card">
+            <div className="stats-history-head">
               <button
                 type="button"
                 onClick={() => setExpandedId(open ? null : g.id)}
-                className="text-left min-w-0 flex-1 hover:text-white transition"
+                className="stats-history-toggle"
               >
-                <span className="font-bold text-white">{g.date}</span>
-                <span className="text-slate-500 ml-2">
+                <span className="stats-history-date">{g.date}</span>
+                <span className="stats-muted">
                   ({g.roundsCount} раунд., {g.playerCount || (g.players || []).length} игр., цель {g.targetScore} ПО)
                 </span>
                 {(g.expansions?.pok || g.expansions?.te) && (
-                  <span className="ml-2 text-slate-500">
+                  <span className="stats-muted">
                     {[g.expansions.pok && 'PoK', g.expansions.te && 'TE'].filter(Boolean).join(' · ')}
                   </span>
                 )}
-                <span className="ml-2 text-slate-600">
-                  <i className={`fa-solid fa-chevron-${open ? 'up' : 'down'} text-[10px]`} aria-hidden="true" />
-                </span>
+                <i className={`fa-solid fa-chevron-${open ? 'up' : 'down'} stats-history-chevron`} aria-hidden="true" />
               </button>
-              <div className="flex items-center gap-3 flex-shrink-0">
-                <span className="text-amber-400 font-bold">
-                  🏆 {g.winner}{g.winningFaction ? ` (${g.winningFaction})` : ''}
+              <div className="stats-history-actions">
+                <span className="stats-history-winner">
+                  {g.winner}{g.winningFaction ? ` (${g.winningFaction})` : ''}
                 </span>
                 <button
                   type="button"
                   onClick={() => deleteSingleGame(g.id)}
-                  className="text-slate-600 hover:text-red-400 p-1 transition"
+                  className="stats-icon-danger"
                   title="Удалить партию (Требуется PIN)"
                 >
                   <i className="fa-solid fa-trash-can" aria-hidden="true" />
@@ -1158,21 +1237,21 @@ function HistoryList({ globalHistory, deleteSingleGame }) {
               </div>
             </div>
             {(g.teController || g.custodians || (g.objectives && g.objectives.length > 0)) && (
-              <div className="flex flex-wrap gap-2 text-[10px] text-slate-400">
+              <div className="stats-chip-row">
                 {g.teController && (
-                  <span className="px-2 py-0.5 rounded-md bg-amber-950/50 border border-amber-800/60 text-amber-300">
+                  <span className="stats-tag stats-tag--gold">
                     TE: {g.teController.name}
                   </span>
                 )}
                 {g.custodians && (
-                  <span className="px-2 py-0.5 rounded-md bg-cyan-950/50 border border-cyan-800/60 text-cyan-300">
+                  <span className="stats-tag">
                     Хранители: {g.custodians}
                   </span>
                 )}
                 {(g.objectives || []).filter((o) => (o.scoredBy || []).length > 0).slice(0, 4).map((o) => (
                   <span
                     key={o.id}
-                    className="px-2 py-0.5 rounded-md bg-slate-900 border border-slate-800 truncate max-w-[160px]"
+                    className="stats-tag"
                     title={o.title}
                   >
                     {o.title}
@@ -1181,23 +1260,20 @@ function HistoryList({ globalHistory, deleteSingleGame }) {
               </div>
             )}
             {!open && (
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-[11px]">
+              <div className="stats-player-grid">
                 {(g.players || []).map((p, i) => (
-                  <div
-                    key={i}
-                    className="bg-slate-900 p-1.5 rounded-lg border border-slate-800/50 flex items-center justify-between gap-1"
-                  >
-                    <span className="text-slate-300 truncate">{p.name}</span>
-                    <span className="font-mono text-slate-400 flex-shrink-0">
+                  <div key={i} className="stats-player-chip">
+                    <span className="truncate">{p.name}</span>
+                    <span className="stats-player-score">
                       {p.score} ПО
-                      {p.damageDealt > 0 && <span className="text-red-400/80 ml-1">⚔{p.damageDealt}</span>}
+                      {p.damageDealt > 0 && <span className="stats-dmg">⚔{p.damageDealt}</span>}
                     </span>
                   </div>
                 ))}
               </div>
             )}
             {open && <GameDetail game={g} />}
-          </div>
+          </article>
         );
       })}
     </div>
@@ -1213,9 +1289,14 @@ export function StatsPage({
   clearAllStats,
 }) {
   useEscapeKey(() => onBack?.(), true);
-  const [tab, setTab] = useState('analytics');
+  const [tab, setTab] = useState('overview');
   const [filters, setFilters] = useState(DEFAULT_HISTORY_FILTERS);
   const [profileTarget, setProfileTarget] = useState(null);
+
+  useEffect(() => {
+    document.body.classList.add('hub-cinematic');
+    return () => document.body.classList.remove('hub-cinematic');
+  }, []);
 
   const filteredHistory = useMemo(
     () => filterHistory(globalHistory, filters),
@@ -1243,56 +1324,62 @@ export function StatsPage({
     return buildFactionProfile(filteredHistory, profileTarget.key);
   }, [filteredHistory, profileTarget]);
 
+  const goTab = (next) => {
+    setTab(next);
+    setProfileTarget(null);
+  };
+
   const openPlayer = (key) => {
-    setTab('analytics');
+    setTab('players');
     setProfileTarget({ type: 'player', key });
   };
   const openFaction = (key) => {
-    setTab('analytics');
+    setTab('factions');
     setProfileTarget({ type: 'faction', key });
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100">
-      <div className="sticky top-0 z-20 border-b border-purple-500/30 bg-slate-950/95 backdrop-blur-md">
-        <div className="max-w-5xl mx-auto px-4 md:px-6 py-3 flex items-center gap-3">
+    <div className="hub-shell hub-shell--column stats-shell">
+      <HubCosmosBackdrop />
+      <header className="stats-topbar">
+        <div className="stats-topbar-inner">
           <button
             type="button"
             onClick={onBack}
-            aria-label="Назад к игре"
-            className="inline-flex items-center gap-2 h-10 px-3 rounded-xl border border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800 text-xs font-bold transition"
+            aria-label="Назад"
+            className="stats-back"
           >
             <i className="fa-solid fa-arrow-left" aria-hidden="true" />
             <span>Назад</span>
           </button>
-          <div className="min-w-0 flex-1">
-            <h1 id="stats-page-title" className="font-orbitron font-black text-lg md:text-2xl text-purple-400 uppercase truncate">
-              Статистика Компании
+          <div className="stats-topbar-copy">
+            <h1 id="stats-page-title" className="stats-title">
+              Статистика
             </h1>
-            <p className="text-[11px] md:text-xs text-slate-500 truncate">
-              Аналитика игроков, фракций, целей и стратегий · {analytics.gameCount} парт.
+            <p className="stats-subtitle">
+              Игроки, фракции, цели и стратегии · {analytics.gameCount} парт.
               {filteredHistory.length !== globalHistory.length && (
                 <span> (из {globalHistory.length})</span>
               )}
             </p>
           </div>
         </div>
-      </div>
+      </header>
 
-      <main className="max-w-5xl mx-auto px-4 md:px-6 py-5 md:py-8 space-y-5">
+      <main className="stats-main">
         {isStatsLoading ? (
-          <div className="text-center py-16 text-slate-400 font-orbitron">
-            <i className="fa-solid fa-spinner fa-spin text-2xl mb-2 text-purple-400" aria-hidden="true" />
-            <div>Загрузка данных из облака...</div>
+          <div className="stats-state">
+            <i className="fa-solid fa-spinner fa-spin" aria-hidden="true" />
+            <div>Загрузка данных из облака…</div>
           </div>
         ) : globalHistory.length === 0 ? (
-          <div className="text-center py-16 text-slate-500">
+          <div className="stats-state">
             {isCloudConfigured
               ? 'История игр пока пуста. Завершите хотя бы одну партию!'
               : 'Облачная статистика выключена (VITE_CLOUD_ENABLED=false).'}
           </div>
         ) : (
-          <div className="space-y-5">
+          <div className="stats-content">
             <FilterBar
               filters={filters}
               onChange={(next) => {
@@ -1302,22 +1389,16 @@ export function StatsPage({
               filteredCount={filteredHistory.length}
               totalCount={globalHistory.length}
             />
-            <ExportBar history={filteredHistory} />
 
-            <div className="flex gap-2 border-b border-slate-800 pb-1 overflow-x-auto">
+            <div className="stats-tabs" role="tablist" aria-label="Разделы статистики">
               {TABS.map((t) => (
                 <button
                   key={t.id}
                   type="button"
-                  onClick={() => {
-                    setTab(t.id);
-                    if (t.id !== 'analytics') setProfileTarget(null);
-                  }}
-                  className={`px-4 py-2 rounded-t-xl text-xs font-orbitron font-bold uppercase tracking-wide transition flex-shrink-0 ${
-                    tab === t.id
-                      ? 'bg-purple-950/60 text-purple-300 border border-b-0 border-purple-700/50'
-                      : 'text-slate-500 hover:text-slate-300'
-                  }`}
+                  role="tab"
+                  aria-selected={tab === t.id}
+                  onClick={() => goTab(t.id)}
+                  className={`stats-tab${tab === t.id ? ' is-active' : ''}`}
                 >
                   {t.label}
                 </button>
@@ -1325,27 +1406,42 @@ export function StatsPage({
             </div>
 
             {filteredHistory.length === 0 ? (
-              <div className="text-center py-10 text-slate-500 text-sm">
+              <div className="stats-state stats-state--compact">
                 Нет партий по выбранным фильтрам.
               </div>
-            ) : tab === 'analytics' ? (
-              profile ? (
-                <ProfilePanel
-                  profile={profile}
-                  onBack={() => setProfileTarget(null)}
-                  onOpenPlayer={openPlayer}
-                  onOpenFaction={openFaction}
-                />
-              ) : (
-                <AnalyticsTables
-                  analytics={analytics}
-                  onOpenPlayer={openPlayer}
-                  onOpenFaction={openFaction}
-                  durationTrend={durationTrend}
-                  avgDurationSec={avgDurationSec}
-                  factionMatrix={factionMatrix}
-                />
-              )
+            ) : profile && (tab === 'players' || tab === 'factions') ? (
+              <ProfilePanel
+                profile={profile}
+                onBack={() => setProfileTarget(null)}
+                onOpenPlayer={openPlayer}
+                onOpenFaction={openFaction}
+              />
+            ) : tab === 'overview' ? (
+              <OverviewPanel
+                analytics={analytics}
+                durationTrend={durationTrend}
+                avgDurationSec={avgDurationSec}
+                recentGames={filteredHistory}
+                onOpenPlayer={openPlayer}
+                onOpenFaction={openFaction}
+                onGoTab={goTab}
+              />
+            ) : tab === 'players' ? (
+              <PlayersPanel
+                players={analytics.players}
+                onOpenPlayer={openPlayer}
+                onOpenFaction={openFaction}
+              />
+            ) : tab === 'factions' ? (
+              <FactionsPanel
+                factions={analytics.factions}
+                onOpenFaction={openFaction}
+              />
+            ) : tab === 'meta' ? (
+              <MetaPanel
+                analytics={analytics}
+                factionMatrix={factionMatrix}
+              />
             ) : tab === 'compare' ? (
               <CompareTab
                 history={filteredHistory}
@@ -1354,19 +1450,24 @@ export function StatsPage({
                 onOpenFaction={openFaction}
               />
             ) : (
-              <HistoryList globalHistory={filteredHistory} deleteSingleGame={deleteSingleGame} />
+              <>
+                <ExportBar history={filteredHistory} />
+                <HistoryList globalHistory={filteredHistory} deleteSingleGame={deleteSingleGame} />
+              </>
             )}
 
-            <div className="pt-4 border-t border-slate-800 flex justify-end">
-              <button
-                type="button"
-                onClick={clearAllStats}
-                className="bg-red-950/40 hover:bg-red-900/60 text-red-400 border border-red-800/60 text-xs px-4 py-2 rounded-xl transition flex items-center gap-2"
-              >
-                <i className="fa-solid fa-triangle-exclamation" aria-hidden="true" />
-                <span>Сбросить всю статистику (PIN)</span>
-              </button>
-            </div>
+            {tab === 'history' && (
+              <div className="stats-footer-actions">
+                <button
+                  type="button"
+                  onClick={clearAllStats}
+                  className="stats-danger-btn"
+                >
+                  <i className="fa-solid fa-triangle-exclamation" aria-hidden="true" />
+                  <span>Сбросить всю статистику (PIN)</span>
+                </button>
+              </div>
+            )}
           </div>
         )}
       </main>

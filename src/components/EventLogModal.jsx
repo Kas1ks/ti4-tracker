@@ -24,7 +24,7 @@ export function EventLogModal({ show, onClose, events = [], players = [] }) {
 
   return (
     <div
-      className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 modal-overlay"
+      className="fixed inset-0 game-modal-overlay z-[58] flex items-center justify-center p-4 modal-overlay"
       role="presentation"
       onClick={onClose}
     >
@@ -32,20 +32,20 @@ export function EventLogModal({ show, onClose, events = [], players = [] }) {
         role="dialog"
         aria-modal="true"
         aria-labelledby="event-log-title"
-        className="bg-slate-900 border border-slate-700 rounded-2xl max-w-lg w-full p-5 shadow-2xl max-h-[85vh] flex flex-col"
+        className="game-modal-panel max-w-lg w-full p-5 max-h-[85vh] flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex justify-between items-center mb-4 pb-3 border-b border-slate-800 flex-shrink-0">
+        <div className="flex justify-between items-center mb-4 pb-3 border-b border-[var(--game-line)] flex-shrink-0">
           <h2
             id="event-log-title"
-            className="font-orbitron text-lg font-bold text-cyan-400 uppercase flex items-center gap-2"
+            className="game-modal-title text-lg uppercase flex items-center gap-2"
           >
             <i className="fa-solid fa-scroll" aria-hidden="true" /> Журнал партии
           </h2>
           <button
             type="button"
             onClick={onClose}
-            className="text-slate-500 hover:text-slate-300 transition"
+            className="text-[var(--game-muted)] hover:text-[var(--game-text)] transition"
             aria-label="Закрыть журнал"
           >
             <i className="fa-solid fa-xmark text-lg" aria-hidden="true" />
@@ -53,7 +53,7 @@ export function EventLogModal({ show, onClose, events = [], players = [] }) {
         </div>
 
         {rows.length === 0 ? (
-          <p className="text-sm text-slate-500 text-center py-10">
+          <p className="text-sm text-[var(--game-muted)] text-center py-10">
             Пока пусто — события появятся по ходу партии.
           </p>
         ) : (
@@ -61,12 +61,12 @@ export function EventLogModal({ show, onClose, events = [], players = [] }) {
             {rows.map((event, idx) => (
               <li
                 key={`${event.at}-${event.type}-${idx}`}
-                className="flex gap-3 items-start px-2 py-2 rounded-lg hover:bg-slate-950/80"
+                className="flex gap-3 items-start px-2 py-2 rounded-lg hover:bg-[rgba(201,162,39,0.06)]"
               >
-                <span className="font-mono text-[11px] text-slate-500 tabular-nums pt-0.5 flex-shrink-0 w-16">
+                <span className="font-mono text-[11px] text-[var(--game-muted)] tabular-nums pt-0.5 flex-shrink-0 w-16">
                   {formatClock(event.at)}
                 </span>
-                <span className="text-sm text-slate-200 leading-snug">
+                <span className="text-sm text-[var(--game-text)] leading-snug">
                   {formatGameEvent(event, players)}
                 </span>
               </li>

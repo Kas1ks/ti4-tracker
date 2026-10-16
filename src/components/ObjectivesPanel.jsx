@@ -17,14 +17,14 @@ export function ObjectivesPanel({
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
 
                                             {/* ЛЕВЫЙ СТОЛБЕЦ: ЭТАП I (1 ПО) */}
-                                            <div className="bg-slate-900 border border-slate-800 p-4 rounded-3xl space-y-4 shadow-lg flex flex-col h-auto">
+                                            <div className="game-obj-col is-stage1">
                                                 <div className="space-y-4">
-                                                    <div className="flex justify-between items-center border-b border-slate-800 pb-3">
-                                                        <h2 className="font-orbitron font-bold text-base md:text-lg text-blue-400 uppercase flex items-center gap-2">
-                                                            <i className="fa-solid fa-list-check"></i>
+                                                    <div className="game-obj-head flex justify-between items-center border-b pb-3">
+                                                        <h2 className="game-obj-title text-base md:text-lg">
+                                                            <i className="fa-solid fa-list-check" aria-hidden="true" />
                                                             <span>Этап I (1 ПО)</span>
                                                         </h2>
-                                                        <span className="text-xs text-slate-500 font-mono font-bold">
+                                                        <span className="text-xs text-[var(--game-muted)] font-mono font-bold">
                                                             {objectives.filter(o => o.stage === 1).length} / 5
                                                         </span>
                                                     </div>
@@ -39,9 +39,9 @@ export function ObjectivesPanel({
                                                                 <div
                                                                     title={obj.desc}
                                                                     key={obj.id}
-                                                                    className={`bg-slate-950 rounded-2xl border transition-all duration-300 ease-in-out ${isCompletedByAll
-                                                                        ? 'border-emerald-500/40 p-3 bg-emerald-950/10'
-                                                                        : 'border-slate-800/80 p-4 space-y-3'
+                                                                    className={`game-obj-card transition-all duration-300 ease-in-out ${isCompletedByAll
+                                                                        ? 'is-done p-3'
+                                                                        : 'p-4 space-y-3'
                                                                         }`}
                                                                 >
                                                                     <div className="flex justify-between items-center gap-2">
@@ -89,6 +89,7 @@ export function ObjectivesPanel({
                                                                                 const isDone = !!completions[`${p.id}_${obj.id}`];
                                                                                 const pColor = p.color || '#3b82f6';
                                                                                 const isBlack = pColor.toLowerCase() === '#000000' || pColor.toLowerCase() === '#000' || pColor.toLowerCase() === 'black';
+                                                                                const accent = isBlack ? '#94a3b8' : pColor;
 
                                                                                 return (
                                                                                     <button
@@ -96,22 +97,14 @@ export function ObjectivesPanel({
                                                                                         type="button"
                                                                                         disabled={!canToggleFor(p.id)}
                                                                                         onClick={() => onObjectiveClick(p.id, obj.id)}
-                                                                                        style={{
-                                                                                            borderColor: isDone ? (isBlack ? '#ffffff' : pColor) : undefined,
-                                                                                        }}
-                                                                                        className={`px-2 py-1.5 rounded-xl text-xs md:text-sm font-bold transition-all duration-200 active:scale-95 flex items-center justify-between gap-1 border ${isDone
-                                                                                            ? 'bg-slate-900 text-white shadow-md'
-                                                                                            : 'bg-slate-900/60 text-slate-300 border-slate-800 hover:bg-slate-800 hover:text-white'
-                                                                                            } ${isDone && isBlack ? 'ring-2 ring-white/80' : ''} ${!canToggleFor(p.id) ? 'opacity-70 cursor-default' : ''}`}
+                                                                                        style={{ '--player-accent': accent }}
+                                                                                        className={`game-obj-seat text-xs md:text-sm active:scale-95 ${
+                                                                                          isDone ? 'is-done' : ''
+                                                                                        } ${!canToggleFor(p.id) ? 'opacity-70 cursor-default' : ''}`}
                                                                                     >
                                                                                         <span className="truncate">{p.name}</span>
                                                                                         {isDone && (
-                                                                                            <span
-                                                                                                className="w-4 h-4 rounded-full flex items-center justify-center text-[10px] text-black font-extrabold flex-shrink-0"
-                                                                                                style={{ backgroundColor: isBlack ? '#ffffff' : pColor }}
-                                                                                            >
-                                                                                                ✓
-                                                                                            </span>
+                                                                                            <span className="game-obj-seat-check" aria-hidden="true">✓</span>
                                                                                         )}
                                                                                     </button>
                                                                                 );
@@ -131,7 +124,7 @@ export function ObjectivesPanel({
                                                         <button
                                                             type="button"
                                                             onClick={() => addRandomObjective(1)}
-                                                            className="w-full py-3 bg-slate-950/60 hover:bg-slate-800/40 border border-dashed border-slate-800 hover:border-blue-500/50 rounded-2xl text-slate-500 hover:text-blue-400 text-xs font-bold transition flex items-center justify-center gap-2"
+                                                            className="game-obj-add w-full py-3 border border-dashed rounded-2xl text-xs font-bold transition flex items-center justify-center gap-2"
                                                         >
                                                             <span className="text-base">+</span>
                                                             <span>Открыть случайную цель I этапа</span>
@@ -140,7 +133,7 @@ export function ObjectivesPanel({
                                                     <button
                                                         type="button"
                                                         onClick={addCustomObjective}
-                                                        className="w-full py-2 bg-transparent text-slate-600 hover:text-amber-400 text-xs font-semibold transition"
+                                                        className="game-obj-manual w-full py-2 bg-transparent text-xs font-semibold transition"
                                                     >
                                                         + Ввести свою цель вручную
                                                     </button>
@@ -149,14 +142,14 @@ export function ObjectivesPanel({
                                             </div>
 
                                             {/* ПРАВЫЙ СТОЛБЕЦ: ЭТАП II (2 ПО) */}
-                                            <div className="bg-slate-900 border border-slate-800 p-4 rounded-3xl space-y-4 shadow-lg flex flex-col h-auto">
+                                            <div className="game-obj-col is-stage2">
                                                 <div className="space-y-4">
-                                                    <div className="flex justify-between items-center border-b border-slate-800 pb-3">
-                                                        <h2 className="font-orbitron font-bold text-base md:text-lg text-rose-400 uppercase flex items-center gap-2">
-                                                            <i className="fa-solid fa-list-check"></i>
+                                                    <div className="game-obj-head flex justify-between items-center border-b pb-3">
+                                                        <h2 className="game-obj-title text-base md:text-lg">
+                                                            <i className="fa-solid fa-list-check" aria-hidden="true" />
                                                             <span>Этап II (2 ПО)</span>
                                                         </h2>
-                                                        <span className="text-xs text-slate-500 font-mono font-bold">
+                                                        <span className="text-xs text-[var(--game-muted)] font-mono font-bold">
                                                             {objectives.filter(o => o.stage === 2).length} / 5
                                                         </span>
                                                     </div>
@@ -171,9 +164,9 @@ export function ObjectivesPanel({
                                                                 <div
                                                                     title={obj.desc}
                                                                     key={obj.id}
-                                                                    className={`bg-slate-950 rounded-2xl border transition-all duration-300 ease-in-out ${isCompletedByAll
-                                                                        ? 'border-emerald-500/40 p-3 bg-emerald-950/10'
-                                                                        : 'border-slate-800/80 p-4 space-y-3'
+                                                                    className={`game-obj-card transition-all duration-300 ease-in-out ${isCompletedByAll
+                                                                        ? 'is-done p-3'
+                                                                        : 'p-4 space-y-3'
                                                                         }`}
                                                                 >
                                                                     <div className="flex justify-between items-center gap-2">
@@ -221,6 +214,7 @@ export function ObjectivesPanel({
                                                                                 const isDone = !!completions[`${p.id}_${obj.id}`];
                                                                                 const pColor = p.color || '#ef4444';
                                                                                 const isBlack = pColor.toLowerCase() === '#000000' || pColor.toLowerCase() === '#000' || pColor.toLowerCase() === 'black';
+                                                                                const accent = isBlack ? '#94a3b8' : pColor;
 
                                                                                 return (
                                                                                     <button
@@ -228,22 +222,14 @@ export function ObjectivesPanel({
                                                                                         type="button"
                                                                                         disabled={!canToggleFor(p.id)}
                                                                                         onClick={() => onObjectiveClick(p.id, obj.id)}
-                                                                                        style={{
-                                                                                            borderColor: isDone ? (isBlack ? '#ffffff' : pColor) : undefined,
-                                                                                        }}
-                                                                                        className={`px-2 py-1.5 rounded-xl text-xs md:text-sm font-bold transition-all duration-200 active:scale-95 flex items-center justify-between gap-1 border ${isDone
-                                                                                            ? 'bg-slate-900 text-white shadow-md'
-                                                                                            : 'bg-slate-900/60 text-slate-300 border-slate-800 hover:bg-slate-800 hover:text-white'
-                                                                                            } ${isDone && isBlack ? 'ring-2 ring-white/80' : ''} ${!canToggleFor(p.id) ? 'opacity-70 cursor-default' : ''}`}
+                                                                                        style={{ '--player-accent': accent }}
+                                                                                        className={`game-obj-seat text-xs md:text-sm active:scale-95 ${
+                                                                                          isDone ? 'is-done' : ''
+                                                                                        } ${!canToggleFor(p.id) ? 'opacity-70 cursor-default' : ''}`}
                                                                                     >
                                                                                         <span className="truncate">{p.name}</span>
                                                                                         {isDone && (
-                                                                                            <span
-                                                                                                className="w-4 h-4 rounded-full flex items-center justify-center text-[10px] text-black font-extrabold flex-shrink-0"
-                                                                                                style={{ backgroundColor: isBlack ? '#ffffff' : pColor }}
-                                                                                            >
-                                                                                                ✓
-                                                                                            </span>
+                                                                                            <span className="game-obj-seat-check" aria-hidden="true">✓</span>
                                                                                         )}
                                                                                     </button>
                                                                                 );
@@ -263,7 +249,7 @@ export function ObjectivesPanel({
                                                         <button
                                                             type="button"
                                                             onClick={() => addRandomObjective(2)}
-                                                            className="w-full py-3 bg-slate-950/60 hover:bg-slate-800/40 border border-dashed border-slate-800 hover:border-rose-500/50 rounded-2xl text-slate-500 hover:text-rose-400 text-xs font-bold transition flex items-center justify-center gap-2"
+                                                            className="game-obj-add w-full py-3 border border-dashed rounded-2xl text-xs font-bold transition flex items-center justify-center gap-2"
                                                         >
                                                             <span className="text-base">+</span>
                                                             <span>Открыть случайную цель II этапа</span>
@@ -272,7 +258,7 @@ export function ObjectivesPanel({
                                                     <button
                                                         type="button"
                                                         onClick={addCustomObjective}
-                                                        className="w-full py-2 bg-transparent text-slate-600 hover:text-amber-400 text-xs font-semibold transition"
+                                                        className="game-obj-manual w-full py-2 bg-transparent text-xs font-semibold transition"
                                                     >
                                                         + Ввести свою цель вручную
                                                     </button>

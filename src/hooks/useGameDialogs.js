@@ -174,6 +174,27 @@ export function useGameDialogs({ game, dispatch, uiAlert, uiConfirm, uiForm, onN
     dispatch({ type: 'ADD_PLAYER', playerId: Date.now(), factionId: freeFaction.id });
   };
 
+  /** Grow/shrink the seat list to an exact count (3–8). */
+  const ensurePlayerCount = (count) => {
+    const n = Math.max(3, Math.min(8, Number(count) || 3));
+    if (players.length > n) {
+      players.slice(n).forEach((p) => dispatch({ type: 'REMOVE_PLAYER', playerId: p.id }));
+      return;
+    }
+    const taken = new Set(players.map((p) => p.factionId));
+    const need = n - players.length;
+    for (let i = 0; i < need; i += 1) {
+      const free = availableFactions.find((f) => !taken.has(f.id)) || availableFactions[0];
+      if (!free) break;
+      taken.add(free.id);
+      dispatch({
+        type: 'ADD_PLAYER',
+        playerId: Date.now() + i + Math.floor(Math.random() * 1000),
+        factionId: free.id,
+      });
+    }
+  };
+
   return {
     handleStartGame,
     removeObjective,
@@ -184,6 +205,7 @@ export function useGameDialogs({ game, dispatch, uiAlert, uiConfirm, uiForm, onN
     eliminatePlayer,
     playStrategyCard,
     addPlayer,
+    ensurePlayerCount,
     availableFactions,
   };
 }

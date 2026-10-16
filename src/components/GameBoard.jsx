@@ -108,32 +108,32 @@ export function GameBoard({
   return (
                             <div className="space-y-8">
                                 {custodiansNotice && (
-                                  <div className="fixed inset-0 z-[80] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4" role="presentation">
+                                  <div className="fixed inset-0 z-[80] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4" role="presentation">
                                     <div
                                       role="dialog"
                                       aria-modal="true"
                                       aria-labelledby="custodians-notice-title"
-                                      className="bg-slate-900 border border-cyan-600/50 rounded-2xl max-w-sm w-full p-5 shadow-2xl space-y-3"
+                                      className="game-modal-panel max-w-sm w-full p-5 space-y-3"
                                     >
                                       <div className="flex items-center gap-3">
-                                        <span className="w-11 h-11 rounded-xl bg-cyan-950 border border-cyan-600 flex items-center justify-center text-cyan-300 text-xl">
+                                        <span className="game-badge is-custodians w-11 h-11 !rounded-xl text-xl">
                                           <i className="fa-solid fa-globe" aria-hidden="true" />
                                         </span>
                                         <div>
-                                          <h3 id="custodians-notice-title" className="font-orbitron font-bold text-cyan-300 text-sm uppercase">
+                                          <h3 id="custodians-notice-title" className="game-modal-title text-sm uppercase">
                                             Хранители Мекатола
                                           </h3>
-                                          <p className="text-xs text-slate-400 mt-0.5">+1 ПО за захват Мекатола Rex</p>
+                                          <p className="text-xs text-[var(--game-muted)] mt-0.5">+1 ПО за захват Мекатола Rex</p>
                                         </div>
                                       </div>
-                                      <p className="text-sm text-slate-200 leading-relaxed">
+                                      <p className="text-sm text-[var(--game-text)] leading-relaxed">
                                         <span className="font-bold text-white">{custodiansNotice.playerName}</span>
                                         {' '}получил токен Хранителей. Очко учтено в счёте; у игрока появится значок планеты.
                                       </p>
                                       <button
                                         type="button"
                                         onClick={() => setCustodiansNotice(null)}
-                                        className="w-full py-2.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-slate-950 font-bold text-sm transition"
+                                        className="game-btn-primary w-full"
                                       >
                                         Понятно
                                       </button>
@@ -143,14 +143,14 @@ export function GameBoard({
 
                                 {/* ПАНЕЛЬ ОЧЕРЕДНОСТИ ХОДОВ */}
                                 {turnOrder.length > 0 && (
-                                    <section className="bg-slate-900 border border-slate-800 p-5 max-md:p-3 rounded-3xl space-y-4 shadow-lg">
+                                    <section className="game-panel p-5 max-md:p-3 space-y-4">
                                         <div className="flex items-center justify-between max-md:flex-col max-md:items-start max-md:gap-1">
-                                            <h3 className="font-orbitron font-bold text-sm uppercase text-slate-400 flex items-center gap-2">
-                                                <i className="fa-solid fa-list-ol text-cyan-400"></i>
+                                            <h3 className="game-section-title">
+                                                <i className="fa-solid fa-list-ol" aria-hidden="true" />
                                                 <span className="max-md:hidden">Очередность хода (По инициативе)</span>
                                                 <span className="md:hidden">Очередь хода</span>
                                             </h3>
-                                            <span className="text-xs font-bold text-slate-500 uppercase font-orbitron">
+                                            <span className="text-xs font-bold text-[var(--game-muted)] uppercase font-orbitron">
                                                 Активных: {turnOrder.filter(p => !passed[p.id]).length} / {turnOrder.length}
                                             </span>
                                         </div>
@@ -172,10 +172,7 @@ export function GameBoard({
                                                     <div
                                                         key={p.id}
                                                         style={{ borderLeftColor: cardBorderColor, borderLeftWidth: '4px' }}
-                                                        className={`p-2.5 rounded-2xl border flex flex-col justify-between transition-all duration-300 relative overflow-hidden ${isCurrent
-                                                            ? 'bg-slate-900 border-cyan-400 shadow-lg shadow-cyan-500/20 scale-105'
-                                                            : hasPassed ? 'bg-slate-950/50 border-slate-800 opacity-50 grayscale' : 'bg-slate-950/80 border-slate-800'
-                                                            }`}
+                                                        className={`game-initiative-card${isCurrent ? ' is-current' : ''}${hasPassed ? ' is-passed' : ''}`}
                                                     >
                                                         <div className="flex items-center justify-end gap-1 mb-1 h-5">
                                                             {hasPassed ? (
@@ -233,13 +230,13 @@ export function GameBoard({
                                 <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
 
                                     {/* ЛЕВАЯ КОЛОНКА: ТАБЛО ИГРОКОВ */}
-                                    <section className="lg:col-span-4 bg-slate-900 border border-slate-800 p-4 md:p-5 rounded-3xl space-y-4 shadow-lg">
-                                        <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-                                            <h2 className="font-orbitron font-bold text-base md:text-lg text-white uppercase flex items-center gap-2">
-                                                <i className="fa-solid fa-trophy text-amber-400"></i>
+                                    <section className="lg:col-span-4 game-panel p-4 md:p-5 space-y-4">
+                                        <div className="flex items-center justify-between border-b border-[var(--game-line)] pb-3">
+                                            <h2 className="game-section-title !text-base md:!text-lg !text-white">
+                                                <i className="fa-solid fa-trophy" aria-hidden="true" />
                                                 <span>Табло Игроков</span>
                                             </h2>
-                                            <span className="text-xs text-slate-500 font-orbitron font-bold">Цель: {targetScore} ПО</span>
+                                            <span className="text-xs text-[var(--game-muted)] font-orbitron font-bold">Цель: {targetScore} ПО</span>
                                         </div>
 
                                         <div className="space-y-2.5 flex flex-col">
@@ -269,29 +266,20 @@ export function GameBoard({
                                                         key={p.id}
                                                         layout
                                                         transition={{ type: "spring", stiffness: 300, damping: 28 }}
-                                                        className={`relative p-3 rounded-2xl border flex items-center justify-between gap-3 max-md:flex-col max-md:items-stretch shadow-md ${
+                                                        className={`game-player-card max-md:flex-col max-md:items-stretch ${
                                                           actionsOpen ? 'overflow-visible z-40' : 'overflow-hidden'
-                                                        } ${isWinner
-                                                            ? 'bg-amber-950/60 border-amber-500 shadow-amber-500/20'
-                                                            : p.eliminated
-                                                            ? 'bg-slate-950/70 border-slate-800 opacity-60 grayscale'
-                                                            : 'bg-slate-900/90 border-slate-700/80 hover:border-slate-600'
-                                                            }`}
+                                                        }${isWinner ? ' is-winner' : ''}${p.eliminated ? ' is-eliminated' : ''}`}
+                                                        style={{
+                                                          '--player-accent': isBlack ? '#94a3b8' : playerColor,
+                                                        }}
                                                     >
                                                         {p.eliminated && (
                                                             <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/60">
                                                                 <span className="font-orbitron font-black text-xl text-red-500 tracking-widest -rotate-12 border-4 border-red-500 px-3 py-1">УСТРАНЕН</span>
                                                             </div>
                                                         )}
-                                                        <div
-                                                            className="absolute left-0 top-0 bottom-0 w-2 rounded-l-2xl"
-                                                            style={{
-                                                                backgroundColor: playerColor,
-                                                                borderRight: isBlack ? '1px solid #f8fafc' : 'none'
-                                                            }}
-                                                        />
 
-                                                        <div className="flex items-center gap-3 min-w-0 pl-2 flex-1">
+                                                        <div className="flex items-center gap-3 min-w-0 flex-1">
                                                             <div
                                                                 className="w-14 h-14 md:w-16 md:h-16 rounded-2xl bg-slate-950 border-2 flex items-center justify-center p-1.5 flex-shrink-0 shadow-inner"
                                                                 style={{ borderColor: isBlack ? '#334155' : playerColor }}
@@ -332,7 +320,7 @@ export function GameBoard({
                                                                             {p.id === speakerId && !p.eliminated && (
                                                                                 <span
                                                                                   title="Спикер"
-                                                                                  className="w-6 h-6 rounded-md bg-purple-950 text-purple-300 border border-purple-700 flex items-center justify-center flex-shrink-0"
+                                                                                  className="game-badge is-speaker"
                                                                                 >
                                                                                     <i className="fa-solid fa-gavel text-[11px]" aria-hidden="true" />
                                                                                     <span className="sr-only">Спикер</span>
@@ -341,7 +329,7 @@ export function GameBoard({
                                                                             {hasCustodians && (
                                                                                 <span
                                                                                   title="Хранители Мекатола (+1 ПО за захват)"
-                                                                                  className="w-6 h-6 rounded-md bg-cyan-950 text-cyan-300 border border-cyan-700 flex items-center justify-center flex-shrink-0"
+                                                                                  className="game-badge is-custodians"
                                                                                 >
                                                                                     <i className="fa-solid fa-globe text-[11px]" aria-hidden="true" />
                                                                                     <span className="sr-only">Хранители</span>
@@ -354,7 +342,7 @@ export function GameBoard({
                                                                                 return (
                                                                                   <span
                                                                                     title={`Support for the Throne ×${heldSupportCount} (+${heldSupportCount} ПО)`}
-                                                                                    className="inline-flex items-center gap-1 h-6 pl-1.5 pr-1 rounded-md bg-emerald-950 text-emerald-300 border border-emerald-700 flex-shrink-0"
+                                                                                    className="game-badge is-support !w-auto !h-6 gap-1 pl-1.5 pr-1"
                                                                                   >
                                                                                     <i className="fa-solid fa-scroll text-[10px]" aria-hidden="true" />
                                                                                     <span className="inline-flex items-center -space-x-1.5">

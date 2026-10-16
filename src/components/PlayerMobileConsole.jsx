@@ -186,7 +186,7 @@ export function PlayerMobileConsole({
       <div className="player-tabbar-spacer" aria-hidden="true" />
 
       <nav className="player-tabbar" aria-label="Навигация игрока">
-        <div className="grid grid-cols-3 w-full">
+        <div className="game-mobile-tabs mx-2 mt-1.5 mb-1 grid grid-cols-3 !gap-1">
           {TABS.map(t => {
             const on = tab === t.id;
             return (
@@ -194,13 +194,12 @@ export function PlayerMobileConsole({
                 key={t.id}
                 type="button"
                 onClick={() => setTab(t.id)}
-                className={`flex flex-col items-center justify-center gap-0.5 px-1 pt-2.5 pb-2 text-xs font-bold uppercase tracking-wide transition ${
-                  on ? 'text-cyan-400' : 'text-slate-500'
+                className={`game-mobile-tab flex flex-col items-center justify-center gap-0.5 !py-2 ${
+                  on ? 'is-active' : ''
                 }`}
               >
                 <i className={`fa-solid ${t.icon} text-base leading-none`} aria-hidden="true" />
-                <span className="leading-tight">{t.label}</span>
-                <span className={`w-6 h-0.5 rounded-full mt-0.5 ${on ? 'bg-cyan-400' : 'bg-transparent'}`} />
+                <span className="leading-tight text-[10px]">{t.label}</span>
               </button>
             );
           })}
@@ -245,13 +244,13 @@ function TurnTab({
       <div
         className={`rounded-2xl border p-4 ${
           isMyTurn
-            ? 'border-cyan-500/70 bg-cyan-950/30'
-            : 'border-slate-800 bg-slate-900'
+            ? 'border-[var(--game-line-gold)] bg-[rgba(201,162,39,0.12)]'
+            : 'border-[var(--game-line)] bg-[rgba(8,10,16,0.82)]'
         }`}
       >
         {isMyTurn ? (
           <div className="space-y-1">
-            <div className="text-xs font-bold uppercase tracking-wider text-cyan-400">Ваш ход</div>
+            <div className="game-turn-label">Ваш ход</div>
             <div className="flex items-end justify-between gap-3">
               <div className="font-orbitron font-black text-2xl text-white leading-none">Действуйте</div>
               <div className="text-right">
@@ -405,7 +404,7 @@ function TurnTab({
             <button
               type="button"
               onClick={onNextTurn}
-              className="col-span-2 bg-cyan-500 hover:bg-cyan-400 text-black font-orbitron font-black py-3.5 rounded-2xl text-sm uppercase min-h-[52px]"
+              className="game-btn-primary col-span-2 !py-3.5 !rounded-2xl min-h-[52px]"
             >
               Завершить ход <i className="fa-solid fa-forward ml-1" />
             </button>
@@ -453,7 +452,7 @@ function TurnTab({
         <button
           type="button"
           onClick={onOpenProduction}
-          className="w-full flex items-center justify-center gap-2 rounded-2xl border border-cyan-700/70 bg-cyan-950/80 px-3 py-3 text-sm font-bold text-cyan-300 min-h-[48px]"
+          className="game-btn-ghost w-full !rounded-2xl min-h-[48px] !border-[var(--game-line-gold)] !text-[var(--game-gold-bright)]"
         >
           <i className="fa-solid fa-industry" aria-hidden="true" />
           Калькулятор производства
@@ -576,15 +575,15 @@ function ObjectivesTab({
           onClick={() => onToggleSecret(me.id)}
           className={`w-full text-left rounded-2xl border p-3 transition active:scale-[0.99] ${
             myResponse?.secret
-              ? 'border-purple-500/60 bg-purple-950/30'
-              : 'border-slate-800 bg-slate-900'
+              ? 'border-[var(--game-line-gold)] bg-[rgba(201,162,39,0.12)]'
+              : 'border-[var(--game-line)] bg-[rgba(8,10,16,0.82)]'
           }`}
         >
           <div className="flex items-start gap-3">
             <span
               className={`mt-0.5 w-6 h-6 rounded-lg border flex items-center justify-center text-xs flex-shrink-0 ${
                 myResponse?.secret
-                  ? 'bg-purple-500 border-purple-400 text-black'
+                  ? 'bg-[var(--game-gold)] border-[var(--game-gold-bright)] text-black'
                   : 'border-slate-600 text-transparent'
               }`}
             >
@@ -727,26 +726,16 @@ function ObjectivesTab({
                             const isBlack = pColor.toLowerCase() === '#000000'
                               || pColor.toLowerCase() === '#000'
                               || pColor.toLowerCase() === 'black';
+                            const accent = isBlack ? '#94a3b8' : pColor;
                             return (
                               <div
                                 key={p.id}
-                                style={{
-                                  borderColor: isDone ? (isBlack ? '#ffffff' : pColor) : undefined,
-                                }}
-                                className={`px-2 py-1.5 rounded-xl text-[11px] font-bold flex items-center justify-between gap-1 border ${
-                                  isDone
-                                    ? 'bg-slate-900 text-white shadow-md'
-                                    : 'bg-slate-950/80 text-slate-400 border-slate-800'
-                                } ${isDone && isBlack ? 'ring-2 ring-white/80' : ''}`}
+                                style={{ '--player-accent': accent }}
+                                className={`game-obj-seat text-[11px] ${isDone ? 'is-done' : ''}`}
                               >
                                 <span className="truncate">{p.name}</span>
                                 {isDone && (
-                                  <span
-                                    className="w-3.5 h-3.5 rounded-full flex items-center justify-center text-[11px] text-black font-extrabold flex-shrink-0"
-                                    style={{ backgroundColor: isBlack ? '#ffffff' : pColor }}
-                                  >
-                                    ✓
-                                  </span>
+                                  <span className="game-obj-seat-check" aria-hidden="true">✓</span>
                                 )}
                               </div>
                             );

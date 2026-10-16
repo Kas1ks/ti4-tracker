@@ -72,23 +72,23 @@ export function ProductionCalculatorModal({
 
   return (
     <div
-      className="fixed inset-0 z-[58] bg-black/85 backdrop-blur-md flex items-stretch md:items-center justify-center md:p-4 modal-overlay"
+      className="fixed inset-0 z-[58] game-modal-overlay flex items-stretch md:items-center justify-center md:p-4 modal-overlay"
       role="presentation"
       onClick={onClose}
     >
       <div
-        className="relative w-full max-w-2xl max-md:h-full md:max-h-[92vh] bg-slate-950 border border-cyan-700/50 md:rounded-2xl shadow-2xl flex flex-col overflow-hidden"
+        className="relative w-full max-w-2xl max-md:h-full md:max-h-[92vh] game-modal-panel md:!rounded-2xl flex flex-col overflow-hidden !rounded-none md:!rounded-2xl"
         role="dialog"
         aria-modal="true"
         aria-labelledby="production-calc-title"
         onClick={(event) => event.stopPropagation()}
       >
-        <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-slate-800 bg-slate-900/80">
+        <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-[var(--game-line)] bg-black/30">
           <div className="min-w-0">
-            <h2 id="production-calc-title" className="font-orbitron font-black text-base md:text-lg text-cyan-300 uppercase tracking-wide truncate">
+            <h2 id="production-calc-title" className="game-modal-title text-base md:text-lg uppercase truncate">
               Калькулятор производства
             </h2>
-            <p className="text-xs text-slate-400 mt-0.5 truncate">
+            <p className="text-xs text-[var(--game-muted)] mt-0.5 truncate">
               {playerName ? `${playerName} · ` : ''}
               Добавляйте отряды — считаем количество и цену
             </p>
@@ -97,7 +97,7 @@ export function ProductionCalculatorModal({
             <button
               type="button"
               onClick={reset}
-              className="h-10 px-3 rounded-xl bg-slate-900 border border-slate-700 text-slate-300 hover:text-white text-xs font-bold"
+              className="game-btn-ghost !h-10 !px-3 !text-xs"
               title="Сбросить"
             >
               Сброс
@@ -105,7 +105,7 @@ export function ProductionCalculatorModal({
             <button
               type="button"
               onClick={onClose}
-              className="w-10 h-10 rounded-xl bg-slate-900 border border-slate-700 text-slate-300 hover:text-white"
+              className="game-btn-ghost !w-10 !h-10 !px-0"
               aria-label="Закрыть"
             >
               <i className="fa-solid fa-xmark" aria-hidden="true" />
@@ -114,10 +114,10 @@ export function ProductionCalculatorModal({
         </div>
 
         {(hasSarween || hasAiAlgo) && (
-          <div className="px-4 py-2.5 border-b border-slate-800 bg-slate-950/80 space-y-2">
+          <div className="px-4 py-2.5 border-b border-[var(--game-line)] bg-black/20 space-y-2">
             {hasSarween && (
-              <div className="text-xs text-amber-300/90 font-semibold flex items-center gap-2">
-                <i className="fa-solid fa-wrench text-amber-400" aria-hidden="true" />
+              <div className="text-xs text-[var(--game-gold-bright)] font-semibold flex items-center gap-2">
+                <i className="fa-solid fa-wrench" aria-hidden="true" />
                 Sarween Tools: −1⚙ к суммарной стоимости
               </div>
             )}
@@ -127,11 +127,11 @@ export function ProductionCalculatorModal({
                   type="checkbox"
                   checked={applyAiAlgorithm}
                   onChange={(e) => setApplyAiAlgorithm(e.target.checked)}
-                  className="mt-0.5 w-4 h-4 rounded border-slate-600 bg-slate-900 text-cyan-500 focus:ring-cyan-500/40"
+                  className="mt-0.5 w-4 h-4 rounded border-[var(--game-line)] bg-black/40 text-[var(--game-gold)] focus:ring-[var(--game-gold)]/40"
                 />
-                <span className="text-xs text-rose-200/90 font-semibold leading-snug">
+                <span className="text-xs text-[var(--game-text)] font-semibold leading-snug">
                   AI Development Algorithm
-                  <span className="block text-slate-400 font-normal mt-0.5">
+                  <span className="block text-[var(--game-muted)] font-normal mt-0.5">
                     −{unitUpgradeCount}⚙ (по 1 за каждый unit upgrade).
                     Снимите галочку, если карта уже истощена.
                   </span>
@@ -141,7 +141,7 @@ export function ProductionCalculatorModal({
           </div>
         )}
 
-        <div className="flex-1 overflow-y-auto p-3 md:p-4 space-y-2">
+        <div className="flex-1 overflow-y-auto p-3 md:p-4 space-y-2 modal-scroll">
           {PRODUCTION_UNITS.map((unit) => {
             const count = counts[unit.id] || 0;
             const slots = unitSlotCount(unit, count);
@@ -154,7 +154,7 @@ export function ProductionCalculatorModal({
             return (
               <div
                 key={unit.id}
-                className="flex items-center gap-3 rounded-2xl border border-slate-800 bg-slate-900/80 px-3 py-2.5"
+                className="flex items-center gap-3 rounded-2xl border border-[var(--game-line)] bg-black/35 px-3 py-2.5"
               >
                 <img
                   src={unitImageUrl(unit, playerColor)}
@@ -163,16 +163,16 @@ export function ProductionCalculatorModal({
                   draggable={false}
                 />
                 <div className="min-w-0 flex-1">
-                  <div className="font-bold text-white text-sm md:text-base truncate">{unit.name}</div>
-                  <div className="text-[11px] text-slate-500 font-semibold">
+                  <div className="font-bold text-[var(--game-text)] text-sm md:text-base truncate">{unit.name}</div>
+                  <div className="text-[11px] text-[var(--game-muted)] font-semibold">
                     {batch > 1
                       ? `+${batch} шт · ${unitCost}⚙ / отряд`
                       : `${unitCost}⚙`}
                     {muaatWs && (
-                      <span className="text-rose-300/90 ml-1.5">(Prototype II)</span>
+                      <span className="text-[var(--game-gold-bright)] ml-1.5">(Prototype II)</span>
                     )}
                     {count > 0 && (
-                      <span className="text-cyan-400/90 ml-2">
+                      <span className="text-[var(--game-gold-bright)] ml-2">
                         {slots} отр. · {lineCost}⚙
                       </span>
                     )}
@@ -183,18 +183,18 @@ export function ProductionCalculatorModal({
                     type="button"
                     onClick={() => bump(unit.id, -1)}
                     disabled={count <= 0}
-                    className="w-10 h-10 rounded-xl bg-slate-950 border border-slate-700 text-slate-200 font-black text-lg disabled:opacity-40 active:scale-95"
+                    className="w-10 h-10 rounded-xl bg-black/50 border border-[var(--game-line)] text-[var(--game-text)] font-black text-lg disabled:opacity-40 active:scale-95"
                     aria-label={`Убрать ${unit.name}`}
                   >
                     −
                   </button>
-                  <div className="w-9 text-center font-orbitron font-black text-lg text-amber-300 tabular-nums">
+                  <div className="w-9 text-center font-orbitron font-black text-lg text-[var(--game-gold-bright)] tabular-nums">
                     {count}
                   </div>
                   <button
                     type="button"
                     onClick={() => bump(unit.id, 1)}
-                    className="w-10 h-10 rounded-xl bg-cyan-600 hover:bg-cyan-500 border border-cyan-400 text-black font-black text-lg active:scale-95"
+                    className="game-btn-primary !w-10 !h-10 !p-0 !text-lg"
                     aria-label={`Добавить ${unit.name}`}
                   >
                     +
@@ -205,19 +205,19 @@ export function ProductionCalculatorModal({
           })}
         </div>
 
-        <div className="border-t border-slate-800 bg-slate-900/90 px-4 py-3 flex items-center justify-between gap-3">
+        <div className="border-t border-[var(--game-line-gold)] bg-black/35 px-4 py-3 flex items-center justify-between gap-3">
           <div>
-            <div className="text-[10px] uppercase font-bold tracking-wider text-slate-500">Отрядов</div>
-            <div className="font-orbitron font-black text-2xl text-white tabular-nums">{totals.units}</div>
+            <div className="text-[10px] uppercase font-bold tracking-wider text-[var(--game-muted)]">Отрядов</div>
+            <div className="font-orbitron font-black text-2xl text-[var(--game-text)] tabular-nums">{totals.units}</div>
           </div>
           <div className="text-right">
-            <div className="text-[10px] uppercase font-bold tracking-wider text-slate-500">Ресурсы</div>
+            <div className="text-[10px] uppercase font-bold tracking-wider text-[var(--game-muted)]">Ресурсы</div>
             {totals.discount > 0 && (
-              <div className="text-[11px] text-slate-500 tabular-nums">
+              <div className="text-[11px] text-[var(--game-muted)] tabular-nums">
                 {totals.baseResources}⚙ − {totals.discount}⚙ скидка
               </div>
             )}
-            <div className="font-orbitron font-black text-2xl text-cyan-300 tabular-nums">{totals.resources}⚙</div>
+            <div className="font-orbitron font-black text-2xl text-[var(--game-gold-bright)] tabular-nums">{totals.resources}⚙</div>
           </div>
         </div>
       </div>

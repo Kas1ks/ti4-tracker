@@ -114,12 +114,12 @@ export function PoliticsModal({
   const orderedForVote = voteOrder.length ? voteOrder : activePlayers;
 
   return (
-    <div className={`fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 max-md:items-end max-md:p-2 modal-overlay ${minimized ? 'hidden' : ''}`} role="presentation">
+    <div className={`fixed inset-0 game-modal-overlay z-50 flex items-center justify-center p-4 max-md:items-end max-md:p-2 modal-overlay ${minimized ? 'hidden' : ''}`} role="presentation">
       <div
         role="dialog"
         aria-modal="true"
         aria-labelledby="politics-modal-title"
-        className="bg-slate-900 border border-purple-800 rounded-2xl max-w-4xl w-full p-6 max-h-[90vh] overflow-y-auto shadow-2xl shadow-purple-500/10 max-md:p-4 max-md:max-h-[min(92vh,100dvh)] modal-scroll"
+        className="game-modal-panel max-w-4xl w-full p-6 max-h-[90vh] overflow-y-auto max-md:p-4 max-md:max-h-[min(92vh,100dvh)] modal-scroll"
       >
         <div className="flex justify-between items-center mb-4 pb-3 border-b border-slate-800 gap-3 flex-wrap">
           <h2 id="politics-modal-title" className="font-orbitron text-lg font-bold text-purple-400 uppercase flex items-center gap-2">

@@ -1,70 +1,92 @@
+import { useEffect } from 'react';
+import brandMark from '../assets/brand-mark.png';
 import { ROLE_LABELS } from '../sync/permissions';
 import { ALL_FACTIONS } from '../data/gameData';
+import { HubCosmosBackdrop } from './HubCosmosBackdrop';
 
 /** Waiting room for player/viewer until the host starts the game. */
 export function GuestLobby({ room, players, roomError, onLeaveRoom }) {
   const roleLabel = ROLE_LABELS[room?.role] || room?.role;
-  const seatIdx = players.findIndex(p => String(p.id) === String(room?.seatPlayerId));
+  const seatIdx = players.findIndex((p) => String(p.id) === String(room?.seatPlayerId));
   const mySeat = seatIdx >= 0 ? players[seatIdx] : null;
-  const myFaction = mySeat ? ALL_FACTIONS.find(f => f.id === mySeat.factionId) : null;
+  const myFaction = mySeat ? ALL_FACTIONS.find((f) => f.id === mySeat.factionId) : null;
+
+  useEffect(() => {
+    document.body.classList.add('hub-cinematic');
+    return () => document.body.classList.remove('hub-cinematic');
+  }, []);
 
   return (
-    <div className="max-w-lg mx-auto py-12 md:py-20 space-y-8 text-center">
-      <div className="space-y-2">
-        <div className="text-xs font-bold uppercase tracking-widest text-emerald-500">Комната</div>
-        <div className="font-orbitron font-black text-4xl text-emerald-300 tracking-[0.3em]">
-          {room?.roomId}
-        </div>
-        <div className="text-sm text-slate-400">
-          Роль: <span className="text-white font-semibold">{roleLabel}</span>
-          {mySeat && ` · ${mySeat.name}`}
-        </div>
-      </div>
+    <div className="hub-shell hub-shell--column guest-lobby-shell">
+      <HubCosmosBackdrop />
 
-      {mySeat && room?.seatSecret && (
-        <div className="rounded-2xl border border-amber-600/40 bg-amber-950/20 px-5 py-4 space-y-1">
-          <div className="text-[10px] font-bold uppercase tracking-wider text-amber-400">Код места</div>
-          <div className="font-orbitron font-black text-3xl text-amber-200 tracking-[0.35em]">
-            {room.seatSecret}
+      <main className="guest-lobby">
+        <header className="guest-lobby-hero">
+          <img
+            src={brandMark}
+            alt=""
+            width={40}
+            height={40}
+            className="guest-lobby-mark"
+            draggable={false}
+          />
+          <p className="guest-lobby-eyebrow">TI4 Tracker</p>
+          <h1 className="guest-lobby-title">Ожидание партии</h1>
+        </header>
+
+        <section className="guest-lobby-room hub-panel" aria-label="Комната">
+          <div className="guest-lobby-room-label">Код комнаты</div>
+          <div className="guest-lobby-room-code">{room?.roomId || '—'}</div>
+          <div className="guest-lobby-room-meta">
+            Роль: <strong>{roleLabel}</strong>
+            {mySeat ? ` · ${mySeat.name}` : null}
           </div>
-          <p className="text-xs text-slate-400">
-            Нужен, чтобы сесть сюда с другого телефона или вкладки. Не показывайте посторонним.
-          </p>
-        </div>
-      )}
+        </section>
 
-      {mySeat && (
-        <div className="inline-flex items-center gap-4 bg-slate-900 border border-slate-800 rounded-2xl px-5 py-4">
-          <div className="w-14 h-14 rounded-xl bg-slate-950 border border-slate-800 p-1">
-            <img src={myFaction?.iconUrl} alt={myFaction?.name} className="w-full h-full object-contain" />
+        {mySeat && room?.seatSecret && (
+          <section className="guest-lobby-secret hub-panel" aria-label="Код места">
+            <div className="guest-lobby-room-label">Код места</div>
+            <div className="guest-lobby-secret-code">{room.seatSecret}</div>
+            <p className="guest-lobby-hint">
+              Нужен, чтобы сесть сюда с другого телефона или вкладки. Не показывайте посторонним.
+            </p>
+          </section>
+        )}
+
+        {mySeat && (
+          <section className="guest-lobby-seat hub-panel" aria-label="Ваше место">
+            <div className="guest-lobby-seat-icon">
+              <img
+                src={myFaction?.iconUrl}
+                alt=""
+                width={56}
+                height={56}
+              />
+            </div>
+            <div className="guest-lobby-seat-copy">
+              <div className="guest-lobby-seat-name">{mySeat.name}</div>
+              <div className="guest-lobby-seat-faction">{myFaction?.name || 'Фракция не выбрана'}</div>
+            </div>
+          </section>
+        )}
+
+        {roomError && (
+          <div className="guest-lobby-error" role="alert">
+            {roomError}
           </div>
-          <div className="text-left">
-            <div className="font-bold text-white text-lg">{mySeat.name}</div>
-            <div className="text-sm text-amber-400">{myFaction?.name}</div>
-          </div>
-        </div>
-      )}
+        )}
 
-      {roomError && (
-        <div className="text-sm text-rose-300 bg-rose-950/40 border border-rose-800 rounded-xl px-4 py-3">
-          {roomError}
-        </div>
-      )}
+        <p className="guest-lobby-status">
+          Ожидайте, пока хост настроит стол и начнёт партию.
+          <span>Экран обновится автоматически.</span>
+        </p>
 
-      <div className="space-y-3 text-slate-400 text-sm">
-        <p>Ожидайте, пока хост настроит стол и начнёт партию.</p>
-        <p className="text-xs text-slate-500">Экран обновится автоматически.</p>
-      </div>
-
-      {onLeaveRoom && (
-        <button
-          type="button"
-          onClick={onLeaveRoom}
-          className="w-full py-3.5 rounded-2xl bg-slate-900 hover:bg-rose-950/40 border border-rose-800/60 text-rose-300 font-bold text-sm transition"
-        >
-          Выйти
-        </button>
-      )}
+        {onLeaveRoom && (
+          <button type="button" className="guest-lobby-leave" onClick={onLeaveRoom}>
+            Выйти
+          </button>
+        )}
+      </main>
     </div>
   );
 }

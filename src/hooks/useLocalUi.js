@@ -67,6 +67,14 @@ export function useLocalUi() {
     setTotalCombatDamage({ attacker: 0, defender: 0 });
     setCombatHits({ attacker: 0, defender: 0 });
     setShowCombatModal(true);
+    // Expand combat and dock other blocking modals (previously minimized → looked like a no-op).
+    setMinimizedModals((prev) => {
+      const next = { ...prev, combat: false };
+      for (const id of BLOCKING_MODAL_IDS) {
+        if (id !== 'combat') next[id] = true;
+      }
+      return next;
+    });
   };
 
   const closeEndGameUi = () => {

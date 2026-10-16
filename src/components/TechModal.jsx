@@ -211,7 +211,7 @@ export function TechModal({
         role="dialog"
         aria-modal="true"
         aria-labelledby="tech-modal-title"
-        className="flex flex-col w-full h-full max-h-[100dvh] md:h-auto md:max-h-[90vh] md:max-w-2xl bg-slate-950 md:rounded-3xl md:border md:border-sky-500/40 shadow-2xl"
+        className="flex flex-col w-full h-full max-h-[100dvh] md:h-auto md:max-h-[90vh] md:max-w-2xl game-modal-panel md:!rounded-3xl"
       >
         <header className="flex-shrink-0 px-4 md:px-6 pt-[max(0.75rem,env(safe-area-inset-top))] md:pt-5 pb-3 border-b border-slate-800">
           <div className="flex items-start justify-between gap-3">

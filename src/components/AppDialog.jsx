@@ -1,27 +1,18 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
 
-const VARIANT_STYLES = {
+const VARIANT_META = {
   info: {
-    border: 'border-cyan-500/40',
-    glow: 'shadow-[0_0_40px_rgba(34,211,238,0.15)]',
-    iconBg: 'bg-cyan-950 border-cyan-500 text-cyan-400',
     icon: 'fa-circle-info',
-    primary: 'bg-cyan-500 hover:bg-cyan-400 text-black',
+    tone: 'info',
   },
   danger: {
-    border: 'border-red-500/40',
-    glow: 'shadow-[0_0_40px_rgba(239,68,68,0.2)]',
-    iconBg: 'bg-red-950 border-red-500 text-red-400',
     icon: 'fa-triangle-exclamation',
-    primary: 'bg-red-500 hover:bg-red-400 text-white',
+    tone: 'danger',
   },
   success: {
-    border: 'border-amber-500/40',
-    glow: 'shadow-[0_0_40px_rgba(245,158,11,0.2)]',
-    iconBg: 'bg-amber-950 border-amber-500 text-amber-400',
     icon: 'fa-circle-check',
-    primary: 'bg-amber-500 hover:bg-amber-400 text-black',
+    tone: 'success',
   },
 };
 
@@ -99,7 +90,7 @@ export function AppDialog({ dialog, onClose }) {
 
   if (!dialog) return null;
 
-  const variant = VARIANT_STYLES[dialog.variant] || VARIANT_STYLES.info;
+  const variant = VARIANT_META[dialog.variant] || VARIANT_META.info;
 
   const submit = () => {
     if (dialog.type === 'alert') {
@@ -126,7 +117,7 @@ export function AppDialog({ dialog, onClose }) {
 
   return (
     <div
-      className="fixed inset-0 z-[100] bg-black/85 backdrop-blur-md flex items-center justify-center p-4 modal-overlay"
+      className="app-dialog-overlay modal-overlay"
       role="presentation"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) cancel();
@@ -138,21 +129,18 @@ export function AppDialog({ dialog, onClose }) {
         aria-modal="true"
         aria-labelledby={titleId}
         aria-describedby={dialog.message ? descId : undefined}
-        className={`bg-slate-900 border ${variant.border} ${variant.glow} p-6 md:p-8 rounded-3xl max-w-md w-full space-y-5 max-h-[90vh] overflow-y-auto modal-scroll`}
+        className={`app-dialog app-dialog--${variant.tone} modal-scroll`}
       >
-        <div className="flex items-start gap-4">
-          <div
-            className={`w-12 h-12 rounded-2xl border-2 flex items-center justify-center flex-shrink-0 ${variant.iconBg}`}
-            aria-hidden="true"
-          >
+        <div className="app-dialog-head">
+          <div className="app-dialog-icon" aria-hidden="true">
             <i className={`fa-solid ${variant.icon}`} />
           </div>
-          <div className="min-w-0 space-y-1">
-            <h3 id={titleId} className="font-orbitron font-black text-lg md:text-xl text-white uppercase">
+          <div className="app-dialog-copy">
+            <h3 id={titleId} className="app-dialog-title">
               {dialog.title}
             </h3>
             {dialog.message ? (
-              <p id={descId} className="text-sm text-slate-300 whitespace-pre-wrap">
+              <p id={descId} className="app-dialog-message">
                 {dialog.message}
               </p>
             ) : null}
@@ -160,7 +148,7 @@ export function AppDialog({ dialog, onClose }) {
         </div>
 
         {dialog.type === 'prompt' ? (
-          <label className="block space-y-2">
+          <label className="app-dialog-field">
             <span className="sr-only">{dialog.message || dialog.title}</span>
             <input
               data-autofocus
@@ -174,16 +162,16 @@ export function AppDialog({ dialog, onClose }) {
                   submit();
                 }
               }}
-              className="w-full bg-slate-950 border border-slate-700 focus:border-cyan-400 rounded-xl px-4 py-3 text-white font-bold outline-none"
+              className="app-dialog-input"
             />
           </label>
         ) : null}
 
         {dialog.type === 'form' ? (
-          <div className="space-y-3">
+          <div className="app-dialog-fields">
             {(dialog.fields || []).map((field, index) => (
-              <label key={field.name} className="block space-y-1.5">
-                <span className="text-xs font-bold uppercase text-slate-400">{field.label}</span>
+              <label key={field.name} className="app-dialog-field">
+                <span className="app-dialog-label">{field.label}</span>
                 {field.type === 'select' ? (
                   <select
                     data-autofocus={index === 0 ? true : undefined}
@@ -191,7 +179,7 @@ export function AppDialog({ dialog, onClose }) {
                     onChange={(event) =>
                       setValues((prev) => ({ ...prev, [field.name]: event.target.value }))
                     }
-                    className="w-full bg-slate-950 border border-slate-700 focus:border-cyan-400 rounded-xl px-4 py-3 text-white font-bold outline-none"
+                    className="app-dialog-input"
                   >
                     {(field.options || []).map((option) => (
                       <option key={option.value ?? option} value={option.value ?? option}>
@@ -208,7 +196,7 @@ export function AppDialog({ dialog, onClose }) {
                     onChange={(event) =>
                       setValues((prev) => ({ ...prev, [field.name]: event.target.value }))
                     }
-                    className="w-full bg-slate-950 border border-slate-700 focus:border-cyan-400 rounded-xl px-4 py-3 text-white font-bold outline-none"
+                    className="app-dialog-input"
                   />
                 )}
               </label>
@@ -216,13 +204,9 @@ export function AppDialog({ dialog, onClose }) {
           </div>
         ) : null}
 
-        <div className="flex flex-col-reverse sm:flex-row gap-3 pt-1">
+        <div className="app-dialog-actions">
           {dialog.type !== 'alert' ? (
-            <button
-              type="button"
-              onClick={cancel}
-              className="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold py-3 px-4 rounded-2xl text-sm border border-slate-700 transition"
-            >
+            <button type="button" onClick={cancel} className="app-dialog-btn app-dialog-btn--ghost">
               {dialog.cancelLabel || 'Отмена'}
             </button>
           ) : null}
@@ -230,7 +214,7 @@ export function AppDialog({ dialog, onClose }) {
             type="button"
             data-autofocus={dialog.type === 'alert' || dialog.type === 'confirm' ? true : undefined}
             onClick={submit}
-            className={`flex-1 font-orbitron font-extrabold py-3 px-4 rounded-2xl text-sm uppercase transition ${variant.primary}`}
+            className="app-dialog-btn app-dialog-btn--primary"
           >
             {dialog.confirmLabel || 'OK'}
           </button>

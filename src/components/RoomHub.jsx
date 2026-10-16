@@ -1,14 +1,15 @@
 import { useEffect, useState } from 'react';
+import brandMark from '../assets/brand-mark.png';
 import brandMarkLg from '../assets/brand-mark-lg.png';
 import { ALL_FACTIONS } from '../data/gameData';
 import { ROLES } from '../sync/permissions';
 import { fetchRoomSnapshot } from '../sync/roomApi';
 import { loadSeatSecret } from '../sync/seatSecrets';
+import { HubCosmosBackdrop } from './HubCosmosBackdrop';
 import { PwaInstallBanner } from './PwaInstallBanner';
 
 /**
- * First screen: Create party / Join by code.
- * Join uses seat cards from a room snapshot; viewer is a secondary action.
+ * First screen: Create party / Join by code (cinematic hub shell).
  */
 export function RoomHub({
   roomStatus,
@@ -18,12 +19,25 @@ export function RoomHub({
   onPlaySolo,
   importGameToken,
   uiPrompt,
+  onOpenStats,
 }) {
   const [view, setView] = useState('hub'); // hub | join | extras
   const [joinCode, setJoinCode] = useState('');
   const [preview, setPreview] = useState(null);
   const [previewError, setPreviewError] = useState(null);
   const [joining, setJoining] = useState(false);
+  const [soonNote, setSoonNote] = useState(null);
+
+  useEffect(() => {
+    document.body.classList.add('hub-cinematic');
+    return () => document.body.classList.remove('hub-cinematic');
+  }, []);
+
+  useEffect(() => {
+    if (!soonNote) return undefined;
+    const t = setTimeout(() => setSoonNote(null), 2200);
+    return () => clearTimeout(t);
+  }, [soonNote]);
 
   useEffect(() => {
     const code = joinCode.trim().toUpperCase();
@@ -94,206 +108,306 @@ export function RoomHub({
     }
   };
 
+  const topbar = (
+    <header className="hub-topbar">
+      <button type="button" className="hub-topbar-brand" onClick={() => setView('hub')}>
+        <img src={brandMark} alt="" width={28} height={28} draggable={false} />
+        <span>TI4 TRACKER</span>
+      </button>
+    </header>
+  );
+
+  const dock = (
+    <nav className="hub-dock" aria-label="Разделы">
+      <button
+        type="button"
+        className="hub-dock-card"
+        onClick={() => (onOpenStats ? onOpenStats() : setSoonNote('Статистика скоро'))}
+      >
+        <i className="fa-solid fa-chart-simple hub-dock-icon" aria-hidden="true" />
+        <span className="hub-dock-title">Статистика</span>
+        <span className="hub-dock-caption">Аналитика ваших игр</span>
+        <i className="fa-solid fa-chevron-right hub-dock-chevron" aria-hidden="true" />
+      </button>
+      <button
+        type="button"
+        className="hub-dock-card"
+        onClick={() => setSoonNote('Руководство скоро')}
+      >
+        <i className="fa-solid fa-book-open hub-dock-icon" aria-hidden="true" />
+        <span className="hub-dock-title">Руководство</span>
+        <span className="hub-dock-caption">Правила и подсказки</span>
+        <i className="fa-solid fa-chevron-right hub-dock-chevron" aria-hidden="true" />
+      </button>
+      <button
+        type="button"
+        className="hub-dock-card"
+        onClick={() => setSoonNote('Сообщество скоро')}
+      >
+        <i className="fa-solid fa-users hub-dock-icon" aria-hidden="true" />
+        <span className="hub-dock-title">Сообщество</span>
+        <span className="hub-dock-caption">Найдите игроков</span>
+        <i className="fa-solid fa-chevron-right hub-dock-chevron" aria-hidden="true" />
+      </button>
+      <button
+        type="button"
+        className="hub-dock-card"
+        onClick={() => setView('extras')}
+      >
+        <i className="fa-solid fa-gear hub-dock-icon" aria-hidden="true" />
+        <span className="hub-dock-title">Настройки</span>
+        <span className="hub-dock-caption">Персонализация</span>
+        <i className="fa-solid fa-chevron-right hub-dock-chevron" aria-hidden="true" />
+      </button>
+    </nav>
+  );
+
   if (view === 'join') {
     return (
-      <div className="max-w-xl mx-auto py-8 md:py-16 space-y-8">
-        <button
-          type="button"
-          onClick={() => setView('hub')}
-          className="text-sm text-slate-400 hover:text-white font-bold flex items-center gap-2"
-        >
-          <i className="fa-solid fa-arrow-left" /> Назад
-        </button>
+      <div className="hub-shell hub-shell--column">
+        <HubCosmosBackdrop />
+        {topbar}
+        <div className="hub-main hub-main--focus">
+          <div className="hub-stage">
+            <button type="button" onClick={() => setView('hub')} className="hub-back">
+              <i className="fa-solid fa-arrow-left" aria-hidden="true" />
+              Назад
+            </button>
 
-        <div className="space-y-2">
-          <h1 className="font-orbitron font-black text-3xl md:text-4xl text-white tracking-wide">
-            Войти в комнату
-          </h1>
-          <p className="text-slate-400 text-sm md:text-base">
-            Введите код от хоста, затем выберите своё место за столом.
-          </p>
+            <header className="hub-stage-head">
+              <h1 className="hub-stage-title">Войти в комнату</h1>
+              <p className="hub-stage-lead">
+                Введите код от хоста, затем выберите своё место за столом.
+              </p>
+            </header>
+
+            <input
+              type="text"
+              value={joinCode}
+              onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
+              placeholder="КОД"
+              maxLength={8}
+              autoFocus
+              className="hub-input"
+              aria-label="Код комнаты"
+            />
+
+            {previewError && (
+              <p className="hub-stage-msg is-warn">{previewError}</p>
+            )}
+
+            {preview && previewPlayers.length === 0 && (
+              <p className="hub-stage-msg is-info">
+                В комнате ещё нет игроков — подождите, пока хост настроит стол.
+              </p>
+            )}
+
+            {previewPlayers.length > 0 && (
+              <section className="hub-seats" aria-label="Места за столом">
+                <h2 className="hub-seats-label">Выберите место</h2>
+                <div className="hub-seats-grid">
+                  {previewPlayers.map((p, idx) => {
+                    const taken = claimed.some((id) => String(id) === String(p.id));
+                    const faction = ALL_FACTIONS.find((f) => f.id === p.factionId);
+                    return (
+                      <button
+                        key={p.id}
+                        type="button"
+                        disabled={connecting}
+                        onClick={() => joinAsPlayer(p.id, { taken })}
+                        className={`hub-seat${taken ? ' is-taken' : ''}`}
+                      >
+                        <span className="hub-seat-icon">
+                          <img src={faction?.iconUrl} alt="" />
+                        </span>
+                        <span className="hub-seat-meta">
+                          <span className="hub-seat-num">Место #{idx + 1}</span>
+                          <span className="hub-seat-name">{p.name}</span>
+                          <span className="hub-seat-faction">{faction?.name || '—'}</span>
+                        </span>
+                        {taken ? (
+                          <span className="hub-seat-badge">
+                            Занято
+                            <span>код места</span>
+                          </span>
+                        ) : (
+                          <i className="fa-solid fa-chevron-right hub-seat-chevron" aria-hidden="true" />
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </section>
+            )}
+
+            {preview && (
+              <button
+                type="button"
+                disabled={connecting}
+                onClick={joinAsViewer}
+                className="hub-viewer-btn"
+              >
+                Войти зрителем
+              </button>
+            )}
+
+            {roomError && <p className="hub-stage-msg is-error">{roomError}</p>}
+            {connecting && <p className="hub-stage-msg">Подключение…</p>}
+          </div>
         </div>
-
-        <input
-          type="text"
-          value={joinCode}
-          onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
-          placeholder="КОД"
-          maxLength={8}
-          autoFocus
-          className="w-full bg-slate-950 border border-slate-700 px-5 py-4 rounded-2xl font-orbitron font-black text-2xl md:text-3xl tracking-[0.35em] uppercase text-center text-emerald-300 focus:outline-none focus:border-emerald-400"
-        />
-
-        {previewError && (
-          <div className="text-sm text-amber-400 text-center">{previewError}</div>
-        )}
-
-        {preview && previewPlayers.length === 0 && (
-          <div className="text-sm text-amber-400 text-center border border-dashed border-slate-700 rounded-2xl p-4">
-            В комнате ещё нет игроков — подождите, пока хост настроит стол.
-          </div>
-        )}
-
-        {previewPlayers.length > 0 && (
-          <div className="space-y-3">
-            <div className="text-xs font-bold text-slate-500 uppercase tracking-wider">
-              Выберите место
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {previewPlayers.map((p, idx) => {
-                const taken = claimed.some(id => String(id) === String(p.id));
-                const faction = ALL_FACTIONS.find(f => f.id === p.factionId);
-                return (
-                  <button
-                    key={p.id}
-                    type="button"
-                    disabled={connecting}
-                    onClick={() => joinAsPlayer(p.id, { taken })}
-                    className={`text-left p-4 rounded-2xl border transition flex items-center gap-3 ${
-                      taken
-                        ? 'bg-slate-900/80 border-amber-700/50 hover:border-amber-500 hover:bg-amber-950/20 cursor-pointer'
-                        : 'bg-slate-900 border-slate-700 hover:border-cyan-500 hover:bg-slate-800/80 cursor-pointer'
-                    } ${connecting ? 'opacity-50' : ''}`}
-                  >
-                    <div className="w-12 h-12 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-center p-1 flex-shrink-0">
-                      <img src={faction?.iconUrl} alt={faction?.name} className="w-full h-full object-contain" />
-                    </div>
-                    <div className="min-w-0 flex-grow">
-                      <div className="text-[10px] font-bold text-slate-500 uppercase">Место #{idx + 1}</div>
-                      <div className="font-bold text-white truncate">{p.name}</div>
-                      <div className="text-xs text-amber-400/80 truncate">{faction?.name || '—'}</div>
-                    </div>
-                    {taken ? (
-                      <span className="text-[10px] font-bold uppercase text-amber-400 text-right leading-tight">
-                        Занято
-                        <br />
-                        <span className="text-amber-200/80 normal-case">код места</span>
-                      </span>
-                    ) : (
-                      <i className="fa-solid fa-chevron-right text-cyan-400" />
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        )}
-
-        {preview && (
-          <button
-            type="button"
-            disabled={connecting}
-            onClick={joinAsViewer}
-            className="w-full py-3 text-sm font-bold text-slate-400 hover:text-white border border-dashed border-slate-700 hover:border-slate-500 rounded-2xl transition disabled:opacity-50"
-          >
-            Войти зрителем
-          </button>
-        )}
-
-        {roomError && <div className="text-sm text-red-400 text-center">{roomError}</div>}
-        {connecting && (
-          <div className="text-center text-sm text-slate-400 font-orbitron">Подключение…</div>
-        )}
       </div>
     );
   }
 
   if (view === 'extras') {
     return (
-      <div className="max-w-xl mx-auto py-8 md:py-16 space-y-8">
-        <button
-          type="button"
-          onClick={() => setView('hub')}
-          className="text-sm text-slate-400 hover:text-white font-bold flex items-center gap-2"
-        >
-          <i className="fa-solid fa-arrow-left" /> Назад
-        </button>
-
-        <h1 className="font-orbitron font-black text-2xl text-white">Дополнительно</h1>
-
-        <button
-          type="button"
-          onClick={onPlaySolo}
-          className="w-full text-left p-5 rounded-2xl border border-slate-700 bg-slate-900 hover:border-cyan-500 transition space-y-1"
-        >
-          <div className="font-orbitron font-bold text-cyan-400 uppercase text-sm">Играть без комнаты</div>
-          <div className="text-sm text-slate-400">Solo на этом устройстве — без синхронизации с телефонами.</div>
-        </button>
-
-        <div className="space-y-3 p-5 rounded-2xl border border-slate-800 bg-slate-900">
-          <div className="font-orbitron font-bold text-amber-400 uppercase text-sm">Загрузить партию</div>
-          <div className="flex gap-2">
-            <input
-              type="text"
-              id="hubImportToken"
-              placeholder="Код партии…"
-              className="bg-slate-950 border border-slate-800 px-4 py-2.5 rounded-xl font-mono text-xs text-white focus:outline-none focus:border-cyan-400 flex-grow"
-            />
-            <button
-              type="button"
-              onClick={() => {
-                const input = document.getElementById('hubImportToken');
-                importGameToken(input?.value);
-              }}
-              className="bg-cyan-600 hover:bg-cyan-500 text-black font-bold px-4 py-2.5 rounded-xl text-sm font-orbitron uppercase"
-            >
-              Загрузить
+      <div className="hub-shell hub-shell--column">
+        <HubCosmosBackdrop />
+        {topbar}
+        <div className="hub-main hub-main--focus">
+          <div className="hub-stage">
+            <button type="button" onClick={() => setView('hub')} className="hub-back">
+              <i className="fa-solid fa-arrow-left" aria-hidden="true" />
+              Назад
             </button>
+
+            <header className="hub-stage-head">
+              <h1 className="hub-stage-title">Настройки</h1>
+            </header>
+
+            <button type="button" onClick={onPlaySolo} className="hub-extra-card">
+              <span className="hub-extra-card-title">Играть без комнаты</span>
+              <span className="hub-extra-card-text">
+                Solo на этом устройстве — без синхронизации с телефонами.
+              </span>
+            </button>
+
+            <div className="hub-extra-card is-static">
+              <span className="hub-extra-card-title">Загрузить партию</span>
+              <div className="hub-extra-import">
+                <input
+                  type="text"
+                  id="hubImportToken"
+                  placeholder="Код партии…"
+                  className="hub-extra-import-input"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    const input = document.getElementById('hubImportToken');
+                    importGameToken(input?.value);
+                  }}
+                  className="hub-extra-import-btn"
+                >
+                  Загрузить
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       </div>
     );
   }
 
-  // hub
   return (
-    <div className="max-w-2xl mx-auto min-h-[70vh] flex flex-col justify-center py-10 md:py-16 space-y-10">
-      <div className="space-y-4 text-center">
-        <div className="inline-flex items-center justify-center gap-3">
-          <img
-            src={brandMarkLg}
-            alt=""
-            width={64}
-            height={64}
-            className="h-12 w-12 md:h-14 md:w-14 object-contain drop-shadow-[0_0_12px_rgba(34,211,238,0.35)]"
-            draggable={false}
-          />
-          <h1 className="font-orbitron font-black text-4xl md:text-5xl text-white tracking-wider">
-            TI4 TRACKER
-          </h1>
+    <div className="hub-shell hub-shell--column">
+      <HubCosmosBackdrop />
+      {topbar}
+      <div className="hub-home">
+        <div className="hub-home-center">
+          <div className="hub-home-row">
+            <div className="hub-hero">
+              <img
+                src={brandMarkLg}
+                alt=""
+                width={56}
+                height={56}
+                className="hub-hero-mark"
+                draggable={false}
+              />
+              <h1 className="hub-title">TI4 TRACKER</h1>
+
+              <div className="hub-cta-stack">
+                <button
+                  type="button"
+                  disabled={connecting}
+                  onClick={onCreateRoom}
+                  className="hub-cta-primary"
+                >
+                  <span className="inline-flex items-center gap-2">
+                    <i className="fa-solid fa-users" aria-hidden="true" />
+                    {connecting ? 'Создание…' : 'Создать партию'}
+                  </span>
+                  <i className="fa-solid fa-chevron-right opacity-70" aria-hidden="true" />
+                </button>
+                <button
+                  type="button"
+                  disabled={connecting}
+                  onClick={() => setView('join')}
+                  className="hub-cta-secondary"
+                >
+                  <span className="inline-flex items-center gap-2">
+                    <i className="fa-solid fa-qrcode" aria-hidden="true" />
+                    Войти по коду
+                  </span>
+                  <i className="fa-solid fa-chevron-right opacity-70" aria-hidden="true" />
+                </button>
+              </div>
+
+              {roomError && <p className="hub-home-error">{roomError}</p>}
+              {soonNote && <p className="hub-home-soon" role="status">{soonNote}</p>}
+
+              <p className="hub-quote">
+                «В галактике нет друзей, есть только интересы.»
+                <span className="hub-quote-attr">— Виннозар Ловорус</span>
+              </p>
+
+              <PwaInstallBanner variant="hub" />
+            </div>
+
+            <aside className="hub-active hub-panel" aria-label="Активные партии">
+              <div className="hub-active-head">
+                <h2 className="hub-active-title">
+                  Активные партии
+                  <span className="hub-active-count">0</span>
+                </h2>
+                <button type="button" className="hub-active-link" onClick={() => setView('join')}>
+                  Войти по коду →
+                </button>
+              </div>
+              <p className="hub-active-empty">
+                Пока нет сохранённых партий. Здесь появятся комнаты для быстрого входа.
+              </p>
+            </aside>
+          </div>
+        </div>
+
+        <div className="hub-home-bottom">
+          <aside className="hub-active hub-active-mobile hub-panel" aria-label="Активные партии">
+            <div className="hub-active-head">
+              <h2 className="hub-active-title">
+                Активные партии
+                <span className="hub-active-count">0</span>
+              </h2>
+              <button type="button" className="hub-active-link" onClick={() => setView('join')}>
+                Войти по коду →
+              </button>
+            </div>
+            <p className="hub-active-empty">
+              Пока нет сохранённых партий. Здесь появятся комнаты для быстрого входа.
+            </p>
+          </aside>
+
+          {dock}
+          <footer className="hub-foot">
+            <span className="hub-foot-status">
+              <span className="hub-foot-dot" aria-hidden="true" />
+              Онлайн · v1.0.0
+            </span>
+            <span className="hub-foot-tag">Explore · Plan · Dominate</span>
+          </footer>
         </div>
       </div>
-
-      <PwaInstallBanner />
-
-      <div className="space-y-4">
-        <button
-          type="button"
-          disabled={connecting}
-          onClick={onCreateRoom}
-          className="w-full bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-black font-orbitron font-black text-lg md:text-xl py-5 rounded-3xl uppercase tracking-wide shadow-lg shadow-emerald-500/20 transition active:scale-[0.98]"
-        >
-          {connecting ? 'Создание…' : 'Создать партию'}
-        </button>
-        <button
-          type="button"
-          disabled={connecting}
-          onClick={() => setView('join')}
-          className="w-full bg-slate-900 hover:bg-slate-800 border border-cyan-700/60 text-cyan-300 font-orbitron font-bold text-lg md:text-xl py-5 rounded-3xl uppercase tracking-wide transition active:scale-[0.98]"
-        >
-          Войти по коду
-        </button>
-      </div>
-
-      <button
-        type="button"
-        onClick={() => setView('extras')}
-        className="text-center text-sm text-slate-500 hover:text-slate-300 font-semibold transition"
-      >
-        Дополнительно
-      </button>
-
-      {roomError && <div className="text-sm text-red-400 text-center">{roomError}</div>}
     </div>
   );
 }

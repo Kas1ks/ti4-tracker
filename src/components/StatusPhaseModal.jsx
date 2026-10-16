@@ -39,10 +39,10 @@ export function StatusPhaseModal({
         role="dialog"
         aria-modal="true"
         aria-labelledby="status-phase-title"
-        className="bg-slate-900 border border-cyan-500/40 p-6 rounded-3xl max-w-2xl w-full space-y-6 shadow-[0_0_40px_rgba(6,182,212,0.25)] max-h-[90vh] overflow-y-auto modal-scroll"
+        className="game-modal-panel p-6 max-w-2xl w-full space-y-6 max-h-[90vh] overflow-y-auto modal-scroll"
       >
         <div className="flex justify-between items-center pb-3 border-b border-slate-800">
-          <h2 id="status-phase-title" className="font-orbitron font-bold text-lg text-cyan-400 uppercase flex items-center gap-2">
+          <h2 id="status-phase-title" className="game-modal-title text-lg uppercase flex items-center gap-2">
             <i className="fa-solid fa-clipboard-check" aria-hidden="true" />
             <span>Фаза статуса (Раунд {roundNumber})</span>
           </h2>

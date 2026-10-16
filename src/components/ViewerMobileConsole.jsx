@@ -119,10 +119,10 @@ export function ViewerMobileConsole({
       </div>
 
       <nav
-        className="flex-shrink-0 border-t border-slate-800 bg-slate-950/95 backdrop-blur-md px-2 pt-1.5 pb-[max(0.35rem,env(safe-area-inset-bottom))]"
+        className="flex-shrink-0 border-t border-[var(--game-line-gold)] bg-[rgba(8,10,16,0.94)] backdrop-blur-md px-2 pt-1.5 pb-[max(0.35rem,env(safe-area-inset-bottom))]"
         aria-label="Навигация зрителя"
       >
-        <div className="grid grid-cols-3 gap-1">
+        <div className="game-mobile-tabs grid grid-cols-3 !gap-1">
           {TABS.map((t) => {
             const on = tab === t.id;
             return (
@@ -130,14 +130,12 @@ export function ViewerMobileConsole({
                 key={t.id}
                 type="button"
                 onClick={() => setTab(t.id)}
-                className={`flex flex-col items-center justify-center gap-0.5 py-2 rounded-xl min-h-[52px] transition ${
-                  on
-                    ? 'bg-violet-950/50 text-violet-200 border border-violet-600/50'
-                    : 'text-slate-500 border border-transparent'
+                className={`game-mobile-tab flex flex-col items-center justify-center gap-0.5 !py-2 min-h-[48px] ${
+                  on ? 'is-active' : ''
                 }`}
               >
                 <i className={`fa-solid ${t.icon} text-sm`} aria-hidden="true" />
-                <span className="text-[10px] font-bold uppercase tracking-wide">{t.label}</span>
+                <span className="text-[10px]">{t.label}</span>
               </button>
             );
           })}
@@ -182,9 +180,9 @@ function ViewerTurnTab({
       </div>
 
       {hasActive && (
-        <div className="rounded-2xl border border-cyan-500/50 bg-cyan-950/20 px-3 py-2.5 flex items-center justify-between gap-3">
+        <div className="rounded-2xl border border-[var(--game-line-gold)] bg-[rgba(201,162,39,0.1)] px-3 py-2.5 flex items-center justify-between gap-3">
           <div className="min-w-0">
-            <div className="text-[10px] font-bold uppercase tracking-wider text-cyan-400">Сейчас ходит</div>
+            <div className="game-turn-label">Сейчас ходит</div>
             <div className="font-bold text-white truncate">{activePlayer.name}</div>
           </div>
           <div className="text-right flex-shrink-0">
@@ -224,7 +222,7 @@ function ViewerTurnTab({
       <section className="space-y-2">
         <div className="flex items-center justify-between px-0.5">
           <h3 className="font-orbitron font-bold text-xs uppercase text-slate-400 flex items-center gap-2">
-            <i className="fa-solid fa-list-ol text-cyan-400" aria-hidden="true" />
+            <i className="fa-solid fa-list-ol text-[var(--game-gold-bright)]" aria-hidden="true" />
             Очередь хода
           </h3>
           {turnOrder.length > 0 && (
@@ -249,7 +247,7 @@ function ViewerTurnTab({
               style={{ borderLeftColor: cardBorderColor, borderLeftWidth: 4 }}
               className={`rounded-2xl border p-3 transition ${
                 isCurrent
-                  ? 'bg-slate-900 border-cyan-400 shadow-lg shadow-cyan-500/15'
+                  ? 'bg-[rgba(8,10,16,0.85)] border-[var(--game-line-gold)] shadow-lg shadow-[rgba(201,162,39,0.15)]'
                   : hasPassed
                     ? 'bg-slate-950/50 border-slate-800 opacity-50 grayscale'
                     : 'bg-slate-950/80 border-slate-800'
@@ -270,7 +268,7 @@ function ViewerTurnTab({
                         ✓ Пас
                       </span>
                     ) : isCurrent ? (
-                      <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-cyan-950 text-cyan-300 border border-cyan-700/50 uppercase flex-shrink-0">
+                      <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-[rgba(201,162,39,0.15)] text-[var(--game-gold-bright)] border border-[var(--game-line-gold)] uppercase flex-shrink-0">
                         Ход
                       </span>
                     ) : null}
@@ -506,8 +504,8 @@ function ViewerTableTab({
             onClick={() => onOpenPlayerTech?.(p.id)}
             className={`w-full flex items-center gap-3 rounded-2xl border px-3 py-2.5 text-left transition active:scale-[0.99] ${
               isCurrent
-                ? 'border-cyan-500/60 bg-cyan-950/25'
-                : 'border-slate-800 bg-slate-950/80'
+                ? 'border-[var(--game-line-gold)] bg-[rgba(201,162,39,0.1)]'
+                : 'border-[var(--game-line)] bg-[rgba(8,10,16,0.8)]'
             }`}
           >
             <div className="text-xs font-orbitron font-bold text-slate-600 w-4">{idx + 1}</div>

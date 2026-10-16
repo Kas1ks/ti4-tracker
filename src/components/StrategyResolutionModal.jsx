@@ -1,14 +1,36 @@
-import { STRATEGY_CARDS } from '../data/gameData';
+import { ALL_FACTIONS, STRATEGY_CARDS } from '../data/gameData';
+import { useEffect, useState } from 'react';
 import { useEscapeKey } from '../hooks/useEscapeKey';
 import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
 import { useElapsedSeconds } from '../hooks/useTurnTimer';
 import { formatTime } from '../utils/game';
 import { isStrategyCardPlayed } from '../game/selectors';
 
+const CARD_GLOW = {
+  1: '#ef4444',
+  2: '#f97316',
+  3: '#eab308',
+  4: '#22c55e',
+  5: '#14b8a6',
+  6: '#06b6d4',
+  7: '#3b82f6',
+  8: '#a855f7',
+};
+
 function statusLabel(status) {
   if (status === 'played') return 'Сыграно';
   if (status === 'passed') return 'Пас';
   return 'Ожидание';
+}
+
+function factionOf(player) {
+  return ALL_FACTIONS.find((f) => f.id === player?.factionId) || null;
+}
+
+function strategyCardLabel(card) {
+  return String(card?.ruName || card?.name || '')
+    .replace(/^\d+\.\s*/, '')
+    .trim() || card?.name || '—';
 }
 
 function resolutionSecsFor(resolution, playerId, liveSecs) {
@@ -25,10 +47,9 @@ function resolutionSecsFor(resolution, playerId, liveSecs) {
   return liveSecs;
 }
 
-/** All strategy cards in play this round with played / in-hand / resolving status — ordered by card initiative. */
 function StrategyBoardGlance({ players = [], resolution }) {
   const resolvingId = resolution?.cardId ?? null;
-  const seats = (players || []).filter(p => !p.eliminated);
+  const seats = (players || []).filter((p) => !p.eliminated);
 
   const ownerByCardId = new Map();
   for (const p of seats) {
@@ -51,88 +72,54 @@ function StrategyBoardGlance({ players = [], resolution }) {
         key: `card-${meta.id}`,
         player,
         card,
+        meta,
         state: resolving ? 'resolving' : played ? 'played' : 'hand',
       };
     });
 
-  const playedCount = displayRows.filter(r => r.state === 'played').length;
-  const handCount = displayRows.filter(r => r.state === 'hand').length;
-  const resolvingCount = displayRows.filter(r => r.state === 'resolving').length;
-
   return (
-    <div className="rounded-xl border border-slate-800 bg-slate-900/50 overflow-hidden flex flex-col w-full max-h-[min(52vh,420px)] md:max-h-[calc(92vh-8rem)]">
-      <div className="px-3 py-2 border-b border-slate-800/80 flex flex-wrap items-center justify-between gap-2 flex-shrink-0">
-        <div className="text-[11px] md:text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
-          <i className="fa-solid fa-layer-group text-amber-400" aria-hidden="true" />
-          Карты стратегий раунда
-        </div>
-        <div className="flex flex-wrap gap-2 text-[10px] font-bold uppercase tracking-wide">
-          <span className="text-amber-400/90">Розыгрыш {resolvingCount}</span>
-          <span className="text-slate-600">·</span>
-          <span className="text-slate-400">В руке {handCount}</span>
-          <span className="text-slate-600">·</span>
-          <span className="text-emerald-400/90">Сыграно {playedCount}</span>
-        </div>
-      </div>
-      <ul className="divide-y divide-slate-800/70 overflow-y-auto modal-scroll">
-        {displayRows.map(({ key, player, card, state }) => {
-          const meta = STRATEGY_CARDS.find(c => c.id === card.id) || card;
+    <section className="sr-col sr-col-round-inner">
+      <header className="sr-col-head">
+        <i className="fa-solid fa-layer-group" aria-hidden="true" />
+        <span>Карты стратегий раунда</span>
+      </header>
+      <ul className="sr-round-list">
+        {displayRows.map(({ key, player, meta, state }) => {
+          const glow = CARD_GLOW[meta.id] || '#c9a227';
           return (
             <li
               key={key}
-              className={`flex items-center gap-2.5 px-3 py-2 ${
-                state === 'resolving'
-                  ? 'bg-amber-950/25'
-                  : state === 'played'
-                    ? 'bg-emerald-950/10'
-                    : ''
+              className={`sr-round-item ${
+                state === 'resolving' ? 'is-resolving' : state === 'played' ? 'is-played' : 'is-hand'
               }`}
+              style={{ '--sr-card-glow': glow }}
             >
               {meta?.imageUrl ? (
                 <img
                   src={meta.imageUrl}
-                  alt={meta.name || meta.ruName || `#${meta.id}`}
-                  className={`w-9 h-12 object-cover rounded-md border flex-shrink-0 ${
-                    state === 'played'
-                      ? 'border-emerald-700/60 opacity-70'
-                      : state === 'resolving'
-                        ? 'border-amber-500'
-                        : 'border-slate-700'
-                  }`}
+                  alt={meta.name || `#${meta.id}`}
+                  className="sr-round-thumb"
                 />
               ) : (
-                <div className="w-9 h-12 rounded-md border border-dashed border-slate-700 bg-slate-950 flex-shrink-0" />
+                <div className="sr-round-thumb is-empty" />
               )}
-              <div className="min-w-0 flex-1">
-                <div className={`text-sm font-orbitron font-bold truncate ${
-                  state === 'played' ? 'text-slate-500 line-through' : 'text-amber-300'
-                }`}>
-                  {meta.ruName || meta.name || `#${meta.id}`}
+              <div className="sr-round-meta min-w-0 flex-1">
+                <div className={`sr-round-name ${state === 'played' ? 'is-done' : ''}`}>
+                  {meta.id}. {strategyCardLabel(meta)}
                 </div>
-                <div className="flex items-center gap-1.5 min-w-0 mt-0.5">
-                  <span
-                    className="w-2 h-2 rounded-full flex-shrink-0"
-                    style={{ backgroundColor: player.color || '#64748b' }}
-                  />
-                  <span className="text-xs font-bold text-slate-300 truncate">{player.name}</span>
+                <div className="sr-round-owner">
+                  <span className="sr-dot" style={{ backgroundColor: player.color || '#64748b' }} />
+                  <span className="truncate">{player.name}</span>
                 </div>
               </div>
-              <span
-                className={`text-[10px] font-bold uppercase tracking-wide px-2 py-1 rounded-lg border flex-shrink-0 ${
-                  state === 'resolving'
-                    ? 'bg-amber-950 border-amber-500 text-amber-200'
-                    : state === 'played'
-                      ? 'bg-emerald-950 border-emerald-600 text-emerald-300'
-                      : 'bg-slate-950 border-slate-600 text-slate-300'
-                }`}
-              >
+              <span className={`sr-badge is-${state}`}>
                 {state === 'resolving' ? 'Розыгрыш' : state === 'played' ? 'Сыграна' : 'В руке'}
               </span>
             </li>
           );
         })}
       </ul>
-    </div>
+    </section>
   );
 }
 
@@ -146,172 +133,192 @@ export function StrategyResolutionModal({
   onMinimize,
   onClose,
 }) {
-  useEscapeKey(onMinimize || onClose, show && !minimized);
-  useBodyScrollLock(show && !minimized);
+  const wantOpen = !!(show && !minimized);
+  useEscapeKey(onMinimize || onClose, wantOpen);
+  useBodyScrollLock(wantOpen);
 
-  const seats = (players || []).filter(p => !p.eliminated && resolution?.responses?.[p.id] != null);
+  const EXIT_MS = 420;
+  const [mounted, setMounted] = useState(wantOpen);
+  const [entered, setEntered] = useState(false);
+
+  useEffect(() => {
+    if (wantOpen) {
+      setMounted(true);
+      setEntered(false);
+      const frame = requestAnimationFrame(() => {
+        requestAnimationFrame(() => setEntered(true));
+      });
+      return () => cancelAnimationFrame(frame);
+    }
+    setEntered(false);
+    const t = window.setTimeout(() => setMounted(false), EXIT_MS);
+    return () => clearTimeout(t);
+  }, [wantOpen, resolution?.cardId, resolution?.startedAt]);
+
+  const seats = (players || []).filter((p) => !p.eliminated && resolution?.responses?.[p.id] != null);
   const anyPending = seats.some((p) => {
     const s = resolution?.responses?.[p.id];
     return s !== 'played' && s !== 'passed';
   });
   const liveSecs = useElapsedSeconds(
     resolution?.startedAt,
-    !!show && !minimized && anyPending && Number.isFinite(resolution?.startedAt),
+    wantOpen && anyPending && Number.isFinite(resolution?.startedAt),
   );
 
-  if (!show) return null;
+  if (!mounted) return null;
 
-  const card = STRATEGY_CARDS.find(c => c.id === resolution?.cardId) || null;
-  const owner = players.find(p => p.id === resolution?.playerId) || null;
-  const answered = seats.filter(p => {
+  const card = STRATEGY_CARDS.find((c) => c.id === resolution?.cardId) || null;
+  const owner = players.find((p) => p.id === resolution?.playerId) || null;
+  const answered = seats.filter((p) => {
     const s = resolution?.responses?.[p.id];
     return s === 'played' || s === 'passed';
   }).length;
+  const glow = CARD_GLOW[card?.id] || '#c9a227';
 
   return (
     <div
-      className={`fixed inset-0 z-[56] bg-black/85 backdrop-blur-md flex items-stretch md:items-center justify-center md:p-4 modal-overlay ${minimized ? 'hidden' : ''}`}
+      className={`sr-overlay fixed inset-0 z-[56] game-modal-overlay flex items-stretch md:items-center justify-center md:p-4 modal-overlay ${entered ? 'is-open' : ''}`}
       role="presentation"
-      onClick={onMinimize || onClose}
+      onClick={wantOpen ? (onMinimize || onClose) : undefined}
+      style={entered ? undefined : { pointerEvents: 'none' }}
     >
       <div
-        className="relative w-full max-w-5xl max-md:h-full md:h-[min(92vh,860px)] md:max-h-[92vh] bg-slate-950 border border-amber-700/60 md:rounded-2xl shadow-2xl flex flex-col overflow-hidden"
+        className={`game-hud-chassis sr-shell relative w-full max-md:h-full md:w-fit md:max-w-[96vw] md:h-auto md:max-h-[min(90vh,920px)] flex flex-col md:overflow-hidden ${entered ? 'is-open' : ''}`}
         role="dialog"
         aria-modal="true"
         aria-labelledby="strategy-resolution-title"
         onClick={(event) => event.stopPropagation()}
+        style={{ '--sr-card-glow': glow }}
       >
-        <div className="flex items-center justify-between gap-3 px-4 md:px-5 py-3 md:py-4 border-b border-slate-800 bg-slate-900/80">
+        <header className="sr-shell-head flex-shrink-0">
           <div className="min-w-0">
-            <h2 id="strategy-resolution-title" className="font-orbitron font-black text-base md:text-xl text-amber-300 uppercase tracking-wide truncate">
+            <h2 id="strategy-resolution-title" className="game-modal-title sr-shell-title">
               Розыгрыш карты стратегии
             </h2>
-            <p className="text-xs text-slate-400 mt-0.5 truncate">
-              {owner ? `${owner.name} · ` : ''}
-              {card?.name || `Карта #${resolution?.cardId ?? '—'}`}
+            <p className="sr-shell-sub truncate">
+              {owner ? `${owner.name}` : '—'}
+              {' · '}
+              {card ? `${card.id}. ${strategyCardLabel(card)}` : `Карта #${resolution?.cardId ?? '—'}`}
               {' · '}
               {answered}/{seats.length}
             </p>
           </div>
-          <div className="flex items-center gap-3 flex-shrink-0">
-            <div className="text-right hidden sm:block min-w-[4.75rem]">
-              <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Таймер</div>
-              <div className="font-orbitron font-black text-amber-300 text-lg leading-none inline-block w-[5.5ch] text-right tabular-nums">
-                {Number.isFinite(resolution?.startedAt) ? formatTime(liveSecs) : '—'}
+          <div className="sr-shell-actions">
+            <div className="sr-timer" title="Время розыгрыша">
+              <i className="fa-solid fa-hourglass-half" aria-hidden="true" />
+              <div className="sr-timer-text">
+                <span className="sr-timer-label">Таймер</span>
+                <span className="sr-timer-value">
+                  {Number.isFinite(resolution?.startedAt) ? formatTime(liveSecs) : '—'}
+                </span>
               </div>
             </div>
             <button
               type="button"
               onClick={onMinimize || onClose}
-              className="flex-shrink-0 w-10 h-10 rounded-xl bg-slate-900 border border-slate-700 text-slate-300 hover:text-white hover:border-slate-500 transition"
+              className="sr-icon-btn"
               title="Свернуть"
               aria-label="Свернуть"
             >
               <i className="fa-solid fa-window-minimize text-base" aria-hidden="true" />
             </button>
           </div>
-        </div>
+        </header>
 
-        <div className="flex-1 min-h-0 overflow-hidden p-4 md:p-6 grid md:grid-rows-1 md:grid-cols-[minmax(0,260px)_1fr_minmax(0,280px)] gap-4 md:gap-5 max-md:overflow-y-auto max-md:modal-scroll">
-          <div className="flex flex-col items-center gap-3 md:min-h-0 md:h-full">
-            <div className="w-full max-w-[300px] aspect-[3/4] flex-shrink-0">
+        <div className="sr-shell-body max-md:flex-1 max-md:min-h-0">
+          <aside className="sr-col sr-col-card">
+            <div className="sr-card-frame">
               {card?.imageUrl ? (
-                <img
-                  src={card.imageUrl}
-                  alt={card.name}
-                  className="w-full h-full rounded-xl border-2 border-amber-600/70 shadow-lg object-cover"
-                />
+                <img src={card.imageUrl} alt={card.name} className="sr-card-art" />
               ) : (
-                <div className="w-full h-full rounded-xl border-2 border-amber-700/50 bg-slate-900 flex items-center justify-center text-amber-300 font-orbitron font-bold text-center p-4">
+                <div className="sr-card-art is-fallback">
                   {card?.name || 'Карта стратегии'}
                 </div>
               )}
             </div>
-            <div className={`w-full max-w-[300px] flex-shrink-0 text-center text-xs md:text-sm font-bold uppercase tracking-wider px-3 py-2 rounded-xl border ${card?.color || 'border-slate-700 text-slate-300'}`}>
-              {card?.name || `Карта #${resolution?.cardId}`}
+            <div className="sr-card-caption">
+              {card ? `${card.id}. ${strategyCardLabel(card)}` : `Карта #${resolution?.cardId}`}
             </div>
-          </div>
+          </aside>
 
-          <div className="space-y-2.5 min-w-0 md:min-h-0 md:overflow-y-auto modal-scroll">
-            <div className="text-[11px] md:text-xs font-bold uppercase tracking-wider text-slate-500 px-0.5">
-              Ответы игроков
-            </div>
-            {seats.map((p) => {
-              const status = resolution?.responses?.[p.id] || 'pending';
-              const played = status === 'played';
-              const passed = status === 'passed';
-              const done = played || passed;
-              const secs = resolutionSecsFor(resolution, p.id, liveSecs);
-              return (
-                <div
-                  key={p.id}
-                  className={`rounded-xl border px-3 md:px-4 py-2.5 md:py-3 space-y-2 ${
-                    played
-                      ? 'bg-emerald-950/40 border-emerald-600/70'
-                      : passed
-                        ? 'bg-rose-950/40 border-rose-600/70'
-                        : 'bg-slate-900/80 border-slate-700'
-                  }`}
-                >
-                  <div className="min-w-0 flex items-center gap-2">
+          <section className="sr-col sr-col-seats">
+            <header className="sr-col-head is-muted">Ответы игроков</header>
+            <ul className="sr-seat-list">
+              {seats.map((p, idx) => {
+                const status = resolution?.responses?.[p.id] || 'pending';
+                const played = status === 'played';
+                const passed = status === 'passed';
+                const done = played || passed;
+                const isPrimary = p.id === resolution?.playerId;
+                const secs = resolutionSecsFor(resolution, p.id, liveSecs);
+                const faction = factionOf(p);
+                return (
+                  <li
+                    key={p.id}
+                    className={`sr-seat-row ${
+                      isPrimary && !done
+                        ? 'is-primary'
+                        : played
+                          ? 'is-played'
+                          : passed
+                            ? 'is-passed'
+                            : ''
+                    }`}
+                  >
+                    <span className="sr-seat-idx">{idx + 1}</span>
+
                     <span
-                      className="w-2.5 h-2.5 rounded-full flex-shrink-0"
-                      style={{ backgroundColor: p.color || '#64748b' }}
-                    />
-                    <span className={`font-bold truncate md:text-lg ${
-                      played ? 'text-emerald-200' : passed ? 'text-rose-200' : 'text-slate-300'
-                    }`}>
-                      {p.name}
+                      className="sr-seat-avatar"
+                      style={{ borderColor: p.color || '#64748b' }}
+                    >
+                      {faction?.iconUrl ? (
+                        <img src={faction.iconUrl} alt="" />
+                      ) : (
+                        <span className="sr-dot" style={{ backgroundColor: p.color || '#64748b' }} />
+                      )}
                     </span>
-                    {p.id === resolution?.playerId && (
-                      <span className="text-[10px] uppercase font-orbitron font-bold text-amber-400/90 border border-amber-700/50 px-1.5 py-0.5 rounded">
-                        Primary
-                      </span>
-                    )}
-                  </div>
-                  <div className="flex items-center justify-between gap-3 w-full">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <span
-                        className={`inline-block w-[5.5ch] text-left font-orbitron font-bold text-sm tabular-nums ${
-                          done ? 'text-slate-400' : 'text-amber-300'
-                        }`}
-                        title="Время ответа"
-                      >
-                        {formatTime(secs)}
-                      </span>
-                      <span className={`text-xs md:text-sm font-bold uppercase tracking-wide ${
-                        played ? 'text-emerald-300' : passed ? 'text-rose-300' : 'text-slate-500'
-                      }`}>
-                        {statusLabel(status)}
-                      </span>
+
+                    <div className="sr-seat-meta min-w-0">
+                      <div className="sr-seat-name-row">
+                        <span className="sr-seat-name truncate">{p.name}</span>
+                        {isPrimary && <span className="sr-primary-tag">Primary</span>}
+                      </div>
                     </div>
+
+                    <div className={`sr-seat-status ${done ? 'is-docked' : ''}`}>
+                      <div className={`sr-seat-time ${done ? 'is-done' : ''}`}>{formatTime(secs)}</div>
+                      <div className={`sr-seat-state is-${status}`}>{statusLabel(status)}</div>
+                    </div>
+
                     {canResolveAny && !done ? (
-                      <div className="flex items-center gap-1.5 flex-shrink-0 ml-auto">
+                      <div className="sr-seat-actions">
                         <button
                           type="button"
                           onClick={() => onResolve?.(p.id, 'played')}
-                          className="text-[11px] md:text-xs font-bold px-2.5 md:px-3 py-1 md:py-1.5 rounded-lg bg-emerald-900/60 border border-emerald-700 text-emerald-200 hover:bg-emerald-800/70"
+                          className="sr-act is-play"
                         >
                           Сыграно
                         </button>
                         <button
                           type="button"
                           onClick={() => onResolve?.(p.id, 'passed')}
-                          className="text-[11px] md:text-xs font-bold px-2.5 md:px-3 py-1 md:py-1.5 rounded-lg bg-rose-900/60 border border-rose-700 text-rose-200 hover:bg-rose-800/70"
+                          className="sr-act is-pass"
                         >
                           Пас
                         </button>
                       </div>
+                    ) : !done ? (
+                      <div className="sr-seat-actions is-spacer" aria-hidden="true" />
                     ) : null}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+                  </li>
+                );
+              })}
+            </ul>
+          </section>
 
-          <div className="min-w-0 md:self-start">
+          <aside className="sr-col-round">
             <StrategyBoardGlance players={players} resolution={resolution} />
-          </div>
+          </aside>
         </div>
       </div>
     </div>
