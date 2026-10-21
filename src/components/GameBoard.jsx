@@ -146,8 +146,8 @@ export function GameBoard({
                                     <section className="game-panel p-5 max-md:p-3 space-y-4">
                                         <div className="flex items-center justify-between max-md:flex-col max-md:items-start max-md:gap-1">
                                             <h3 className="game-section-title">
-                                                <i className="fa-solid fa-list-ol" aria-hidden="true" />
-                                                <span className="max-md:hidden">Очередность хода (По инициативе)</span>
+                                                <i className="fa-solid fa-skull" aria-hidden="true" />
+                                                <span className="max-md:hidden">Очередность хода по инициативе</span>
                                                 <span className="md:hidden">Очередь хода</span>
                                             </h3>
                                             <span className="text-xs font-bold text-[var(--game-muted)] uppercase font-orbitron">
@@ -171,34 +171,29 @@ export function GameBoard({
                                                 return (
                                                     <div
                                                         key={p.id}
-                                                        style={{ borderLeftColor: cardBorderColor, borderLeftWidth: '4px' }}
+                                                        style={{ '--player-accent': cardBorderColor }}
                                                         className={`game-initiative-card${isCurrent ? ' is-current' : ''}${hasPassed ? ' is-passed' : ''}`}
                                                     >
-                                                        <div className="flex items-center justify-end gap-1 mb-1 h-5">
-                                                            {hasPassed ? (
-                                                                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-red-950 text-red-400 border border-red-800/50 uppercase">
-                                                                    ✓ ПАС
-                                                                </span>
-                                                            ) : null}
-                                                        </div>
-
                                                         <div className="flex items-center gap-3 my-auto">
                                                             <div
-                                                                className="w-12 h-12 rounded-xl bg-slate-900 border border-slate-700/80 flex items-center justify-center p-1.5 flex-shrink-0"
-                                                                style={{ boxShadow: `0 0 10px ${cardBorderColor}40` }}
+                                                                className="w-12 h-12 rounded-xl bg-slate-900 border flex items-center justify-center p-1.5 flex-shrink-0"
+                                                                style={{
+                                                                  borderColor: `color-mix(in srgb, ${cardBorderColor} 55%, #334155)`,
+                                                                  boxShadow: `0 0 12px ${cardBorderColor}55`,
+                                                                }}
                                                             >
                                                                 <img src={faction?.iconUrl} alt={faction?.name} className="w-full h-full object-contain" />
                                                             </div>
                                                             <div className="truncate min-w-0">
                                                                 <div className="font-bold text-base text-white truncate">{p.name}</div>
-                                                                <div className="text-sm font-semibold mt-0.5 flex flex-wrap items-center gap-1.5">
+                                                                <div className="text-[11px] font-semibold mt-0.5 flex flex-wrap items-center gap-1 text-[var(--game-muted)]">
                                                                     {playerCards.length
                                                                         ? playerCards.map((card) => {
                                                                           const played = isStrategyCardPlayed(p, card.id);
                                                                           const shortName = (card.name || '').replace(/^\d+\.\s*/, '');
                                                                           return (
                                                                             <span key={card.id} className="inline-flex items-center gap-1 min-w-0">
-                                                                              <span className="font-orbitron font-bold text-amber-300/80">
+                                                                              <span className="font-orbitron font-bold text-[var(--game-gold-bright)] opacity-80">
                                                                                 #{card.id}
                                                                               </span>
                                                                               {played ? (
@@ -206,17 +201,17 @@ export function GameBoard({
                                                                                   Сыграно
                                                                                 </span>
                                                                               ) : (
-                                                                                <span className="text-amber-300/80 truncate">{shortName}</span>
+                                                                                <span className="truncate opacity-80">{shortName}</span>
                                                                               )}
                                                                             </span>
                                                                           );
                                                                         })
-                                                                        : <span className="text-amber-300/80">Без карты</span>}
+                                                                        : <span>Без карты</span>}
                                                                 </div>
                                                             </div>
                                                         </div>
 
-                                                        <div className="text-xs text-slate-500 mt-2 pt-1.5 border-t border-slate-800/60">
+                                                        <div className="text-xs text-[var(--game-muted)] mt-2 pt-1.5 border-t border-[var(--game-line)]">
                                                             <span>Время: <span className="font-mono text-slate-400">{formatTime(p.totalTime || 0)}</span></span>
                                                         </div>
                                                     </div>
@@ -234,9 +229,11 @@ export function GameBoard({
                                         <div className="flex items-center justify-between border-b border-[var(--game-line)] pb-3">
                                             <h2 className="game-section-title !text-base md:!text-lg !text-white">
                                                 <i className="fa-solid fa-trophy" aria-hidden="true" />
-                                                <span>Табло Игроков</span>
+                                                <span>Табло игроков</span>
                                             </h2>
-                                            <span className="text-xs text-[var(--game-muted)] font-orbitron font-bold">Цель: {targetScore} ПО</span>
+                                            <span className="text-xs text-[var(--game-muted)] font-orbitron font-bold tracking-wide">
+                                              Цель: <span className="text-[var(--game-gold-bright)]">{targetScore} ПО</span>
+                                            </span>
                                         </div>
 
                                         <div className="space-y-2.5 flex flex-col">
@@ -506,7 +503,14 @@ export function GameBoard({
                                                                         </div>
                                                                     )}
                                                                 </div>
-                                                                <div className="text-xs md:text-sm text-slate-300 font-semibold truncate mt-0.5">{faction?.name}</div>
+                                                                <div
+                                                                  className="text-xs md:text-sm font-semibold truncate mt-0.5"
+                                                                  style={{
+                                                                    color: `color-mix(in srgb, ${isBlack ? '#94a3b8' : playerColor} 50%, #94a3b8)`,
+                                                                  }}
+                                                                >
+                                                                  {faction?.name}
+                                                                </div>
                                                             </div>
                                                         </div>
 
@@ -515,15 +519,18 @@ export function GameBoard({
                                                                 style={{
                                                                     color: isBlack ? '#090d16' : playerColor,
                                                                     WebkitTextStroke: isBlack ? '1.5px #f8fafc' : 'none',
-                                                                    borderColor: isBlack ? '#334155' : playerColor
+                                                                    borderColor: isBlack ? '#334155' : playerColor,
+                                                                    boxShadow: isBlack
+                                                                      ? undefined
+                                                                      : `0 0 12px color-mix(in srgb, ${playerColor} 35%, transparent)`,
                                                                 }}
-                                                                className="font-rajdhani font-bold text-3xl md:text-4xl bg-slate-950 px-3 py-1 rounded-xl border text-center min-w-[65px] tracking-wider max-md:text-2xl max-md:min-w-[56px]"
+                                                                className="game-player-score font-rajdhani font-bold text-3xl md:text-4xl px-3 py-1 text-center min-w-[65px] tracking-wider max-md:text-2xl max-md:min-w-[56px]"
                                                             >
                                                                 {score}
                                                             </div>
 
                                                             <div className="flex flex-col gap-1.5 w-[115px] max-md:flex-row max-md:w-auto max-md:flex-wrap">
-                                                                <div className="flex items-center justify-between bg-slate-950 px-2.5 py-1 rounded-xl border border-slate-700/80 shadow-sm w-[125px] max-md:w-auto max-md:min-w-[110px]">
+                                                                <div className="game-player-stat flex items-center justify-between px-2.5 py-1 w-[125px] max-md:w-auto max-md:min-w-[110px]">
                                                                     <div className="text-[10px] font-bold text-slate-300 uppercase flex items-center justify-between w-[45px] flex-shrink-0">
                                                                         <span>Секр</span>
                                                                         <span className="w-3 text-center">
@@ -557,7 +564,7 @@ export function GameBoard({
                                                                     </div>
                                                                 </div>
 
-                                                                <div className="flex items-center justify-between bg-slate-950 px-2.5 py-1 rounded-xl border border-slate-700/80 shadow-sm w-[125px] max-md:w-auto max-md:min-w-[110px]">
+                                                                <div className="game-player-stat flex items-center justify-between px-2.5 py-1 w-[125px] max-md:w-auto max-md:min-w-[110px]">
                                                                     <div className="text-[10px] font-bold text-slate-300 uppercase w-[45px] flex-shrink-0">
                                                                         Мек
                                                                     </div>

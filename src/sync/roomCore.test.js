@@ -3,6 +3,7 @@ import { createEmptyGameState, normalizeGameState } from '../game/gameState.js';
 import {
   applyRoomAction,
   createRoomRecord,
+  hubRoomCard,
   hydrateRoomLifecycle,
   isRoomExpired,
   joinRoom,
@@ -31,6 +32,24 @@ describe('roomCore', () => {
     expect(room.expiresAt).toBeTruthy();
     expect(Date.parse(room.expiresAt) - Date.parse(room.lastActivityAt))
       .toBe(ROOM_IDLE_TTL_MS);
+  });
+
+  it('builds a public hub card without secrets', () => {
+    const room = createRoomRecord(normalizeGameState({
+      isGameActive: true,
+      players: [player(1, 'A'), player(2, 'B')],
+      meta: { roundNumber: 2 },
+      round: { roundStartedAt: 1_700_000_000_000 },
+    }));
+    room.seatClaims = { 1: { sessionToken: 'x' } };
+    const card = hubRoomCard(room);
+    expect(card.roomId).toBe(room.roomId);
+    expect(card.isGameActive).toBe(true);
+    expect(card.roundNumber).toBe(2);
+    expect(card.playersTotal).toBe(2);
+    expect(card.claimedCount).toBe(1);
+    expect(card.hostKey).toBeUndefined();
+    expect(card.state).toBeUndefined();
   });
 
   it('seeds a room from an existing document', () => {
@@ -110,7 +129,7 @@ describe('roomCore', () => {
     expect(stale.error).toBe('unauthorized');
   });
 
-  it('lets the host release a seat and clear its secret', () => {
+  it('clears the seat secret on host kick so rejoin needs only the room code', () => {
     let room = createRoomRecord(normalizeGameState({
       players: [player(1, 'A')],
     }));
@@ -126,6 +145,7 @@ describe('roomCore', () => {
     const again = joinRoom(released.room, { role: ROLES.PLAYER, seatPlayerId: 1 });
     expect(again.ok).toBe(true);
     expect(again.reclaimed).toBe(false);
+    expect(again.seatSecret).toMatch(/^[A-Z0-9]{8}$/);
     expect(again.seatSecret).not.toBe(joined.seatSecret);
   });
 

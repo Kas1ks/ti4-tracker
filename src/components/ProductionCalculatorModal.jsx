@@ -77,147 +77,147 @@ export function ProductionCalculatorModal({
       onClick={onClose}
     >
       <div
-        className="relative w-full max-w-2xl max-md:h-full md:max-h-[92vh] game-modal-panel md:!rounded-2xl flex flex-col overflow-hidden !rounded-none md:!rounded-2xl"
+        className="game-hud-chassis combat-pick-shell game-prod-shell w-full max-md:h-full max-md:overflow-y-auto modal-scroll"
         role="dialog"
         aria-modal="true"
         aria-labelledby="production-calc-title"
         onClick={(event) => event.stopPropagation()}
       >
-        <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-[var(--game-line)] bg-black/30">
-          <div className="min-w-0">
-            <h2 id="production-calc-title" className="game-modal-title text-base md:text-lg uppercase truncate">
-              Калькулятор производства
-            </h2>
-            <p className="text-xs text-[var(--game-muted)] mt-0.5 truncate">
-              {playerName ? `${playerName} · ` : ''}
-              Добавляйте отряды — считаем количество и цену
-            </p>
+        <div className="combat-pick-inner game-prod-inner">
+          <div className="game-prod-head">
+            <div className="game-prod-head-text min-w-0">
+              <h2 id="production-calc-title" className="game-modal-title game-prod-title">
+                <i className="fa-solid fa-compass-drafting" aria-hidden="true" />
+                Калькулятор производства
+              </h2>
+              <p className="game-prod-sub">
+                {playerName ? `${playerName} · ` : ''}
+                Добавляйте отряды — считаем количество и цену
+              </p>
+            </div>
+            <div className="game-prod-head-actions">
+              <button type="button" onClick={reset} className="game-prod-reset" title="Сбросить">
+                <i className="fa-solid fa-rotate-left" aria-hidden="true" />
+                Сброс
+              </button>
+              <button type="button" onClick={onClose} className="game-prod-close" aria-label="Закрыть">
+                <i className="fa-solid fa-xmark" aria-hidden="true" />
+              </button>
+            </div>
           </div>
-          <div className="flex items-center gap-2 flex-shrink-0">
-            <button
-              type="button"
-              onClick={reset}
-              className="game-btn-ghost !h-10 !px-3 !text-xs"
-              title="Сбросить"
-            >
-              Сброс
-            </button>
-            <button
-              type="button"
-              onClick={onClose}
-              className="game-btn-ghost !w-10 !h-10 !px-0"
-              aria-label="Закрыть"
-            >
-              <i className="fa-solid fa-xmark" aria-hidden="true" />
-            </button>
-          </div>
-        </div>
 
-        {(hasSarween || hasAiAlgo) && (
-          <div className="px-4 py-2.5 border-b border-[var(--game-line)] bg-black/20 space-y-2">
-            {hasSarween && (
-              <div className="text-xs text-[var(--game-gold-bright)] font-semibold flex items-center gap-2">
-                <i className="fa-solid fa-wrench" aria-hidden="true" />
-                Sarween Tools: −1⚙ к суммарной стоимости
-              </div>
-            )}
-            {hasAiAlgo && (
-              <label className="flex items-start gap-2.5 cursor-pointer select-none">
-                <input
-                  type="checkbox"
-                  checked={applyAiAlgorithm}
-                  onChange={(e) => setApplyAiAlgorithm(e.target.checked)}
-                  className="mt-0.5 w-4 h-4 rounded border-[var(--game-line)] bg-black/40 text-[var(--game-gold)] focus:ring-[var(--game-gold)]/40"
-                />
-                <span className="text-xs text-[var(--game-text)] font-semibold leading-snug">
-                  AI Development Algorithm
-                  <span className="block text-[var(--game-muted)] font-normal mt-0.5">
-                    −{unitUpgradeCount}⚙ (по 1 за каждый unit upgrade).
-                    Снимите галочку, если карта уже истощена.
+          {(hasSarween || hasAiAlgo) && (
+            <div className="game-prod-tech">
+              {hasSarween && (
+                <div className="game-prod-tech-line">
+                  <i className="fa-solid fa-wrench" aria-hidden="true" />
+                  <span>
+                    Sarween Tools: −1 <i className="fa-solid fa-gear" aria-hidden="true" /> к суммарной стоимости
                   </span>
-                </span>
-              </label>
-            )}
-          </div>
-        )}
+                </div>
+              )}
+              {hasAiAlgo && (
+                <label className="game-prod-tech-ai">
+                  <input
+                    type="checkbox"
+                    checked={applyAiAlgorithm}
+                    onChange={(e) => setApplyAiAlgorithm(e.target.checked)}
+                  />
+                  <span>
+                    <strong>AI Development Algorithm</strong>
+                    <em>
+                      −{unitUpgradeCount} <i className="fa-solid fa-gear" aria-hidden="true" />{' '}
+                      (по 1 за каждый unit upgrade). Снимите галочку, если карта уже истощена.
+                    </em>
+                  </span>
+                </label>
+              )}
+            </div>
+          )}
 
-        <div className="flex-1 overflow-y-auto p-3 md:p-4 space-y-2 modal-scroll">
-          {PRODUCTION_UNITS.map((unit) => {
-            const count = counts[unit.id] || 0;
-            const slots = unitSlotCount(unit, count);
-            const unitCost = unitCostForPlayer(unit, costOpts);
-            const lineCost = unitResourceCost(unit, count, costOpts);
-            const batch = unitBatchSize(unit);
-            const muaatWs = unit.id === 'warsun'
-              && factionId === 'muaat'
-              && owned.includes('prototype_war_sun_2');
-            return (
-              <div
-                key={unit.id}
-                className="flex items-center gap-3 rounded-2xl border border-[var(--game-line)] bg-black/35 px-3 py-2.5"
-              >
-                <img
-                  src={unitImageUrl(unit, playerColor)}
-                  alt={unit.name}
-                  className="w-12 h-12 md:w-14 md:h-14 object-contain flex-shrink-0 drop-shadow"
-                  draggable={false}
-                />
-                <div className="min-w-0 flex-1">
-                  <div className="font-bold text-[var(--game-text)] text-sm md:text-base truncate">{unit.name}</div>
-                  <div className="text-[11px] text-[var(--game-muted)] font-semibold">
-                    {batch > 1
-                      ? `+${batch} шт · ${unitCost}⚙ / отряд`
-                      : `${unitCost}⚙`}
-                    {muaatWs && (
-                      <span className="text-[var(--game-gold-bright)] ml-1.5">(Prototype II)</span>
-                    )}
-                    {count > 0 && (
-                      <span className="text-[var(--game-gold-bright)] ml-2">
-                        {slots} отр. · {lineCost}⚙
-                      </span>
-                    )}
+          <div className="game-prod-list">
+            {PRODUCTION_UNITS.map((unit) => {
+              const count = counts[unit.id] || 0;
+              const slots = unitSlotCount(unit, count);
+              const unitCost = unitCostForPlayer(unit, costOpts);
+              const lineCost = unitResourceCost(unit, count, costOpts);
+              const batch = unitBatchSize(unit);
+              const muaatWs = unit.id === 'warsun'
+                && factionId === 'muaat'
+                && owned.includes('prototype_war_sun_2');
+              return (
+                <div key={unit.id} className="game-prod-row">
+                  <img
+                    src={unitImageUrl(unit, playerColor)}
+                    alt=""
+                    className="game-prod-row-icon"
+                    draggable={false}
+                  />
+                  <div className="game-prod-row-meta min-w-0">
+                    <div className="game-prod-row-name truncate">{unit.name}</div>
+                    <div className="game-prod-row-cost">
+                      {batch > 1
+                        ? `+${batch} шт · ${unitCost} `
+                        : `${unitCost} `}
+                      <i className="fa-solid fa-gear" aria-hidden="true" />
+                      {batch > 1 ? ' / отряд' : ''}
+                      {muaatWs && <span className="game-prod-row-note"> (Prototype II)</span>}
+                      {count > 0 && (
+                        <span className="game-prod-row-note">
+                          {' '}· {slots} отр. · {lineCost} <i className="fa-solid fa-gear" aria-hidden="true" />
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="game-prod-stepper">
+                    <button
+                      type="button"
+                      onClick={() => bump(unit.id, -1)}
+                      disabled={count <= 0}
+                      className="game-prod-btn is-minus"
+                      aria-label={`Убрать ${unit.name}`}
+                    >
+                      −
+                    </button>
+                    <div className="game-prod-count tabular-nums" title="Количество">
+                      <span className="game-prod-unit-mark" aria-hidden="true" />
+                      {count}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => bump(unit.id, 1)}
+                      className="game-prod-btn is-plus"
+                      aria-label={`Добавить ${unit.name}`}
+                    >
+                      +
+                    </button>
                   </div>
                 </div>
-                <div className="flex items-center gap-1.5 flex-shrink-0">
-                  <button
-                    type="button"
-                    onClick={() => bump(unit.id, -1)}
-                    disabled={count <= 0}
-                    className="w-10 h-10 rounded-xl bg-black/50 border border-[var(--game-line)] text-[var(--game-text)] font-black text-lg disabled:opacity-40 active:scale-95"
-                    aria-label={`Убрать ${unit.name}`}
-                  >
-                    −
-                  </button>
-                  <div className="w-9 text-center font-orbitron font-black text-lg text-[var(--game-gold-bright)] tabular-nums">
-                    {count}
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => bump(unit.id, 1)}
-                    className="game-btn-primary !w-10 !h-10 !p-0 !text-lg"
-                    aria-label={`Добавить ${unit.name}`}
-                  >
-                    +
-                  </button>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-
-        <div className="border-t border-[var(--game-line-gold)] bg-black/35 px-4 py-3 flex items-center justify-between gap-3">
-          <div>
-            <div className="text-[10px] uppercase font-bold tracking-wider text-[var(--game-muted)]">Отрядов</div>
-            <div className="font-orbitron font-black text-2xl text-[var(--game-text)] tabular-nums">{totals.units}</div>
+              );
+            })}
           </div>
-          <div className="text-right">
-            <div className="text-[10px] uppercase font-bold tracking-wider text-[var(--game-muted)]">Ресурсы</div>
-            {totals.discount > 0 && (
-              <div className="text-[11px] text-[var(--game-muted)] tabular-nums">
-                {totals.baseResources}⚙ − {totals.discount}⚙ скидка
-              </div>
-            )}
-            <div className="font-orbitron font-black text-2xl text-[var(--game-gold-bright)] tabular-nums">{totals.resources}⚙</div>
+
+          <div className="game-prod-footer">
+            <div className="game-prod-footer-cell">
+              <span className="game-prod-footer-label">Отрядов</span>
+              <span className="game-prod-footer-value">
+                <span className="game-prod-unit-mark" aria-hidden="true" />
+                {totals.units}
+              </span>
+            </div>
+            <div className="game-prod-footer-divider" aria-hidden="true" />
+            <div className="game-prod-footer-cell is-end">
+              <span className="game-prod-footer-label">Ресурсы</span>
+              <span className="game-prod-footer-value is-gold">
+                {totals.discount > 0 && (
+                  <span className="game-prod-footer-discount">
+                    {totals.baseResources} − {totals.discount}
+                  </span>
+                )}
+                <i className="fa-solid fa-gear" aria-hidden="true" />
+                {totals.resources}
+              </span>
+            </div>
           </div>
         </div>
       </div>

@@ -10,6 +10,8 @@ export interface RoomPublicView {
   lastActivityAt: string | null;
   expiresAt: string | null;
   claimedSeats: Array<number | string>;
+  /** Seats that still require a seat code (online or host-kicked). */
+  securedSeats: Array<number | string>;
   canUndo: boolean;
 }
 
@@ -52,6 +54,7 @@ export function parseRoomPublicView(raw: unknown): RoomPublicView | null {
   if (state.version != null && typeof state.version !== 'number') return null;
 
   const claimedSeats = Array.isArray(raw.claimedSeats) ? raw.claimedSeats.slice(0, 16) : [];
+  const securedSeats = Array.isArray(raw.securedSeats) ? raw.securedSeats.slice(0, 16) : [];
 
   return {
     roomId: raw.roomId,
@@ -62,6 +65,7 @@ export function parseRoomPublicView(raw: unknown): RoomPublicView | null {
     lastActivityAt: typeof raw.lastActivityAt === 'string' ? raw.lastActivityAt : null,
     expiresAt: typeof raw.expiresAt === 'string' ? raw.expiresAt : null,
     claimedSeats: claimedSeats as Array<number | string>,
+    securedSeats: securedSeats as Array<number | string>,
     canUndo: !!raw.canUndo,
   };
 }

@@ -7,7 +7,6 @@ export function buildPhaseHub({
   showStatusPhaseModal,
   includeStatus = false,
   openPhaseModal,
-  openEventLog,
 }) {
   const chips = [
     {
@@ -50,12 +49,5 @@ export function buildPhaseHub({
       onOpen: () => openPhaseModal('statusPhase'),
     });
   }
-  chips.push({
-    id: 'log',
-    label: 'Журнал',
-    icon: 'fa-scroll',
-    show: true,
-    onOpen: openEventLog,
-  });
   return chips;
 }

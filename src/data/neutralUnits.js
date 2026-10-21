@@ -2,17 +2,24 @@
 
 export const NEUTRAL_OPPONENT_ID = 'neutral';
 
+/** Order matches mockup 2-col grid: left/right pairs. Icons = light plastic (whitened in CSS). */
 export const NEUTRAL_UNITS = Object.freeze([
-  { id: 'infantry', name: 'Пехота', combat: 8, dice: 1 },
-  { id: 'mech', name: 'Мех', combat: 6, dice: 1 },
-  { id: 'fighter', name: 'Истребитель', combat: 8, dice: 1 },
-  { id: 'destroyer', name: 'Эсминец', combat: 8, dice: 1 },
-  { id: 'cruiser', name: 'Крейсер', combat: 6, dice: 1 },
-  { id: 'carrier', name: 'Транспорт', combat: 9, dice: 1 },
-  { id: 'dreadnought', name: 'Дредноут', combat: 5, dice: 1 },
-  { id: 'warsun', name: 'Солнце войны', combat: 3, dice: 3 },
-  { id: 'flagship', name: 'Флагман', combat: 7, dice: 2, max: 1 },
+  { id: 'infantry', name: 'Пехота', combat: 8, dice: 1, file: 'Infantry_Plastic.webp' },
+  { id: 'mech', name: 'Мех', combat: 6, dice: 1, file: 'Mech_Plastic.webp' },
+  { id: 'fighter', name: 'Истребитель', combat: 8, dice: 1, file: 'Fighter_Plastic.webp' },
+  { id: 'destroyer', name: 'Эсминец', combat: 8, dice: 1, file: 'Destroyer_Plastic.webp' },
+  { id: 'cruiser', name: 'Крейсер', combat: 6, dice: 1, file: 'Cruiser_Plastic.webp' },
+  { id: 'carrier', name: 'Транспорт', combat: 9, dice: 1, file: 'Carrier_Plastic.webp' },
+  { id: 'dreadnought', name: 'Дредноут', combat: 5, dice: 1, file: 'Dreadnought_Plastic.webp' },
+  { id: 'warsun', name: 'Солнце войны', combat: 3, dice: 3, file: 'War_Sun_Plastic.webp' },
+  { id: 'flagship', name: 'Флагман', combat: 7, dice: 2, max: 1, file: 'Flagship_Plastic.webp' },
 ]);
+
+export function neutralUnitIconUrl(unit) {
+  if (!unit?.file) return null;
+  // Yellow plastics have real highlight/shadow range; CSS then maps them to white.
+  return `/figurines/yellow/${unit.file}`;
+}
 
 export function emptyNeutralCounts() {
   return Object.fromEntries(NEUTRAL_UNITS.map(u => [u.id, 0]));

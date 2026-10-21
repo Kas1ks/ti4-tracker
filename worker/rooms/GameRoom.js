@@ -8,6 +8,7 @@ import {
   publicRoomView,
   adminSessionFromRoom,
 } from './roomCore.js';
+import { directoryRemove, directoryUpsert } from './roomIndex.js';
 import { logRoomEvent, measureMs } from './roomLog.js';
 import { undoStackDepth } from '../../src/sync/undoStack';
 
@@ -50,10 +51,18 @@ export class GameRoom {
       sseListeners: this.sseWrites.size,
       undoDepth: undoStackDepth(room?.undoStack),
     });
+    if (room?.roomId) {
+      this.ctx.waitUntil(directoryRemove(this.env, room.roomId));
+    }
     for (const write of [...this.sseWrites]) {
       this.sseWrites.delete(write);
     }
     await this.ctx.storage.deleteAll();
+  }
+
+  trackInDirectory(room) {
+    if (!room) return;
+    this.ctx.waitUntil(directoryUpsert(this.env, room));
   }
 
   async alarm() {
@@ -92,6 +101,7 @@ export class GameRoom {
         if (isRoomExpired(existing)) {
           await this.wipeExpired();
         } else {
+          this.trackInDirectory(existing);
           return Response.json({
             ...publicRoomView(existing),
             hostKey: existing.hostKey,
@@ -106,6 +116,7 @@ export class GameRoom {
       const namedId = url.searchParams.get('roomId');
       if (namedId) room.roomId = namedId.toUpperCase();
       await this.save(room);
+      this.trackInDirectory(room);
       logRoomEvent('room_create', {
         backend: 'do',
         roomId: room.roomId,
@@ -147,15 +158,18 @@ export class GameRoom {
         return Response.json({ error: result.error }, { status });
       }
       await this.save(result.room);
+      this.trackInDirectory(result.room);
+      const joinedView = publicRoomView(result.room);
       this.broadcast({
         type: 'seats',
-        claimedSeats: publicRoomView(result.room).claimedSeats,
+        claimedSeats: joinedView.claimedSeats,
+        securedSeats: joinedView.securedSeats,
         reclaimed: !!result.reclaimed,
         seatPlayerId: result.seatPlayerId,
         revokedSessionToken: result.revokedSessionToken || null,
       });
       return Response.json({
-        ...publicRoomView(result.room),
+        ...joinedView,
         sessionToken: result.sessionToken,
         role: result.role,
         seatPlayerId: result.seatPlayerId,
@@ -180,9 +194,12 @@ export class GameRoom {
         return Response.json({ error: released.error }, { status });
       }
       await this.save(released.room);
+      this.trackInDirectory(released.room);
+      const releasedView = publicRoomView(released.room);
       this.broadcast({
         type: 'seats',
-        claimedSeats: publicRoomView(released.room).claimedSeats,
+        claimedSeats: releasedView.claimedSeats,
+        securedSeats: releasedView.securedSeats,
         reclaimed: true,
         released: true,
         seatPlayerId: released.seatPlayerId,
@@ -227,6 +244,7 @@ export class GameRoom {
 
       await this.save(result.room);
       if (!result.noop) {
+        this.trackInDirectory(result.room);
         this.broadcast({
           type: 'state',
           seq: result.room.seq,
@@ -240,9 +258,11 @@ export class GameRoom {
           revokedSessionToken: result.revokedSessionToken || null,
         });
         if (result.seatRemoved && result.revokedSessionToken) {
+          const removedView = publicRoomView(result.room);
           this.broadcast({
             type: 'seats',
-            claimedSeats: publicRoomView(result.room).claimedSeats,
+            claimedSeats: removedView.claimedSeats,
+            securedSeats: removedView.securedSeats,
             reclaimed: true,
             released: true,
             seatRemoved: true,

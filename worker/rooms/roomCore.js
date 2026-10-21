@@ -102,8 +102,9 @@ export function adminSessionFromRoom(room) {
 
 /**
  * Join as player or viewer.
- * Empty seat: free claim + new seatSecret.
- * Taken seat: only with matching seatSecret (device switch).
+ * Empty seat: free claim with room code only (+ new seatSecret issued).
+ * Taken seat (still online): matching seatSecret required (device switch).
+ * After a kick/leave the seat is empty — no seat code needed.
  */
 export function joinRoom(room, { role, seatPlayerId, seatSecret } = {}) {
   if (role === ROLES.ADMIN) {
@@ -125,12 +126,10 @@ export function joinRoom(room, { role, seatPlayerId, seatSecret } = {}) {
     const existingSecret = seatSecrets[seat.id] ?? null;
     const reclaimed = previousToken != null;
 
+    // Seat code only when someone is already sitting here (move to another device).
     if (reclaimed) {
       const provided = String(seatSecret || '').trim().toUpperCase();
-      if (!existingSecret) {
-        return { ok: false, error: 'seat-secret-required' };
-      }
-      if (!provided) {
+      if (!existingSecret || !provided) {
         return { ok: false, error: 'seat-secret-required' };
       }
       if (provided !== String(existingSecret).toUpperCase()) {
@@ -139,7 +138,8 @@ export function joinRoom(room, { role, seatPlayerId, seatSecret } = {}) {
     }
 
     const sessionToken = makeSessionToken();
-    const secret = existingSecret || makeSeatSecret();
+    // Fresh claim after kick/leave gets a new secret; device-switch keeps the old one.
+    const secret = reclaimed && existingSecret ? existingSecret : makeSeatSecret();
     seatSecrets[seat.id] = secret;
 
     const sessions = { ...(room.sessions || {}) };
@@ -187,7 +187,8 @@ export function joinRoom(room, { role, seatPlayerId, seatSecret } = {}) {
 
 /**
  * Free a claimed seat (host can free any; player can free only their own).
- * Clears claim + seat secret so the next join starts fresh.
+ * Clears claim + seat secret so the next join needs only the room code.
+ * Seat code is only for reclaiming an *active* seat from another device.
  */
 export function releaseSeat(room, seatPlayerId, auth = {}) {
   let role = null;
@@ -240,6 +241,7 @@ export function releaseSeat(room, seatPlayerId, auth = {}) {
     room: next,
     seatPlayerId: seat.id,
     revokedSessionToken: previousToken,
+    released: true,
   };
 }
 
@@ -411,6 +413,10 @@ export function publicRoomView(room) {
     const asNum = Number(id);
     return Number.isNaN(asNum) ? id : asNum;
   });
+  const securedSeats = Object.keys(room.seatSecrets || {}).map((id) => {
+    const asNum = Number(id);
+    return Number.isNaN(asNum) ? id : asNum;
+  });
 
   return {
     roomId: room.roomId,
@@ -421,6 +427,40 @@ export function publicRoomView(room) {
     lastActivityAt: room.lastActivityAt || null,
     expiresAt: room.expiresAt || null,
     claimedSeats,
+    securedSeats,
     canUndo: undoStackDepth(room.undoStack) > 0,
+  };
+}
+
+/**
+ * Compact public card for hub "Активные партии" (no secrets / full undo stack).
+ * @param {object} room
+ */
+export function hubRoomCard(room) {
+  if (!room?.roomId) return null;
+  const view = publicRoomView(room);
+  const state = view.state;
+  const players = (state?.players || []).filter((p) => !p?.eliminated);
+  const claimed = view.claimedSeats || [];
+  const active = !!state?.isGameActive;
+  const roundStartedAt = Number(state?.round?.roundStartedAt);
+  const createdMs = view.createdAt ? Date.parse(view.createdAt) : NaN;
+  const startedAt = Number.isFinite(roundStartedAt)
+    ? roundStartedAt
+    : (Number.isFinite(createdMs) ? createdMs : null);
+  const round = Number(state?.meta?.roundNumber ?? state?.roundNumber);
+
+  return {
+    roomId: view.roomId,
+    createdAt: view.createdAt,
+    lastActivityAt: view.lastActivityAt,
+    updatedAt: view.updatedAt,
+    expiresAt: view.expiresAt,
+    isGameActive: active,
+    roundNumber: Number.isFinite(round) && round > 0 ? round : null,
+    roundStartedAt: startedAt,
+    playersTotal: Math.max(players.length, 1),
+    claimedCount: claimed.length,
+    thumbUrl: '/hub/cosmos.jpg',
   };
 }

@@ -471,6 +471,164 @@ describe('authorizeAction', () => {
       state: live,
     }).ok).toBe(false);
   });
+
+  it('lets the active player start PvP combat and participants enter hits', () => {
+    let state = normalizeGameState({
+      isGameActive: true,
+      players: [player(1, 'A'), player(2, 'B')],
+      speakerId: 1,
+    });
+    state = gameReducer(state, { type: 'START_ROUND', at: 1000 });
+    const attackerId = state.round.turnOrderIds[state.round.activeTurnIdx];
+    const defenderId = state.players.find((p) => p.id !== attackerId).id;
+
+    expect(authorizeAction({
+      role: ROLES.PLAYER,
+      seatPlayerId: attackerId,
+      action: { type: 'START_COMBAT', mode: 'pvp', attackerId, defenderId },
+      state,
+    }).ok).toBe(true);
+
+    expect(authorizeAction({
+      role: ROLES.PLAYER,
+      seatPlayerId: defenderId,
+      action: { type: 'START_COMBAT', mode: 'pvp', attackerId: defenderId, defenderId: attackerId },
+      state,
+    }).error).toBe('not-your-turn');
+
+    state = gameReducer(state, {
+      type: 'START_COMBAT',
+      mode: 'pvp',
+      attackerId,
+      defenderId,
+      at: 2000,
+    });
+
+    expect(authorizeAction({
+      role: ROLES.PLAYER,
+      seatPlayerId: attackerId,
+      action: { type: 'COMBAT_SET_HITS', playerId: attackerId, hits: 2 },
+      state,
+    }).ok).toBe(true);
+
+    expect(authorizeAction({
+      role: ROLES.PLAYER,
+      seatPlayerId: attackerId,
+      action: { type: 'COMBAT_SET_HITS', playerId: defenderId, hits: 1 },
+      state,
+    }).error).toBe('not-your-hits');
+
+    state = gameReducer(state, { type: 'COMBAT_SET_HITS', playerId: attackerId, hits: 2 });
+    state = gameReducer(state, { type: 'COMBAT_SET_HITS', playerId: defenderId, hits: 1 });
+
+    expect(authorizeAction({
+      role: ROLES.PLAYER,
+      seatPlayerId: defenderId,
+      action: { type: 'COMBAT_ASSIGN', playerId: defenderId },
+      state,
+    }).ok).toBe(true);
+
+    expect(authorizeAction({
+      role: ROLES.PLAYER,
+      seatPlayerId: defenderId,
+      action: { type: 'COMBAT_DEFEAT', playerId: defenderId },
+      state,
+    }).ok).toBe(true);
+
+    expect(authorizeAction({
+      role: ROLES.PLAYER,
+      seatPlayerId: defenderId,
+      action: { type: 'COMBAT_DECLARE_RETREAT', playerId: defenderId },
+      state,
+    }).ok).toBe(true);
+
+    expect(authorizeAction({
+      role: ROLES.PLAYER,
+      seatPlayerId: attackerId,
+      action: { type: 'COMBAT_DECLARE_RETREAT', playerId: defenderId },
+      state,
+    }).error).toBe('not-your-retreat');
+
+    state = gameReducer(state, { type: 'COMBAT_DECLARE_RETREAT', playerId: defenderId });
+    state = gameReducer(state, { type: 'COMBAT_ASSIGN', playerId: attackerId });
+    state = gameReducer(state, { type: 'COMBAT_ASSIGN', playerId: defenderId });
+    expect(state.round.combat.phase).toBe('retreat_check');
+
+    expect(authorizeAction({
+      role: ROLES.PLAYER,
+      seatPlayerId: attackerId,
+      action: { type: 'COMBAT_RESOLVE_RETREAT', success: true },
+      state,
+    }).ok).toBe(true);
+
+    state = gameReducer(state, { type: 'COMBAT_RESOLVE_RETREAT', success: true });
+    expect(state.round.combat.phase).toBe('result');
+    expect(state.round.combat.resultKind).toBe('retreat');
+
+    expect(authorizeAction({
+      role: ROLES.PLAYER,
+      seatPlayerId: defenderId,
+      action: { type: 'END_COMBAT' },
+      state,
+    }).ok).toBe(true);
+
+    expect(authorizeAction({
+      role: ROLES.PLAYER,
+      seatPlayerId: attackerId,
+      action: { type: 'END_COMBAT' },
+      state,
+    }).ok).toBe(true);
+  });
+
+  it('lets a seated player pick their own color before the game starts', () => {
+    const lobby = normalizeGameState({
+      isGameActive: false,
+      players: [
+        { ...player(1, 'A'), color: '' },
+        { ...player(2, 'B'), color: '#ef4444' },
+      ],
+    });
+
+    expect(authorizeAction({
+      role: ROLES.PLAYER,
+      seatPlayerId: 1,
+      action: { type: 'UPDATE_PLAYER', playerId: 1, patch: { color: '#3b82f6' } },
+      state: lobby,
+    }).ok).toBe(true);
+
+    expect(authorizeAction({
+      role: ROLES.PLAYER,
+      seatPlayerId: 1,
+      action: { type: 'UPDATE_PLAYER', playerId: 1, patch: { color: '#ef4444' } },
+      state: lobby,
+    })).toEqual({ ok: false, error: 'color-taken' });
+
+    expect(authorizeAction({
+      role: ROLES.PLAYER,
+      seatPlayerId: 1,
+      action: { type: 'UPDATE_PLAYER', playerId: 2, patch: { color: '#22c55e' } },
+      state: lobby,
+    })).toEqual({ ok: false, error: 'not-your-seat' });
+
+    expect(authorizeAction({
+      role: ROLES.PLAYER,
+      seatPlayerId: 1,
+      action: { type: 'UPDATE_PLAYER', playerId: 1, patch: { name: 'Hack' } },
+      state: lobby,
+    })).toEqual({ ok: false, error: 'forbidden' });
+
+    const live = normalizeGameState({
+      isGameActive: true,
+      players: [player(1, 'A'), player(2, 'B')],
+      speakerId: 1,
+    });
+    expect(authorizeAction({
+      role: ROLES.PLAYER,
+      seatPlayerId: 1,
+      action: { type: 'UPDATE_PLAYER', playerId: 1, patch: { color: '#22c55e' } },
+      state: live,
+    })).toEqual({ ok: false, error: 'game-active' });
+  });
 });
 
 describe('can (UI capabilities)', () => {

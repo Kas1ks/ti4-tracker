@@ -34,6 +34,7 @@ const PlayerMobileConsole = lazy(() => import('./components/PlayerMobileConsole'
 const ViewerMobileConsole = lazy(() => import('./components/ViewerMobileConsole').then(m => ({ default: m.ViewerMobileConsole })));
 const GameSummaryModal = lazy(() => import('./components/GameSummaryModal').then(m => ({ default: m.GameSummaryModal })));
 const StatsPage = lazy(() => import('./components/StatsModal').then(m => ({ default: m.StatsPage })));
+const GuidePage = lazy(() => import('./components/GuidePage').then(m => ({ default: m.GuidePage })));
 const StatusPhaseModal = lazy(() => import('./components/StatusPhaseModal').then(m => ({ default: m.StatusPhaseModal })));
 const ObjectiveScoringModal = lazy(() => import('./components/ObjectiveScoringModal').then(m => ({ default: m.ObjectiveScoringModal })));
 const EndGameModal = lazy(() => import('./components/EndGameModal').then(m => ({ default: m.EndGameModal })));
@@ -58,10 +59,15 @@ function BoardChunkFallback() {
   );
 }
 
+function openStatsTab() {
+  window.open(`${window.location.origin}/stats`, '_blank', 'noopener,noreferrer');
+}
+
 function App() {
   const navigate = useNavigate();
   const location = useLocation();
   const isStatsRoute = location.pathname === '/stats';
+  const isGuideRoute = location.pathname === '/guide';
 
   const { dialog, close, uiAlert, uiConfirm, uiPrompt, uiForm } = useAppDialog();
   const {
@@ -101,7 +107,18 @@ function App() {
   const { isGameActive, players } = game;
   const { targetScore, roundNumber, usePok, useTe, speakerId, isPoliticsActive } = game.meta;
   const { active: objectives, completions } = game.objectives;
-  const { active: roundActive, passed, turnStartedAt, turnPausedAccum, strategyActionTaken, strategyResolution, imperialClaim, techResearch } = game.round;
+  const {
+    active: roundActive,
+    passed,
+    turnStartedAt,
+    turnPausedAccum,
+    strategyActionTaken,
+    strategyResolution,
+    imperialClaim,
+    techResearch,
+    combat,
+  } = game.round;
+  const combatActive = !!combat?.active;
   const roundStartedAt = game.round?.roundStartedAt ?? null;
   const {
     queue: draftQueue, assignments: draftAssignments, currentQueueIndex,
@@ -127,9 +144,15 @@ function App() {
   const clockRunning = isGameActive && !!activePlayer && !passed[activePlayer.id]
     && Number.isFinite(turnStartedAt)
     && !strategyResolution?.active
+    && !combatActive
     && !isVictoryReached(game);
   const liveTurnSecs = useElapsedSeconds(turnStartedAt, clockRunning);
   const turnTime = Math.max(0, turnPausedAccum || 0) + liveTurnSecs;
+
+  const combatSessionTime = useElapsedSeconds(
+    combat?.startedAt,
+    combatActive && Number.isFinite(combat?.startedAt),
+  );
 
   const roundClockRunning = isGameActive && Number.isFinite(roundStartedAt) && !isVictoryReached(game);
   const liveRoundSecs = useElapsedSeconds(roundStartedAt, roundClockRunning);
@@ -308,6 +331,16 @@ function App() {
     }
   }, [showTechResearchModal]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  useEffect(() => {
+    if (combatActive && perms?.role === ROLES.ADMIN) {
+      ui.setShowCombatModal(true);
+      ui.focusBlockingModal('combat');
+    }
+    if (!combatActive) {
+      ui.setShowCombatModal(false);
+    }
+  }, [combatActive, perms?.role]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const resolveStrategy = (playerId, choice) => {
     dispatch({ type: 'RESOLVE_STRATEGY', playerId, choice });
   };
@@ -424,7 +457,7 @@ function App() {
     } catch (err) {
       const codeErr = String(err.message || err);
       const message = codeErr === 'seat-secret-required'
-        ? 'Место занято. Нужен код места (выдаётся при первом входе).'
+        ? 'Место уже занято. Код места нужен только чтобы перенести его на другое устройство.'
         : codeErr === 'bad-seat-secret'
           ? 'Неверный код места.'
           : `Комната не найдена или недоступна: ${codeErr}`;
@@ -464,6 +497,23 @@ function App() {
             deleteSingleGame={cloud.deleteSingleGame}
             clearAllStats={cloud.clearAllStats}
           />
+        </Suspense>
+        <AppDialog dialog={dialog} onClose={close} />
+      </>
+    );
+  }
+
+  if (isGuideRoute) {
+    return (
+      <>
+        <Suspense
+          fallback={(
+            <div className="min-h-screen flex items-center justify-center text-[var(--hub-muted)] bg-[var(--hub-ink)]">
+              <i className="fa-solid fa-spinner fa-spin text-2xl text-[var(--hub-gold-bright)]" aria-hidden="true" />
+            </div>
+          )}
+        >
+          <GuidePage onBack={() => navigate('/')} />
         </Suspense>
         <AppDialog dialog={dialog} onClose={close} />
       </>
@@ -524,7 +574,7 @@ function App() {
           }
           onExport={cloud.exportGameToken}
           onOpenEndGame={() => ui.setShowEndGameModal(true)}
-          onOpenStats={() => navigate('/stats')}
+          onOpenStats={openStatsTab}
           onOpenEventLog={() => ui.setShowEventLog(true)}
           onOpenExpedition={useTe ? openExpeditionPanel : undefined}
           onOpenTech={isViewerClient ? undefined : () => {
@@ -533,7 +583,10 @@ function App() {
           }}
           onUndoLast={() => dispatch({ type: 'UNDO_LAST' })}
           canUndo={canUndo}
-          onOpenCombat={ui.openCombatModal}
+          onOpenCombat={() => {
+            dispatch({ type: 'START_COMBAT' });
+            ui.openCombatModal();
+          }}
           room={room}
           roomStatus={roomStatus}
           perms={perms}
@@ -558,7 +611,8 @@ function App() {
             onPlaySolo={handlePlaySolo}
             importGameToken={handleImportGameToken}
             uiPrompt={uiPrompt}
-            onOpenStats={() => navigate('/stats')}
+            onOpenStats={openStatsTab}
+            onOpenGuide={() => navigate('/guide')}
           />
         )}
 
@@ -568,6 +622,15 @@ function App() {
             players={players}
             roomError={roomError}
             onLeaveRoom={handleLeaveRoom}
+            onPickColor={
+              isPlayerClient && room?.seatPlayerId != null
+                ? (color) => dispatch({
+                  type: 'UPDATE_PLAYER',
+                  playerId: room.seatPlayerId,
+                  patch: { color },
+                })
+                : undefined
+            }
           />
         )}
 
@@ -593,7 +656,7 @@ function App() {
             roomError={roomError}
             claimedSeats={room?.claimedSeats || []}
             onLeaveRoom={handleLeaveRoom}
-            onOpenStats={() => navigate('/stats')}
+            onOpenStats={openStatsTab}
             onPlaySolo={handlePlaySolo}
             importGameToken={handleImportGameToken}
             isSolo={soloSetup && !hasRoomSession}
@@ -621,14 +684,19 @@ function App() {
                   turnTime={turnTime}
                   onNextTurn={() => dispatch({ type: 'NEXT_TURN' })}
                   onPassTurn={dialogs.passTurn}
-                  onOpenCombat={ui.openCombatModal}
+                  onOpenCombat={() => {
+                    dispatch({ type: 'START_COMBAT' });
+                    ui.openCombatModal();
+                  }}
                   canPlay={
                     !victoryLocked
+                    && !combatActive
                     && (perms?.role === ROLES.ADMIN || perms?.role === ROLES.PLAYER)
                     && (!perms?.seatPlayerId || activePlayer?.id === perms.seatPlayerId)
                   }
                   canNextTurn={
                     !victoryLocked
+                    && !combatActive
                     && (perms?.role === ROLES.ADMIN || perms?.role === ROLES.PLAYER)
                     && (!perms?.seatPlayerId || activePlayer?.id === perms.seatPlayerId)
                     && !strategyResolution?.active
@@ -643,7 +711,6 @@ function App() {
               <Suspense fallback={<BoardChunkFallback />}>
                 <PlayerMobileConsole
                   me={mySeatPlayer}
-                  seatSecret={room?.seatSecret || null}
                   activePlayer={activePlayer}
                   turnOrder={turnOrder}
                   players={players}
@@ -675,16 +742,56 @@ function App() {
                   }
                   canNextTurn={
                     !victoryLocked
+                    && !combatActive
                     && !!mySeatPlayer
                     && (!perms?.seatPlayerId || activePlayer?.id === perms.seatPlayerId)
                     && !strategyResolution?.active
                     && !imperialClaim?.active
                     && !techResearch?.active
                   }
+                  canCombat={
+                    !victoryLocked
+                    && !combatActive
+                    && !!mySeatPlayer
+                    && (!perms?.seatPlayerId || activePlayer?.id === perms.seatPlayerId)
+                    && !strategyResolution?.active
+                    && !imperialClaim?.active
+                    && !techResearch?.active
+                    && roundActive
+                  }
+                  combat={combat}
+                  combatSessionTime={combatSessionTime}
+                  onStartCombat={(defenderId) => dispatch({
+                    type: 'START_COMBAT',
+                    mode: 'pvp',
+                    attackerId: mySeatPlayer?.id,
+                    defenderId,
+                  })}
+                  onCombatSetHits={(playerId, hits) => dispatch({
+                    type: 'COMBAT_SET_HITS',
+                    playerId,
+                    hits,
+                  })}
+                  onCombatAssign={(playerId) => dispatch({
+                    type: 'COMBAT_ASSIGN',
+                    playerId,
+                  })}
+                  onCombatDeclareRetreat={(playerId) => dispatch({
+                    type: 'COMBAT_DECLARE_RETREAT',
+                    playerId,
+                  })}
+                  onCombatResolveRetreat={(success) => dispatch({
+                    type: 'COMBAT_RESOLVE_RETREAT',
+                    success: !!success,
+                  })}
+                  onCombatDefeat={(playerId) => dispatch({
+                    type: 'COMBAT_DEFEAT',
+                    playerId,
+                  })}
+                  onCombatDismissResult={() => dispatch({ type: 'END_COMBAT' })}
                   onOpenProduction={() => ui.setShowProductionCalculator(true)}
                   usePok={usePok}
                   useTe={useTe}
-                  logEvents={game?.log?.events || []}
                   phaseHub={buildPhaseHub({
                     showDraftModal,
                     showPoliticsModal,
@@ -693,7 +800,6 @@ function App() {
                     showStatusPhaseModal,
                     includeStatus: true,
                     openPhaseModal,
-                    openEventLog: () => ui.setShowEventLog(true),
                   })}
                 />
               </Suspense>
@@ -717,7 +823,6 @@ function App() {
                   resolvingCardId={strategyResolution?.cardId ?? null}
                   usePok={usePok}
                   useTe={useTe}
-                  logEvents={game?.log?.events || []}
                   phaseHub={buildPhaseHub({
                     showDraftModal,
                     showPoliticsModal,
@@ -726,7 +831,6 @@ function App() {
                     showStatusPhaseModal,
                     includeStatus: false,
                     openPhaseModal,
-                    openEventLog: () => ui.setShowEventLog(true),
                   })}
                 />
               </Suspense>
@@ -775,7 +879,7 @@ function App() {
                   perms?.isLive && perms?.role === ROLES.ADMIN
                     ? async (playerId) => {
                       const ok = await uiConfirm(
-                        'Освободить место? Игрок на устройстве будет отключён, код места сбросится — можно занять место заново без старого кода.',
+                        'Освободить место? Игрок будет отключён. Место снова можно занять по коду комнаты — код места не нужен.',
                         { title: 'Освободить место', confirmLabel: 'Освободить', variant: 'danger' },
                       );
                       if (!ok) return;
@@ -984,17 +1088,55 @@ function App() {
           />
         </LazyWhen>
 
-        <LazyWhen active={ui.showCombatModal}>
+        <LazyWhen active={ui.showCombatModal || (combatActive && perms?.role === ROLES.ADMIN)}>
           <CombatModal
-            show={ui.showCombatModal}
+            show={ui.showCombatModal || (combatActive && perms?.role === ROLES.ADMIN)}
             minimized={!!ui.minimizedModals.combat}
             onMinimize={() => ui.toggleMinimize('combat')}
-            onClose={() => ui.setShowCombatModal(false)}
-            activePlayer={activePlayer}
+            onClose={() => {
+              if (combat?.active) {
+                if (combat.phase === 'result') {
+                  dispatch({ type: 'END_COMBAT' });
+                } else if (combat.mode === 'pvp') {
+                  dispatch({ type: 'COMBAT_DEFEAT' });
+                } else {
+                  dispatch({ type: 'END_COMBAT' });
+                }
+              }
+              ui.setShowCombatModal(false);
+            }}
+            activePlayer={
+              combat?.attackerId != null
+                ? players.find((p) => String(p.id) === String(combat.attackerId)) || activePlayer
+                : activePlayer
+            }
             activePlayers={activePlayers}
+            combatSessionTime={combatSessionTime}
+            combat={combat}
+            onSetOpponent={(opts) => {
+              if (opts?.neutral) {
+                dispatch({ type: 'COMBAT_SET_OPPONENT', neutral: true });
+                return;
+              }
+              if (opts?.clear) {
+                dispatch({ type: 'COMBAT_SET_OPPONENT', clear: true });
+                return;
+              }
+              dispatch({
+                type: 'COMBAT_SET_OPPONENT',
+                attackerId: activePlayer?.id,
+                defenderId: opts?.defenderId,
+              });
+            }}
+            onSetHits={(playerId, hits) => dispatch({ type: 'COMBAT_SET_HITS', playerId, hits })}
+            onAssign={(playerId) => dispatch({ type: 'COMBAT_ASSIGN', playerId })}
+            onDeclareRetreat={(playerId) => dispatch({ type: 'COMBAT_DECLARE_RETREAT', playerId })}
+            onResolveRetreat={(success) => dispatch({
+              type: 'COMBAT_RESOLVE_RETREAT',
+              success: !!success,
+            })}
+            onDefeat={() => dispatch({ type: 'COMBAT_DEFEAT' })}
             onRecordDamage={(damageByPlayerId) => dispatch({ type: 'ADD_COMBAT_DAMAGE', damageByPlayerId })}
-            combatOpponentId={ui.combatOpponentId}
-            setCombatOpponentId={ui.setCombatOpponentId}
             combatHits={ui.combatHits}
             setCombatHits={ui.setCombatHits}
             combatRound={ui.combatRound}

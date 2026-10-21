@@ -1,7 +1,8 @@
 import { handleApi } from './api.js';
 import { GameRoom } from './rooms/GameRoom.js';
+import { RoomDirectory } from './rooms/RoomDirectory.js';
 
-export { GameRoom };
+export { GameRoom, RoomDirectory };
 
 export default {
   async fetch(request, env) {

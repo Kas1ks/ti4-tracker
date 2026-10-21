@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { BASE_OBJECTIVES, STRATEGY_CARDS } from '../data/gameData';
+import { reduceGame } from './gameEvents';
 import { gameReducer } from './gameReducer';
 import { createEmptyGameState, normalizeGameState } from './gameState';
 import {
@@ -1143,6 +1144,146 @@ describe('combat', () => {
       damageByPlayerId: { 1: 3, 2: 5 },
     });
     expect(state.players.map(p => p.damageDealt)).toEqual([3, 5, 0]);
+  });
+
+  it('pauses turn clock during combat and banks combatTime separately', () => {
+    const t0 = 1_700_000_000_000;
+    let state = dispatch(gameWith([player(1, 'A'), player(2, 'B')]), {
+      type: 'START_ROUND',
+      at: t0,
+    });
+    expect(state.round.turnStartedAt).toBe(t0);
+    const seatId = activePlayer(state).id;
+
+    state = dispatch(state, { type: 'START_COMBAT', at: t0 + 10_000 });
+    expect(state.round.combat.active).toBe(true);
+    expect(state.round.turnStartedAt).toBeNull();
+    expect(state.round.turnPausedAccum).toBe(10);
+
+    state = dispatch(state, { type: 'END_COMBAT', at: t0 + 25_000 });
+    expect(state.round.combat.active).toBe(false);
+    expect(state.round.turnStartedAt).toBe(t0 + 25_000);
+    expect(state.round.turnPausedAccum).toBe(10);
+    expect(state.meta.combatTime).toBe(15);
+
+    state = dispatch(state, { type: 'NEXT_TURN', at: t0 + 30_000 });
+    // Pre-combat 10s + post-combat 5s = 15s; combat 15s is not billed to the seat.
+    expect(state.players.find(p => p.id === seatId).totalTime).toBe(15);
+  });
+
+  it('runs synced PvP input → reveal → assign → next round → defeat', () => {
+    const t0 = 1_700_000_000_000;
+    let state = dispatch(gameWith([player(1, 'A'), player(2, 'B')]), {
+      type: 'START_ROUND',
+      at: t0,
+    });
+    const attackerId = activePlayer(state).id;
+    const defenderId = state.players.find((p) => p.id !== attackerId).id;
+
+    state = dispatch(state, {
+      type: 'START_COMBAT',
+      at: t0 + 1_000,
+      mode: 'pvp',
+      attackerId,
+      defenderId,
+    });
+    expect(state.round.combat.mode).toBe('pvp');
+    expect(state.round.combat.phase).toBe('input');
+    expect(state.round.combat.round).toBe(1);
+
+    state = dispatch(state, { type: 'COMBAT_SET_HITS', playerId: attackerId, hits: 2 });
+    expect(state.round.combat.phase).toBe('input');
+    state = dispatch(state, { type: 'COMBAT_SET_HITS', playerId: defenderId, hits: 3 });
+    expect(state.round.combat.phase).toBe('reveal');
+    expect(state.round.combat.hits[attackerId]).toBe(2);
+    expect(state.round.combat.hits[defenderId]).toBe(3);
+
+    state = dispatch(state, { type: 'COMBAT_ASSIGN', playerId: attackerId });
+    expect(state.round.combat.phase).toBe('reveal');
+    state = dispatch(state, { type: 'COMBAT_ASSIGN', playerId: defenderId });
+    expect(state.round.combat.phase).toBe('input');
+    expect(state.round.combat.round).toBe(2);
+    expect(state.round.combat.totals[attackerId]).toBe(2);
+    expect(state.round.combat.totals[defenderId]).toBe(3);
+
+    state = dispatch(state, { type: 'COMBAT_SET_HITS', playerId: attackerId, hits: 1 });
+    state = dispatch(state, { type: 'COMBAT_SET_HITS', playerId: defenderId, hits: 0 });
+    state = reduceGame(state, { type: 'COMBAT_DEFEAT', playerId: attackerId, at: t0 + 20_000 });
+    expect(state.round.combat.active).toBe(true);
+    expect(state.round.combat.phase).toBe('result');
+    expect(state.round.combat.loserId).toBe(attackerId);
+    expect(state.round.combat.winnerId).toBe(defenderId);
+    expect(state.players.find((p) => p.id === attackerId).damageDealt).toBe(3);
+    expect(state.players.find((p) => p.id === defenderId).damageDealt).toBe(3);
+    expect(state.log.events.at(-1)).toMatchObject({
+      type: 'COMBAT_RESOLVED',
+      winnerId: defenderId,
+      loserId: attackerId,
+    });
+
+    state = dispatch(state, { type: 'END_COMBAT', at: t0 + 25_000 });
+    expect(state.round.combat.active).toBe(false);
+  });
+
+  it('retreat: declare → finish round → resolve success/fail', () => {
+    const t0 = 1_700_000_100_000;
+    let state = dispatch(gameWith([player(1, 'A'), player(2, 'B')]), {
+      type: 'START_ROUND',
+      at: t0,
+    });
+    const attackerId = activePlayer(state).id;
+    const defenderId = state.players.find((p) => p.id !== attackerId).id;
+
+    state = dispatch(state, {
+      type: 'START_COMBAT',
+      at: t0 + 1_000,
+      mode: 'pvp',
+      attackerId,
+      defenderId,
+    });
+
+    state = dispatch(state, { type: 'COMBAT_DECLARE_RETREAT', playerId: defenderId });
+    expect(state.round.combat.retreatPlayerId).toBe(defenderId);
+    expect(state.round.combat.phase).toBe('input');
+
+    state = dispatch(state, { type: 'COMBAT_SET_HITS', playerId: attackerId, hits: 2 });
+    state = dispatch(state, { type: 'COMBAT_SET_HITS', playerId: defenderId, hits: 1 });
+    expect(state.round.combat.phase).toBe('reveal');
+
+    state = dispatch(state, { type: 'COMBAT_ASSIGN', playerId: attackerId });
+    state = dispatch(state, { type: 'COMBAT_ASSIGN', playerId: defenderId });
+    expect(state.round.combat.phase).toBe('retreat_check');
+    expect(state.round.combat.totals[attackerId]).toBe(2);
+    expect(state.round.combat.totals[defenderId]).toBe(1);
+
+    // Fail → continue fighting
+    state = dispatch(state, { type: 'COMBAT_RESOLVE_RETREAT', success: false });
+    expect(state.round.combat.phase).toBe('input');
+    expect(state.round.combat.retreatPlayerId).toBe(null);
+    expect(state.round.combat.round).toBe(2);
+
+    state = dispatch(state, { type: 'COMBAT_DECLARE_RETREAT', playerId: attackerId });
+    state = dispatch(state, { type: 'COMBAT_SET_HITS', playerId: attackerId, hits: 0 });
+    state = dispatch(state, { type: 'COMBAT_SET_HITS', playerId: defenderId, hits: 3 });
+    state = dispatch(state, { type: 'COMBAT_ASSIGN', playerId: attackerId });
+    state = dispatch(state, { type: 'COMBAT_ASSIGN', playerId: defenderId });
+    expect(state.round.combat.phase).toBe('retreat_check');
+
+    state = reduceGame(state, {
+      type: 'COMBAT_RESOLVE_RETREAT',
+      success: true,
+      at: t0 + 30_000,
+    });
+    expect(state.round.combat.phase).toBe('result');
+    expect(state.round.combat.resultKind).toBe('retreat');
+    expect(state.round.combat.loserId).toBe(attackerId);
+    expect(state.round.combat.winnerId).toBe(defenderId);
+    expect(state.log.events.at(-1)).toMatchObject({
+      type: 'COMBAT_RESOLVED',
+      resultKind: 'retreat',
+      loserId: attackerId,
+      winnerId: defenderId,
+    });
   });
 });
 

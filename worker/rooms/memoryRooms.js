@@ -1,6 +1,7 @@
 import {
   applyRoomAction,
   createRoomRecord,
+  hubRoomCard,
   hydrateRoomLifecycle,
   isRoomExpired,
   joinRoom,
@@ -72,9 +73,11 @@ export function memoryJoin(roomId, body) {
   const result = joinRoom(room, body);
   if (!result.ok) return result;
   rooms.set(key, result.room);
+  const joinedView = publicRoomView(result.room);
   notify(key, {
     type: 'seats',
-    claimedSeats: publicRoomView(result.room).claimedSeats,
+    claimedSeats: joinedView.claimedSeats,
+    securedSeats: joinedView.securedSeats,
     reclaimed: !!result.reclaimed,
     seatPlayerId: result.seatPlayerId,
     revokedSessionToken: result.revokedSessionToken || null,
@@ -92,9 +95,11 @@ export function memoryReleaseSeat(roomId, body) {
   });
   if (!result.ok) return result;
   rooms.set(key, result.room);
+  const releasedView = publicRoomView(result.room);
   notify(key, {
     type: 'seats',
-    claimedSeats: publicRoomView(result.room).claimedSeats,
+    claimedSeats: releasedView.claimedSeats,
+    securedSeats: releasedView.securedSeats,
     reclaimed: true,
     seatPlayerId: result.seatPlayerId,
     revokedSessionToken: result.revokedSessionToken || null,
@@ -150,9 +155,11 @@ export function memoryApplyAction(roomId, action, auth) {
       revokedSessionToken: result.revokedSessionToken || null,
     });
     if (result.seatRemoved && result.revokedSessionToken) {
+      const removedView = publicRoomView(result.room);
       notify(key, {
         type: 'seats',
-        claimedSeats: publicRoomView(result.room).claimedSeats,
+        claimedSeats: removedView.claimedSeats,
+        securedSeats: removedView.securedSeats,
         reclaimed: true,
         released: true,
         seatRemoved: true,
@@ -202,6 +209,23 @@ export function memorySubscribe(roomId, callback) {
 export function memoryPublicView(roomId) {
   const room = memoryGetRoom(roomId);
   return room ? publicRoomView(room) : null;
+}
+
+/** All non-expired rooms as hub cards (Vite / memory backend). */
+export function memoryListHubCards() {
+  const cards = [];
+  for (const roomId of [...rooms.keys()]) {
+    const room = purgeIfExpired(roomId);
+    if (!room) continue;
+    const card = hubRoomCard(room);
+    if (card) cards.push(card);
+  }
+  cards.sort((a, b) => {
+    const ta = Date.parse(a.lastActivityAt || a.updatedAt || 0) || 0;
+    const tb = Date.parse(b.lastActivityAt || b.updatedAt || 0) || 0;
+    return tb - ta;
+  });
+  return cards;
 }
 
 export function memoryAdminSession(roomId) {

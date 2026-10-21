@@ -55,6 +55,27 @@ export const EMPTY_IMPERIAL_CLAIM = Object.freeze({
   secret: false,
 });
 
+/** Combat window: pauses the active turn clock; duration is tracked separately.
+ * PvP rounds sync hits/assign between seats; neutral stays host-local for dice UI. */
+export const EMPTY_COMBAT = Object.freeze({
+  active: false,
+  startedAt: null,
+  mode: null, // 'pvp' | 'neutral' | null (picking)
+  round: 1,
+  phase: 'pick', // 'pick' | 'input' | 'reveal' | 'retreat_check' | 'result'
+  attackerId: null,
+  defenderId: null,
+  hits: Object.freeze({}),
+  assigned: Object.freeze({}),
+  totals: Object.freeze({}),
+  /** Seat that declared retreat; after the current round → retreat_check. */
+  retreatPlayerId: null,
+  winnerId: null,
+  loserId: null,
+  /** How the fight ended: 'defeat' | 'retreat' | null */
+  resultKind: null,
+});
+
 /** Technology (card 7): concurrent research while strategyResolution poll is active. */
 export const EMPTY_TECH_RESEARCH = Object.freeze({
   active: false,
@@ -167,6 +188,8 @@ export function createEmptyGameState() {
       strategyPickHistory: [],
       /** Completed action-phase durations: [{ round, seconds }, ...] */
       roundTimes: [],
+      /** Total combat seconds (not billed to player turn / totalTime). */
+      combatTime: 0,
     },
     players: [],
     objectives: {
@@ -194,6 +217,7 @@ export function createEmptyGameState() {
       strategyResolution: { ...EMPTY_STRATEGY_RESOLUTION },
       imperialClaim: { ...EMPTY_IMPERIAL_CLAIM },
       techResearch: { ...EMPTY_TECH_RESEARCH, picks: [], queueIds: [], byPlayer: {} },
+      combat: { ...EMPTY_COMBAT },
     },
     draft: {
       queue: [],
@@ -263,6 +287,7 @@ function toFlat(raw) {
     isAgendaPhasePending: meta.isAgendaPhasePending,
     strategyPickHistory: meta.strategyPickHistory,
     roundTimes: meta.roundTimes,
+    combatTime: meta.combatTime,
     players: raw.players,
     objectives: objectives.active,
     completions: objectives.completions,
@@ -283,6 +308,7 @@ function toFlat(raw) {
     strategyResolution: round.strategyResolution,
     imperialClaim: round.imperialClaim,
     techResearch: round.techResearch,
+    combat: round.combat,
     draftQueue: draft.queue,
     draftAssignments: draft.assignments,
     currentQueueIndex: draft.currentQueueIndex,
@@ -379,6 +405,83 @@ function normalizeStrategyResolution(value) {
     startedAt: Number.isFinite(startedAt) ? startedAt : null,
     responses,
     resolvedAt,
+  };
+}
+
+function normalizeCombatHitsMap(value) {
+  const raw = asRecord(value);
+  const out = {};
+  for (const [key, val] of Object.entries(raw)) {
+    if (val == null || val === '') {
+      out[key] = null;
+      continue;
+    }
+    const n = Number(val);
+    out[key] = Number.isFinite(n) ? Math.max(0, Math.floor(n)) : null;
+  }
+  return out;
+}
+
+function normalizeCombatBoolMap(value) {
+  const raw = asRecord(value);
+  const out = {};
+  for (const [key, val] of Object.entries(raw)) {
+    out[key] = !!val;
+  }
+  return out;
+}
+
+function normalizeCombatTotalsMap(value) {
+  const raw = asRecord(value);
+  const out = {};
+  for (const [key, val] of Object.entries(raw)) {
+    const n = Number(val);
+    if (Number.isFinite(n) && n > 0) out[key] = Math.floor(n);
+  }
+  return out;
+}
+
+function normalizeCombatPlayerId(value) {
+  if (value == null || value === '') return null;
+  return Number.isFinite(Number(value)) ? Number(value) : value;
+}
+
+function normalizeCombat(value) {
+  const raw = asRecord(value);
+  if (!raw.active) return { ...EMPTY_COMBAT };
+  const startedAt = Number(raw.startedAt);
+  const mode = raw.mode === 'pvp' || raw.mode === 'neutral' ? raw.mode : null;
+  const phase = raw.phase === 'input'
+    || raw.phase === 'reveal'
+    || raw.phase === 'pick'
+    || raw.phase === 'retreat_check'
+    || raw.phase === 'result'
+    ? raw.phase
+    : (mode === 'pvp' ? 'input' : 'pick');
+  const round = Math.max(1, Math.floor(asNumber(raw.round, 1)));
+  const attackerId = normalizeCombatPlayerId(raw.attackerId);
+  const defenderId = normalizeCombatPlayerId(raw.defenderId);
+  const retreatPlayerId = normalizeCombatPlayerId(raw.retreatPlayerId);
+  const winnerId = normalizeCombatPlayerId(raw.winnerId);
+  const loserId = normalizeCombatPlayerId(raw.loserId);
+  const resultKind = raw.resultKind === 'defeat' || raw.resultKind === 'retreat'
+    ? raw.resultKind
+    : null;
+  return {
+    active: true,
+    startedAt: Number.isFinite(startedAt) ? startedAt : null,
+    mode,
+    round,
+    phase,
+    attackerId,
+    defenderId,
+    hits: normalizeCombatHitsMap(raw.hits),
+    assigned: normalizeCombatBoolMap(raw.assigned),
+    totals: normalizeCombatTotalsMap(raw.totals),
+    retreatPlayerId,
+    winnerId,
+    loserId,
+    resultKind,
   };
 }
 
@@ -590,6 +693,7 @@ export function normalizeGameState(raw) {
       isAgendaPhasePending: !!flat.isAgendaPhasePending,
       strategyPickHistory: normalizeStrategyPickHistory(flat.strategyPickHistory),
       roundTimes: normalizeRoundTimes(flat.roundTimes),
+      combatTime: Math.max(0, asNumber(flat.combatTime, 0)),
     },
     players,
     objectives: {
@@ -620,6 +724,7 @@ export function normalizeGameState(raw) {
       strategyResolution: normalizeStrategyResolution(flat.strategyResolution),
       imperialClaim: normalizeImperialClaim(flat.imperialClaim),
       techResearch: normalizeTechResearch(flat.techResearch),
+      combat: normalizeCombat(flat.combat),
     },
     draft: {
       queue: draftQueue,

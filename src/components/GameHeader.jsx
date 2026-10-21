@@ -6,8 +6,9 @@ import { formatTime } from '../utils/game';
 const CTRL =
   'inline-flex items-center justify-center gap-1.5 h-9 px-3 rounded-xl text-xs font-bold transition border';
 
-function RoomLiveBadge({ room }) {
+function RoomLiveBadge({ room, seatSecret = null }) {
   const [expanded, setExpanded] = useState(false);
+  const [copied, setCopied] = useState(false);
   const rootRef = useRef(null);
 
   useEffect(() => {
@@ -27,32 +28,75 @@ function RoomLiveBadge({ room }) {
   }, [expanded]);
 
   const roleLabel = ROLE_LABELS[room.role] || room.role;
+  const hasSeatSecret = !!seatSecret;
+
+  const copySeatSecret = async () => {
+    if (!seatSecret) return;
+    try {
+      await navigator.clipboard.writeText(String(seatSecret));
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1600);
+    } catch {
+      /* clipboard may be blocked */
+    }
+  };
 
   return (
     <div className="relative flex-shrink-0 game-header-room" ref={rootRef}>
-      {/* Desktop: full code + role */}
-      <div className="hidden md:flex items-center gap-2 h-9 game-header-room-chip">
-        <i className="fa-solid fa-wifi" aria-hidden="true" />
-        <span className="game-header-room-code">{room.roomId}</span>
-        <span className="game-header-room-role">{roleLabel}</span>
-      </div>
-
-      {/* Mobile: wifi only; tap reveals room code */}
       <button
         type="button"
-        className="md:hidden game-header-room-btn"
+        className="game-header-room-chip"
         aria-expanded={expanded}
-        aria-label={expanded ? `Комната ${room.roomId}` : 'Показать код комнаты'}
-        title="Код комнаты"
+        aria-label={`${roleLabel}. Код комнаты ${room.roomId}`}
+        title={`Комната ${room.roomId}`}
+        onClick={() => setExpanded((v) => !v)}
+      >
+        <i className="fa-solid fa-wifi" aria-hidden="true" />
+        <span className="game-header-room-role">{roleLabel}</span>
+        <i
+          className={`fa-solid fa-chevron-down text-[9px] opacity-70 transition ${expanded ? 'rotate-180' : ''}`}
+          aria-hidden="true"
+        />
+      </button>
+
+      <button
+        type="button"
+        className="game-header-room-btn"
+        aria-expanded={expanded}
+        aria-label={
+          expanded
+            ? `${roleLabel}, комната ${room.roomId}`
+            : hasSeatSecret
+              ? `Подключение: ${roleLabel}. Показать код комнаты и код места`
+              : `Подключение: ${roleLabel}. Показать код комнаты`
+        }
+        title="Подключение"
         onClick={() => setExpanded((v) => !v)}
       >
         <i className="fa-solid fa-wifi" aria-hidden="true" />
       </button>
 
       {expanded && (
-        <div role="status" className="md:hidden game-header-room-pop">
+        <div role="status" className="game-header-room-pop">
           <div className="game-header-room-code">{room.roomId}</div>
           <div className="game-header-room-role">{roleLabel}</div>
+          {hasSeatSecret && (
+            <div className="game-header-room-seat">
+              <div className="game-header-room-seat-label">Код места</div>
+              <div className="game-header-room-seat-row">
+                <span className="game-header-room-seat-code">{seatSecret}</span>
+                <button
+                  type="button"
+                  className="game-header-room-seat-copy"
+                  onClick={copySeatSecret}
+                  aria-label="Скопировать код места"
+                  title={copied ? 'Скопировано' : 'Скопировать'}
+                >
+                  <i className={`fa-solid ${copied ? 'fa-check' : 'fa-copy'}`} aria-hidden="true" />
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -136,23 +180,22 @@ export function GameHeader({
           <div className="flex items-center gap-2 md:gap-3 min-w-0">
             <img
               src={brandMark}
-              alt=""
+              alt="TI4 Tracker"
               width={32}
               height={32}
               className="game-header-mark h-7 w-7 md:h-9 md:w-9 flex-shrink-0 object-contain"
               draggable={false}
             />
-            <span className={`game-header-brand truncate ${compactBrand ? 'max-md:text-base' : ''}`}>
+            <span className="game-header-brand truncate max-md:hidden">
               TI4 TRACKER
             </span>
           </div>
           {roomStatus === 'live' && room?.roomId && (
-            <RoomLiveBadge room={room} />
+            <RoomLiveBadge room={room} seatSecret={room?.seatSecret || null} />
           )}
           {isGameActive && (
-            <div className={`${CTRL} game-header-round !text-sm md:!text-base cursor-default flex-shrink-0 px-3.5 gap-2 md:gap-3`}>
-              <span className="max-md:hidden">Раунд {roundNumber}</span>
-              <span className="md:hidden">R{roundNumber}</span>
+            <div className={`${CTRL} game-header-round hidden md:inline-flex !text-sm md:!text-base cursor-default flex-shrink-0 px-3.5 gap-2 md:gap-3`}>
+              <span className="game-header-round-label">Раунд {roundNumber}</span>
               <span className="game-header-round-sep" aria-hidden="true" />
               <span
                 className="font-mono game-header-round-time tabular-nums"
@@ -165,6 +208,18 @@ export function GameHeader({
         </div>
 
         <div className="flex items-center gap-2 flex-shrink-0">
+          {isGameActive && (
+            <div className={`${CTRL} game-header-round md:hidden !text-sm cursor-default flex-shrink-0 px-3 gap-2`}>
+              <span className="game-header-round-label">R{roundNumber}</span>
+              <span className="game-header-round-sep" aria-hidden="true" />
+              <span
+                className="font-mono game-header-round-time tabular-nums"
+                title="Время текущего раунда (фаза действий)"
+              >
+                {formatTime(roundTime)}
+              </span>
+            </div>
+          )}
           {isGameActive ? (
             <>
               {/* Desktop host: Primary + overflow (variant B) */}
@@ -175,10 +230,8 @@ export function GameHeader({
                     onClick={onOpenDraft}
                     disabled={roundActive || isDraftLocked}
                     title={isDraftLocked ? 'Карты уже выбраны — дождитесь конца раунда' : undefined}
-                    className={`${CTRL} ${
-                      roundActive || isDraftLocked
-                        ? 'game-header-btn opacity-50 cursor-not-allowed'
-                        : 'game-btn-primary !h-9 !py-0 !text-xs'
+                    className={`${CTRL} game-header-btn ${
+                      roundActive || isDraftLocked ? 'opacity-50 cursor-not-allowed' : ''
                     }`}
                   >
                     <i className="fa-solid fa-layer-group" />
@@ -207,10 +260,8 @@ export function GameHeader({
                       onClick={onEndRound}
                       disabled={!canEndRound}
                       title={canEndRound ? undefined : endRoundDisabledTitle}
-                      className={`${CTRL} ${
-                        canEndRound
-                          ? 'game-btn-primary !h-9 !py-0 !text-xs'
-                          : 'game-header-btn opacity-50 cursor-not-allowed'
+                      className={`${CTRL} game-header-btn ${
+                        canEndRound ? '' : 'opacity-50 cursor-not-allowed'
                       }`}
                     >
                       <i className="fa-solid fa-flag-checkered" />
@@ -397,18 +448,16 @@ function HeaderMoreMenu({
   };
 
   return (
-    <div className="relative" ref={rootRef}>
+    <div className={`hdr-more ${open ? 'is-open' : ''}`} ref={rootRef}>
       <button
         type="button"
         aria-haspopup="menu"
         aria-expanded={open}
         aria-controls={menuId}
         aria-label="Ещё"
-        onClick={() => setOpen(v => !v)}
-        className={`${CTRL} ${compact ? 'w-9 px-0' : ''} ${
-          open
-            ? 'bg-slate-800 border-slate-600 text-white'
-            : 'bg-slate-950 hover:bg-slate-800 border-slate-700 text-slate-300'
+        onClick={() => setOpen((v) => !v)}
+        className={`${CTRL} game-header-btn hdr-more-trigger ${compact ? 'is-compact' : ''} ${
+          open ? 'is-open' : ''
         }`}
       >
         {compact ? (
@@ -416,40 +465,35 @@ function HeaderMoreMenu({
         ) : (
           <>
             <span>Ещё</span>
-            <i className={`fa-solid fa-chevron-down text-[10px] transition ${open ? 'rotate-180' : ''}`} />
+            <i
+              className={`fa-solid fa-chevron-${open ? 'up' : 'down'} text-[10px]`}
+              aria-hidden="true"
+            />
           </>
         )}
       </button>
 
       {open && (
-        <div
-          id={menuId}
-          role="menu"
-          className="absolute right-0 top-[calc(100%+6px)] z-50 w-64 rounded-2xl border border-[var(--game-line-gold)] bg-[rgba(10,12,18,0.96)] p-1.5 shadow-[0_16px_40px_rgba(0,0,0,0.45),0_0_24px_rgba(201,162,39,0.12)] backdrop-blur-md"
-        >
+        <div id={menuId} role="menu" className="hdr-more-panel">
           {canPhases && (
-            <>
-              <div
-                role="menuitem"
-                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold text-[var(--game-text)]"
-              >
-                <i className={`fa-solid fa-landmark w-4 text-center ${isPoliticsActive ? 'text-[var(--game-gold-bright)]' : 'text-[var(--game-muted)]'}`} />
-                <span className="flex-1">Политика</span>
-                <button
-                  type="button"
-                  onClick={() => onTogglePolitics()}
-                  title={isPoliticsActive ? 'Выключить фазу политики' : 'Включить фазу политики'}
-                  aria-label="Переключить политику"
-                  className={`w-9 h-5 rounded-full flex items-center transition-colors px-0.5 flex-shrink-0 ${
-                    isPoliticsActive ? 'bg-[var(--game-gold)] justify-end' : 'bg-black/50 justify-start'
-                  }`}
-                >
-                  <span className="w-4 h-4 bg-white rounded-full block" />
-                </button>
+            <div role="menuitem" className="hdr-more-item is-toggle">
+              <span className="hdr-more-ico is-gold" aria-hidden="true">
+                <i className="fa-solid fa-landmark" />
+              </span>
+              <div className="hdr-more-copy">
+                <span className="hdr-more-title">Политика</span>
+                <span className="hdr-more-desc">Включить / отключить трек политики</span>
               </div>
-
-              <div className="my-1 border-t border-[var(--game-line)]" />
-            </>
+              <button
+                type="button"
+                onClick={() => onTogglePolitics()}
+                title={isPoliticsActive ? 'Выключить фазу политики' : 'Включить фазу политики'}
+                aria-label="Переключить политику"
+                className={`hdr-more-switch ${isPoliticsActive ? 'is-on' : ''}`}
+              >
+                <span className="hdr-more-switch-knob" />
+              </button>
+            </div>
           )}
 
           {canExport && (
@@ -457,10 +501,16 @@ function HeaderMoreMenu({
               type="button"
               role="menuitem"
               onClick={runAndClose(onExport)}
-              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left text-sm font-semibold text-[var(--game-text)] hover:bg-[rgba(201,162,39,0.1)] transition"
+              className="hdr-more-item"
             >
-              <i className="fa-solid fa-share-nodes w-4 text-center text-[var(--game-gold-bright)]" />
-              <span className="flex-1">Код игры</span>
+              <span className="hdr-more-ico is-gold" aria-hidden="true">
+                <i className="fa-solid fa-share-nodes" />
+              </span>
+              <div className="hdr-more-copy">
+                <span className="hdr-more-title">Код игры</span>
+                <span className="hdr-more-desc">Показать код для входа</span>
+              </div>
+              <i className="fa-solid fa-chevron-right hdr-more-chev" aria-hidden="true" />
             </button>
           )}
 
@@ -469,10 +519,16 @@ function HeaderMoreMenu({
               type="button"
               role="menuitem"
               onClick={runAndClose(onOpenStats)}
-              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left text-sm font-semibold text-[var(--game-text)] hover:bg-[rgba(201,162,39,0.1)] transition"
+              className="hdr-more-item"
             >
-              <i className="fa-solid fa-chart-pie w-4 text-center text-[var(--game-gold-bright)]" />
-              <span className="flex-1">Статистика</span>
+              <span className="hdr-more-ico is-blue" aria-hidden="true">
+                <i className="fa-solid fa-chart-pie" />
+              </span>
+              <div className="hdr-more-copy">
+                <span className="hdr-more-title">Статистика</span>
+                <span className="hdr-more-desc">Просмотр статистики партии</span>
+              </div>
+              <i className="fa-solid fa-chevron-right hdr-more-chev" aria-hidden="true" />
             </button>
           )}
 
@@ -481,10 +537,16 @@ function HeaderMoreMenu({
               type="button"
               role="menuitem"
               onClick={runAndClose(onOpenCombat)}
-              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left text-sm font-semibold text-[var(--game-text)] hover:bg-[rgba(201,162,39,0.1)] transition"
+              className="hdr-more-item"
             >
-              <i className="fa-solid fa-crosshairs w-4 text-center text-red-400" />
-              <span className="flex-1">Бой</span>
+              <span className="hdr-more-ico is-red" aria-hidden="true">
+                <i className="fa-solid fa-crosshairs" />
+              </span>
+              <div className="hdr-more-copy">
+                <span className="hdr-more-title">Бой</span>
+                <span className="hdr-more-desc">Разрешения и настройки боя</span>
+              </div>
+              <i className="fa-solid fa-chevron-right hdr-more-chev" aria-hidden="true" />
             </button>
           )}
 
@@ -493,10 +555,16 @@ function HeaderMoreMenu({
               type="button"
               role="menuitem"
               onClick={runAndClose(onOpenTech)}
-              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left text-sm font-semibold text-[var(--game-text)] hover:bg-[rgba(201,162,39,0.1)] transition"
+              className="hdr-more-item"
             >
-              <i className="fa-solid fa-atom w-4 text-center text-[var(--game-gold-bright)]" />
-              <span className="flex-1">Технологии</span>
+              <span className="hdr-more-ico is-violet" aria-hidden="true">
+                <i className="fa-solid fa-gears" />
+              </span>
+              <div className="hdr-more-copy">
+                <span className="hdr-more-title">Технологии</span>
+                <span className="hdr-more-desc">Настройки колоды технологий</span>
+              </div>
+              <i className="fa-solid fa-chevron-right hdr-more-chev" aria-hidden="true" />
             </button>
           )}
 
@@ -505,10 +573,16 @@ function HeaderMoreMenu({
               type="button"
               role="menuitem"
               onClick={runAndClose(onOpenExpedition)}
-              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left text-sm font-semibold text-[var(--game-text)] hover:bg-[rgba(201,162,39,0.1)] transition"
+              className="hdr-more-item"
             >
-              <i className="fa-solid fa-mountain w-4 text-center text-[var(--game-gold-bright)]" />
-              <span className="flex-1">Экспедиция</span>
+              <span className="hdr-more-ico is-amber" aria-hidden="true">
+                <i className="fa-solid fa-mountain" />
+              </span>
+              <div className="hdr-more-copy">
+                <span className="hdr-more-title">Экспедиция</span>
+                <span className="hdr-more-desc">Thunder&apos;s Edge и прорывы</span>
+              </div>
+              <i className="fa-solid fa-chevron-right hdr-more-chev" aria-hidden="true" />
             </button>
           )}
 
@@ -517,10 +591,16 @@ function HeaderMoreMenu({
               type="button"
               role="menuitem"
               onClick={runAndClose(onOpenEventLog)}
-              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left text-sm font-semibold text-[var(--game-text)] hover:bg-[rgba(201,162,39,0.1)] transition"
+              className="hdr-more-item"
             >
-              <i className="fa-solid fa-scroll w-4 text-center text-[var(--game-gold-bright)]" />
-              <span className="flex-1">Журнал партии</span>
+              <span className="hdr-more-ico is-teal" aria-hidden="true">
+                <i className="fa-solid fa-scroll" />
+              </span>
+              <div className="hdr-more-copy">
+                <span className="hdr-more-title">Журнал партии</span>
+                <span className="hdr-more-desc">История событий и действий</span>
+              </div>
+              <i className="fa-solid fa-chevron-right hdr-more-chev" aria-hidden="true" />
             </button>
           )}
 
@@ -529,10 +609,16 @@ function HeaderMoreMenu({
               type="button"
               role="menuitem"
               onClick={runAndClose(onOpenEndGame)}
-              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left text-sm font-semibold text-red-300 hover:bg-red-950/40 transition"
+              className="hdr-more-item is-danger"
             >
-              <i className="fa-solid fa-square-xmark w-4 text-center" />
-              <span className="flex-1">Завершить партию</span>
+              <span className="hdr-more-ico is-danger" aria-hidden="true">
+                <i className="fa-solid fa-square-xmark" />
+              </span>
+              <div className="hdr-more-copy">
+                <span className="hdr-more-title">Завершить партию</span>
+                <span className="hdr-more-desc">Закрыть текущую партию и сохранить итог</span>
+              </div>
+              <i className="fa-solid fa-chevron-right hdr-more-chev" aria-hidden="true" />
             </button>
           )}
         </div>

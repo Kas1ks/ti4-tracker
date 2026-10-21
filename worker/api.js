@@ -87,6 +87,7 @@ export async function handleApi(request, env) {
       ok: true,
       cloudConfigured: isJsonBinConfigured(env),
       rooms: Boolean(env?.GAME_ROOMS) ? 'durable-object' : 'memory',
+      roomDirectory: Boolean(env?.ROOM_DIRECTORY),
       hasBinId: Boolean(resolveBinId(env)),
       hasMasterKey: Boolean(resolveMasterKey(env)),
       hasAdminPin: Boolean(resolveAdminPin(env)),

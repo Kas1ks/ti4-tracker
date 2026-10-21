@@ -3,10 +3,43 @@ import brandMark from '../assets/brand-mark.png';
 import brandMarkLg from '../assets/brand-mark-lg.png';
 import { ALL_FACTIONS } from '../data/gameData';
 import { ROLES } from '../sync/permissions';
-import { fetchRoomSnapshot } from '../sync/roomApi';
+import { listRecentRooms } from '../sync/recentRooms';
+import { fetchActiveRooms, fetchRoomSnapshot } from '../sync/roomApi';
 import { loadSeatSecret } from '../sync/seatSecrets';
+import { formatTime } from '../utils/game';
+import { HubHudBottom, HubHudTop } from './HubChromeFrame';
 import { HubCosmosBackdrop } from './HubCosmosBackdrop';
 import { PwaInstallBanner } from './PwaInstallBanner';
+
+/** Map server hub card (+ optional local seat meta) into UI party row.
+ * Room join codes stay internal — never shown as the party title. */
+function partyFromHubCard(card, meta, index = 0) {
+  const active = !!card?.isGameActive;
+  const startedAt = Number(card?.roundStartedAt);
+  const elapsed = active && Number.isFinite(startedAt)
+    ? Math.max(0, Math.floor((Date.now() - startedAt) / 1000))
+    : null;
+  const round = Number(card?.roundNumber);
+  const roomId = String(card?.roomId || '').toUpperCase();
+  const isMine = meta?.seatPlayerId != null
+    || meta?.role === ROLES.ADMIN
+    || meta?.role === ROLES.PLAYER;
+  return {
+    id: roomId,
+    name: isMine
+      ? (active ? 'Ваша партия' : 'Ваша комната')
+      : `Партия ${index + 1}`,
+    status: active ? 'playing' : 'waiting',
+    statusLabel: active
+      ? (Number.isFinite(round) && round > 0 ? `Раунд ${round}` : 'В процессе')
+      : 'Ожидание игроков',
+    players: `${Number(card?.claimedCount) || 0}/${Math.max(Number(card?.playersTotal) || 1, 1)}`,
+    timer: elapsed != null ? formatTime(elapsed) : null,
+    thumbUrl: card?.thumbUrl || '/hub/cosmos.jpg',
+    role: meta?.role || null,
+    seatPlayerId: meta?.seatPlayerId ?? null,
+  };
+}
 
 /**
  * First screen: Create party / Join by code (cinematic hub shell).
@@ -20,13 +53,21 @@ export function RoomHub({
   importGameToken,
   uiPrompt,
   onOpenStats,
+  onOpenGuide,
 }) {
   const [view, setView] = useState('hub'); // hub | join | extras
   const [joinCode, setJoinCode] = useState('');
+  /** Room chosen from «Активные партии» — kept private, never shown in the code field. */
+  const [selectedRoomId, setSelectedRoomId] = useState(null);
   const [preview, setPreview] = useState(null);
   const [previewError, setPreviewError] = useState(null);
   const [joining, setJoining] = useState(false);
   const [soonNote, setSoonNote] = useState(null);
+  const [activeParties, setActiveParties] = useState([]);
+
+  const typedCode = joinCode.trim().toUpperCase();
+  const effectiveRoomId = typedCode || (selectedRoomId ? String(selectedRoomId).toUpperCase() : '');
+  const fromActiveParty = !!selectedRoomId && !typedCode;
 
   useEffect(() => {
     document.body.classList.add('hub-cinematic');
@@ -40,7 +81,7 @@ export function RoomHub({
   }, [soonNote]);
 
   useEffect(() => {
-    const code = joinCode.trim().toUpperCase();
+    const code = effectiveRoomId;
     if (code.length < 4) {
       setPreview(null);
       setPreviewError(null);
@@ -58,24 +99,86 @@ export function RoomHub({
         setPreview(null);
         setPreviewError(String(err.message || err));
       }
-    }, 400);
+    }, fromActiveParty ? 0 : 400);
     return () => {
       cancelled = true;
       clearTimeout(t);
     };
-  }, [joinCode]);
+  }, [effectiveRoomId, fromActiveParty]);
+
+  useEffect(() => {
+    if (view !== 'hub') return undefined;
+    let cancelled = false;
+
+    const load = async () => {
+      try {
+        const { rooms } = await fetchActiveRooms();
+        if (cancelled) return;
+        const metaById = Object.fromEntries(listRecentRooms().map((r) => [r.roomId, r]));
+        setActiveParties(
+          rooms
+            .map((card, index) => partyFromHubCard(
+              card,
+              metaById[String(card?.roomId || '').toUpperCase()],
+              index,
+            ))
+            .filter((p) => p.id),
+        );
+      } catch {
+        if (!cancelled) setActiveParties([]);
+      }
+    };
+
+    load();
+    const poll = setInterval(load, 12000);
+    return () => {
+      cancelled = true;
+      clearInterval(poll);
+    };
+  }, [view]);
 
   const connecting = roomStatus === 'connecting' || joining;
   const previewPlayers = preview?.state?.players || [];
   const claimed = preview?.claimedSeats || [];
 
-  const joinAsPlayer = async (seatPlayerId, { taken = false } = {}) => {
+  const resetJoinState = () => {
+    setJoinCode('');
+    setSelectedRoomId(null);
+    setPreview(null);
+    setPreviewError(null);
+  };
+
+  const goHub = () => {
+    resetJoinState();
+    setView('hub');
+  };
+
+  const openJoinByCode = () => {
+    resetJoinState();
+    setView('join');
+  };
+
+  const openRecentParty = async (party) => {
+    const roomId = party?.id;
+    if (!roomId || connecting) return;
+    // From the party list: guest can enter without the room code.
+    // Claiming a seat always requires typing the room code on the join screen.
+    setJoinCode('');
+    setSelectedRoomId(roomId);
+    setView('join');
+  };
+
+  const joinAsPlayer = async (seatPlayerId, { needsCode = false } = {}) => {
+    // Seat claim is only allowed after the room code was typed — never via selectedRoomId alone.
+    const roomId = typedCode;
+    if (!roomId) return;
     let seatSecret;
-    if (taken) {
-      const remembered = loadSeatSecret(joinCode.trim().toUpperCase(), seatPlayerId);
+    if (needsCode) {
+      // Taken seat: code is for moving the same seat to another device.
+      const remembered = loadSeatSecret(roomId, seatPlayerId);
       const entered = uiPrompt
         ? await uiPrompt(
-          'Введите код места (выдан при первом входе). Без него чужое место занять нельзя.',
+          'Место уже занято. Код места нужен, чтобы перенести его на это устройство.',
           {
             title: 'Код места',
             defaultValue: remembered || '',
@@ -89,32 +192,91 @@ export function RoomHub({
       seatSecret = String(entered).trim().toUpperCase();
       if (!seatSecret) return;
     } else {
-      seatSecret = loadSeatSecret(joinCode.trim().toUpperCase(), seatPlayerId) || undefined;
+      // Free seat after kick/leave: room code is enough; do not reuse a stale seat code.
+      seatSecret = undefined;
     }
     setJoining(true);
     try {
-      await onJoinRoom(joinCode, { role: ROLES.PLAYER, seatPlayerId, seatSecret });
+      await onJoinRoom(roomId, { role: ROLES.PLAYER, seatPlayerId, seatSecret });
     } finally {
       setJoining(false);
     }
   };
 
   const joinAsViewer = async () => {
+    const roomId = effectiveRoomId;
+    if (!roomId) return;
     setJoining(true);
     try {
-      await onJoinRoom(joinCode, { role: ROLES.VIEWER });
+      await onJoinRoom(roomId, { role: ROLES.VIEWER });
     } finally {
       setJoining(false);
     }
   };
 
+  const renderActiveParties = (extraClass = '') => {
+    if (activeParties.length === 0) return null;
+
+    return (
+      <aside className={`hub-active hub-panel ${extraClass}`.trim()} aria-label="Активные партии">
+        <div className="hub-active-head">
+          <h2 className="hub-active-title">
+            Активные партии
+            <span className="hub-active-count">{activeParties.length}</span>
+          </h2>
+          <button type="button" className="hub-active-link" onClick={openJoinByCode}>
+            <i className="fa-solid fa-border-all" aria-hidden="true" />
+            Войти по коду
+          </button>
+        </div>
+        <ul className="hub-party-list">
+          {activeParties.map((party) => (
+            <li key={party.id}>
+              <button
+                type="button"
+                className="hub-party-row"
+                disabled={connecting}
+                onClick={() => openRecentParty(party)}
+              >
+                <span className="hub-party-thumb" aria-hidden="true">
+                  {party.thumbUrl ? (
+                    <img src={party.thumbUrl} alt="" />
+                  ) : (
+                    <span className="hub-party-thumb-fallback" />
+                  )}
+                </span>
+                <span className="hub-party-meta">
+                  <span className="hub-party-name truncate">{party.name}</span>
+                  <span className="hub-party-stats">
+                    <span className={`hub-party-status is-${party.status}`}>
+                      <span className="hub-party-status-dot" aria-hidden="true" />
+                      {party.statusLabel}
+                    </span>
+                    <span className="hub-party-players">{party.players}</span>
+                    {party.timer ? (
+                      <span className="hub-party-timer">
+                        <i className="fa-regular fa-clock" aria-hidden="true" />
+                        {party.timer}
+                      </span>
+                    ) : null}
+                  </span>
+                </span>
+                <i className="fa-solid fa-chevron-right hub-party-chevron" aria-hidden="true" />
+              </button>
+            </li>
+          ))}
+        </ul>
+      </aside>
+    );
+  };
+
   const topbar = (
-    <header className="hub-topbar">
-      <button type="button" className="hub-topbar-brand" onClick={() => setView('hub')}>
+    <HubHudTop>
+      <button type="button" className="hub-topbar-brand" onClick={goHub}>
         <img src={brandMark} alt="" width={28} height={28} draggable={false} />
         <span>TI4 TRACKER</span>
       </button>
-    </header>
+    </HubHudTop>
   );
 
   const dock = (
@@ -132,11 +294,11 @@ export function RoomHub({
       <button
         type="button"
         className="hub-dock-card"
-        onClick={() => setSoonNote('Руководство скоро')}
+        onClick={() => (onOpenGuide ? onOpenGuide() : setSoonNote('Руководство скоро'))}
       >
         <i className="fa-solid fa-book-open hub-dock-icon" aria-hidden="true" />
         <span className="hub-dock-title">Руководство</span>
-        <span className="hub-dock-caption">Правила и подсказки</span>
+        <span className="hub-dock-caption">Расы и подсказки</span>
         <i className="fa-solid fa-chevron-right hub-dock-chevron" aria-hidden="true" />
       </button>
       <button
@@ -169,7 +331,7 @@ export function RoomHub({
         {topbar}
         <div className="hub-main hub-main--focus">
           <div className="hub-stage">
-            <button type="button" onClick={() => setView('hub')} className="hub-back">
+            <button type="button" onClick={goHub} className="hub-back">
               <i className="fa-solid fa-arrow-left" aria-hidden="true" />
               Назад
             </button>
@@ -177,78 +339,116 @@ export function RoomHub({
             <header className="hub-stage-head">
               <h1 className="hub-stage-title">Войти в комнату</h1>
               <p className="hub-stage-lead">
-                Введите код от хоста, затем выберите своё место за столом.
+                {fromActiveParty
+                  ? 'Введите код комнаты, чтобы занять место. Гость может войти без кода.'
+                  : 'Введите код от хоста, затем выберите своё место за столом.'}
               </p>
             </header>
 
-            <input
-              type="text"
-              value={joinCode}
-              onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
-              placeholder="КОД"
-              maxLength={8}
-              autoFocus
-              className="hub-input"
-              aria-label="Код комнаты"
-            />
+            {fromActiveParty ? (
+              <>
+                <button
+                  type="button"
+                  className="hub-cta-primary"
+                  onClick={openJoinByCode}
+                >
+                  <span className="hub-cta-label">
+                    <i className="fa-solid fa-key" aria-hidden="true" />
+                    Войти по коду
+                  </span>
+                  <i className="fa-solid fa-chevron-right hub-cta-chevron" aria-hidden="true" />
+                </button>
+                <button
+                  type="button"
+                  disabled={connecting || !effectiveRoomId}
+                  onClick={joinAsViewer}
+                  className="hub-cta-secondary hub-guest-enter"
+                >
+                  <span className="hub-cta-label">
+                    <i className="fa-solid fa-eye" aria-hidden="true" />
+                    {connecting ? 'Подключение…' : 'Войти гостем'}
+                  </span>
+                  <i className="fa-solid fa-chevron-right hub-cta-chevron" aria-hidden="true" />
+                </button>
+                {previewError && (
+                  <p className="hub-stage-msg is-warn">{previewError}</p>
+                )}
+              </>
+            ) : (
+              <>
+                <input
+                  type="text"
+                  value={joinCode}
+                  onChange={(e) => {
+                    setSelectedRoomId(null);
+                    setJoinCode(e.target.value.toUpperCase());
+                  }}
+                  placeholder="КОД"
+                  maxLength={8}
+                  autoFocus
+                  className="hub-input"
+                  aria-label="Код комнаты"
+                />
 
-            {previewError && (
-              <p className="hub-stage-msg is-warn">{previewError}</p>
-            )}
+                {previewError && (
+                  <p className="hub-stage-msg is-warn">{previewError}</p>
+                )}
 
-            {preview && previewPlayers.length === 0 && (
-              <p className="hub-stage-msg is-info">
-                В комнате ещё нет игроков — подождите, пока хост настроит стол.
-              </p>
-            )}
+                {preview && previewPlayers.length === 0 && (
+                  <p className="hub-stage-msg is-info">
+                    В комнате ещё нет игроков — подождите, пока хост настроит стол.
+                  </p>
+                )}
 
-            {previewPlayers.length > 0 && (
-              <section className="hub-seats" aria-label="Места за столом">
-                <h2 className="hub-seats-label">Выберите место</h2>
-                <div className="hub-seats-grid">
-                  {previewPlayers.map((p, idx) => {
-                    const taken = claimed.some((id) => String(id) === String(p.id));
-                    const faction = ALL_FACTIONS.find((f) => f.id === p.factionId);
-                    return (
-                      <button
-                        key={p.id}
-                        type="button"
-                        disabled={connecting}
-                        onClick={() => joinAsPlayer(p.id, { taken })}
-                        className={`hub-seat${taken ? ' is-taken' : ''}`}
-                      >
-                        <span className="hub-seat-icon">
-                          <img src={faction?.iconUrl} alt="" />
-                        </span>
-                        <span className="hub-seat-meta">
-                          <span className="hub-seat-num">Место #{idx + 1}</span>
-                          <span className="hub-seat-name">{p.name}</span>
-                          <span className="hub-seat-faction">{faction?.name || '—'}</span>
-                        </span>
-                        {taken ? (
-                          <span className="hub-seat-badge">
-                            Занято
-                            <span>код места</span>
-                          </span>
-                        ) : (
-                          <i className="fa-solid fa-chevron-right hub-seat-chevron" aria-hidden="true" />
-                        )}
-                      </button>
-                    );
-                  })}
-                </div>
-              </section>
-            )}
+                {previewPlayers.length > 0 && (
+                  <section className="hub-seats" aria-label="Места за столом">
+                    <h2 className="hub-seats-label">Выберите место</h2>
+                    <div className="hub-seats-grid">
+                      {previewPlayers.map((p, idx) => {
+                        const taken = claimed.some((id) => String(id) === String(p.id));
+                        const faction = ALL_FACTIONS.find((f) => f.id === p.factionId);
+                        return (
+                          <button
+                            key={p.id}
+                            type="button"
+                            disabled={connecting || !typedCode}
+                            onClick={() => joinAsPlayer(p.id, { needsCode: taken })}
+                            className={`hub-seat${taken ? ' is-taken' : ''}`}
+                          >
+                            <span className="hub-seat-icon">
+                              <img src={faction?.iconUrl} alt="" />
+                            </span>
+                            <span className="hub-seat-meta">
+                              <span className="hub-seat-num">Место #{idx + 1}</span>
+                              <span className="hub-seat-name">{p.name}</span>
+                              <span className="hub-seat-faction">{faction?.name || '—'}</span>
+                            </span>
+                            {taken ? (
+                              <span className="hub-seat-badge">
+                                Занято
+                                <span>код места</span>
+                              </span>
+                            ) : (
+                              <i className="fa-solid fa-chevron-right hub-seat-chevron" aria-hidden="true" />
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </section>
+                )}
 
-            {preview && (
-              <button
-                type="button"
-                disabled={connecting}
-                onClick={joinAsViewer}
-                className="hub-viewer-btn"
-              >
-                Войти зрителем
-              </button>
+                {preview && (
+                  <button
+                    type="button"
+                    disabled={connecting}
+                    onClick={joinAsViewer}
+                    className="hub-viewer-btn"
+                  >
+                    Войти зрителем
+                  </button>
+                )}
+              </>
             )}
 
             {roomError && <p className="hub-stage-msg is-error">{roomError}</p>}
@@ -310,22 +510,26 @@ export function RoomHub({
   }
 
   return (
-    <div className="hub-shell hub-shell--column">
+    <div className="hub-shell hub-shell--column hub-shell--home">
       <HubCosmosBackdrop />
       {topbar}
       <div className="hub-home">
         <div className="hub-home-center">
-          <div className="hub-home-row">
+          <div className={`hub-home-row${activeParties.length === 0 ? ' hub-home-row--solo' : ''}`}>
             <div className="hub-hero">
-              <img
-                src={brandMarkLg}
-                alt=""
-                width={56}
-                height={56}
-                className="hub-hero-mark"
-                draggable={false}
-              />
-              <h1 className="hub-title">TI4 TRACKER</h1>
+              <div className="hub-hero-brand">
+                <img
+                  src={brandMarkLg}
+                  alt=""
+                  width={104}
+                  height={104}
+                  className="hub-hero-mark"
+                  draggable={false}
+                />
+                <h1 className="hub-title">TI4 TRACKER</h1>
+                <p className="hub-tagline">Ваш компаньон в галактических партиях</p>
+                <div className="hub-hero-rule" aria-hidden="true" />
+              </div>
 
               <div className="hub-cta-stack">
                 <button
@@ -334,80 +538,42 @@ export function RoomHub({
                   onClick={onCreateRoom}
                   className="hub-cta-primary"
                 >
-                  <span className="inline-flex items-center gap-2">
+                  <span className="hub-cta-label">
                     <i className="fa-solid fa-users" aria-hidden="true" />
                     {connecting ? 'Создание…' : 'Создать партию'}
                   </span>
-                  <i className="fa-solid fa-chevron-right opacity-70" aria-hidden="true" />
+                  <i className="fa-solid fa-chevron-right hub-cta-chevron" aria-hidden="true" />
                 </button>
                 <button
                   type="button"
                   disabled={connecting}
-                  onClick={() => setView('join')}
+                  onClick={openJoinByCode}
                   className="hub-cta-secondary"
                 >
-                  <span className="inline-flex items-center gap-2">
-                    <i className="fa-solid fa-qrcode" aria-hidden="true" />
+                  <span className="hub-cta-label">
+                    <i className="fa-solid fa-border-all" aria-hidden="true" />
                     Войти по коду
                   </span>
-                  <i className="fa-solid fa-chevron-right opacity-70" aria-hidden="true" />
+                  <i className="fa-solid fa-chevron-right hub-cta-chevron" aria-hidden="true" />
                 </button>
               </div>
 
               {roomError && <p className="hub-home-error">{roomError}</p>}
               {soonNote && <p className="hub-home-soon" role="status">{soonNote}</p>}
 
-              <p className="hub-quote">
-                «В галактике нет друзей, есть только интересы.»
-                <span className="hub-quote-attr">— Виннозар Ловорус</span>
-              </p>
-
               <PwaInstallBanner variant="hub" />
             </div>
 
-            <aside className="hub-active hub-panel" aria-label="Активные партии">
-              <div className="hub-active-head">
-                <h2 className="hub-active-title">
-                  Активные партии
-                  <span className="hub-active-count">0</span>
-                </h2>
-                <button type="button" className="hub-active-link" onClick={() => setView('join')}>
-                  Войти по коду →
-                </button>
-              </div>
-              <p className="hub-active-empty">
-                Пока нет сохранённых партий. Здесь появятся комнаты для быстрого входа.
-              </p>
-            </aside>
+            {renderActiveParties()}
           </div>
         </div>
 
         <div className="hub-home-bottom">
-          <aside className="hub-active hub-active-mobile hub-panel" aria-label="Активные партии">
-            <div className="hub-active-head">
-              <h2 className="hub-active-title">
-                Активные партии
-                <span className="hub-active-count">0</span>
-              </h2>
-              <button type="button" className="hub-active-link" onClick={() => setView('join')}>
-                Войти по коду →
-              </button>
-            </div>
-            <p className="hub-active-empty">
-              Пока нет сохранённых партий. Здесь появятся комнаты для быстрого входа.
-            </p>
-          </aside>
-
+          {renderActiveParties('hub-active-mobile')}
           {dock}
-          <footer className="hub-foot">
-            <span className="hub-foot-status">
-              <span className="hub-foot-dot" aria-hidden="true" />
-              Онлайн · v1.0.0
-            </span>
-            <span className="hub-foot-tag">Explore · Plan · Dominate</span>
-          </footer>
         </div>
       </div>
+      <HubHudBottom />
     </div>
   );
 }

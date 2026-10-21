@@ -3,12 +3,14 @@ import {
   memoryCreateRoom,
   memoryGetRoom,
   memoryJoin,
+  memoryListHubCards,
   memoryReleaseSeat,
   memoryPublicView,
   memorySubscribe,
 } from './memoryRooms.js';
 import { makeRoomId, publicRoomView, adminSessionFromRoom } from './roomCore.js';
 import { assertRoomCreateAllowed } from './roomCreateAuth.js';
+import { directoryList, hasRoomDirectory } from './roomIndex.js';
 
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -44,6 +46,18 @@ export async function handleRoomsApi(request, env) {
   const url = new URL(request.url);
   const { pathname } = url;
   const method = request.method.toUpperCase();
+
+  // Global hub list — all live rooms on this server (not device-local).
+  if (method === 'GET' && pathname === '/api/rooms') {
+    if (hasDurableRooms(env)) {
+      if (!hasRoomDirectory(env)) {
+        return json({ rooms: [], backend: 'durable-object', indexed: false });
+      }
+      const rooms = await directoryList(env);
+      return json({ rooms, backend: 'durable-object', indexed: true });
+    }
+    return json({ rooms: memoryListHubCards(), backend: 'memory', indexed: true });
+  }
 
   if (method === 'POST' && pathname === '/api/rooms') {
     const body = await readJsonBody(request);

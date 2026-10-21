@@ -2,9 +2,16 @@ import { useState } from 'react';
 import { ALL_FACTIONS, STRATEGY_CARDS } from '../data/gameData';
 import { formatTime } from '../utils/game';
 import { areAllStrategiesPlayed, isStrategyCardPlayed } from '../game/selectors';
-import { LiveEventTicker } from './LiveEventTicker';
 import { PhaseHubChips } from './PhaseHubChips';
 import { PlayerTechSheet, TechPips } from './TechSheet';
+import objStage1Bg from '../assets/objectives/stage1-bg.jpg';
+import objStage2Bg from '../assets/objectives/stage2-bg.jpg';
+import tableRowBg from '../assets/table-row-bg.jpg';
+
+const OBJ_STAGE_BG = {
+  1: objStage1Bg,
+  2: objStage2Bg,
+};
 
 const TABS = [
   { id: 'turn', label: 'Ход', icon: 'fa-eye' },
@@ -43,7 +50,6 @@ export function ViewerMobileConsole({
   usePok = false,
   useTe = false,
   phaseHub = [],
-  logEvents = [],
 }) {
   const [tab, setTab] = useState('turn');
   const [techSheetPlayerId, setTechSheetPlayerId] = useState(null);
@@ -66,7 +72,6 @@ export function ViewerMobileConsole({
           aria-hidden={tab !== 'turn'}
         >
           <PhaseHubChips phases={phaseHub} className="mb-1" />
-          <LiveEventTicker events={logEvents} />
           <ViewerTurnTab
             turnOrder={turnOrder}
             activePlayer={activePlayer}
@@ -395,13 +400,10 @@ function ViewerObjectivesTab({
               return (
                 <div
                   key={obj.id}
-                  className={`rounded-2xl border p-3 ${
-                    isCompletedByAll
-                      ? 'border-emerald-500/40 bg-emerald-950/10'
-                      : scorers.length
-                        ? 'border-emerald-700/40 bg-slate-900'
-                        : 'border-slate-800 bg-slate-900'
-                  }`}
+                  className={`pm-obj-card is-stage${stage}${
+                    isCompletedByAll || scorers.length ? ' is-done' : ''
+                  }${!isExpanded ? ' is-collapsed' : ''}`}
+                  style={{ '--pm-obj-bg': `url(${OBJ_STAGE_BG[stage]})` }}
                 >
                   <button
                     type="button"
@@ -416,7 +418,7 @@ function ViewerObjectivesTab({
                       </span>
                     ) : null}
                     <span
-                      className={`text-sm font-bold leading-snug flex-1 ${
+                      className={`pm-obj-desc text-sm font-bold leading-snug flex-1 ${
                         !isExpanded ? 'text-slate-400 line-through text-xs' : 'text-slate-100'
                       }`}
                     >
@@ -479,67 +481,75 @@ function ViewerTableTab({
     });
 
   return (
-    <div className="space-y-2 pt-1">
-      <div className="flex items-center justify-between px-0.5">
-        <h3 className="font-orbitron font-bold text-xs uppercase text-slate-400 flex items-center gap-2">
-          <i className="fa-solid fa-trophy text-amber-400" aria-hidden="true" />
+    <div className="tbl-board">
+      <div className="tbl-meta">
+        <span className="tbl-meta-kicker">
+          <i className="fa-solid fa-trophy" aria-hidden="true" />
           Табло ПО
-        </h3>
-        <span className="text-xs font-bold text-slate-500 uppercase">
-          Цель {targetScore} ПО
+        </span>
+        <span className="tbl-meta-target">
+          Цель <strong>{targetScore}</strong> ПО
         </span>
       </div>
 
-      {list.map((p, idx) => {
-        const faction = ALL_FACTIONS.find(f => f.id === p.factionId);
-        const score = getPlayerScore(p.id);
-        const isCurrent = activePlayer?.id === p.id && !passed[p.id];
-        const hasPassed = !!passed[p.id];
-        const cardsPlayed = areAllStrategiesPlayed(p);
+      <div className="tbl-list">
+        {list.map((p, idx) => {
+          const faction = ALL_FACTIONS.find(f => f.id === p.factionId);
+          const score = getPlayerScore(p.id);
+          const isCurrent = activePlayer?.id === p.id && !passed[p.id];
+          const hasPassed = !!passed[p.id];
+          const cardsPlayed = areAllStrategiesPlayed(p);
+          const status = hasPassed
+            ? 'Пас'
+            : isCurrent
+              ? 'Ходит'
+              : cardsPlayed
+                ? 'Стратегия сыграна'
+                : 'В игре';
+          const accent = p.color || '#64748b';
 
-        return (
-          <button
-            key={p.id}
-            type="button"
-            onClick={() => onOpenPlayerTech?.(p.id)}
-            className={`w-full flex items-center gap-3 rounded-2xl border px-3 py-2.5 text-left transition active:scale-[0.99] ${
-              isCurrent
-                ? 'border-[var(--game-line-gold)] bg-[rgba(201,162,39,0.1)]'
-                : 'border-[var(--game-line)] bg-[rgba(8,10,16,0.8)]'
-            }`}
-          >
-            <div className="text-xs font-orbitron font-bold text-slate-600 w-4">{idx + 1}</div>
-            <div
-              className="w-10 h-10 rounded-lg bg-slate-900 border-2 p-0.5 flex-shrink-0"
-              style={factionIconBorder(p.color)}
+          return (
+            <button
+              key={p.id}
+              type="button"
+              onClick={() => onOpenPlayerTech?.(p.id)}
+              className={[
+                'tbl-row',
+                isCurrent ? 'is-current' : '',
+                hasPassed ? 'is-passed' : '',
+              ].filter(Boolean).join(' ')}
+              style={{
+                '--tbl-accent': accent,
+                '--tbl-bg': `url(${tableRowBg})`,
+              }}
             >
-              <img src={faction?.iconUrl} alt="" className="w-full h-full object-contain" />
-            </div>
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-1.5 flex-wrap">
-                <span className="font-bold text-base text-white truncate">{p.name}</span>
-                {p.id === speakerId && (
-                  <span className="text-xs font-bold uppercase text-purple-300 border border-purple-800 px-1 rounded">
-                    спикер
+              <span className="tbl-rank">{idx + 1}</span>
+              <div className="tbl-crest" style={factionIconBorder(p.color)}>
+                <img src={faction?.iconUrl} alt="" />
+              </div>
+              <div className="tbl-copy">
+                <div className="tbl-name-row">
+                  <span className="tbl-name">{p.name}</span>
+                  {p.id === speakerId && <span className="tbl-chip is-speaker">спикер</span>}
+                </div>
+                <div className="tbl-sub">
+                  <span className={`tbl-status ${isCurrent ? 'is-live' : ''} ${hasPassed ? 'is-out' : ''}`}>
+                    {status}
                   </span>
-                )}
+                  <TechPips techIds={p.techIds} />
+                </div>
               </div>
-              <div className="text-xs text-slate-500 truncate flex items-center gap-1.5 flex-wrap">
-                <span>
-                  {hasPassed ? 'Пас' : isCurrent ? 'Ходит' : cardsPlayed ? 'Стратегия сыграна' : 'В игре'}
-                </span>
-                <TechPips techIds={p.techIds} />
+              <div className="tbl-score">
+                <span className="tbl-score-num">{score}</span>
+                <i className="fa-solid fa-atom tbl-score-ico" aria-hidden="true" />
               </div>
-            </div>
-            <div className="font-orbitron font-black text-xl text-amber-400 tabular-nums">{score}</div>
-            <i className="fa-solid fa-atom text-sky-500/80 text-sm flex-shrink-0" aria-hidden="true" />
-          </button>
-        );
-      })}
+            </button>
+          );
+        })}
+      </div>
+
       {!list.length && (
-        <div className="text-sm text-slate-500 text-center py-8 border border-dashed border-slate-800 rounded-2xl">
-          Игроки появятся после старта партии
-        </div>
+        <div className="tbl-empty">Игроки появятся после старта партии</div>
       )}
     </div>
   );

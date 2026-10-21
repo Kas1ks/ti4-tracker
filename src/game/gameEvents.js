@@ -206,6 +206,42 @@ export function deriveGameEvents(prev, action, next) {
     case 'ADD_COMBAT_DAMAGE':
       return [baseEvent('COMBAT_RESOLVED', action, { at })];
 
+    case 'COMBAT_DEFEAT':
+    case 'COMBAT_RESOLVE_RETREAT': {
+      const prevCombat = prev.round?.combat;
+      if (!prevCombat?.active || prevCombat.phase === 'result') return [];
+      const nextCombat = next.round?.combat;
+      const wentToResult = !!nextCombat?.active && nextCombat.phase === 'result';
+      const ended = !nextCombat?.active;
+      // Failed retreat continues the fight — no log event.
+      if (action.type === 'COMBAT_RESOLVE_RETREAT' && !action.success && !wentToResult) {
+        return [];
+      }
+      if (!wentToResult && !ended) return [];
+      const winnerId = wentToResult
+        ? nextCombat.winnerId
+        : null;
+      const loserId = wentToResult
+        ? nextCombat.loserId
+        : (action.playerId ?? prevCombat.retreatPlayerId ?? null);
+      const totals = wentToResult
+        ? (nextCombat.totals || {})
+        : (prevCombat.totals || {});
+      const resultKind = wentToResult
+        ? (nextCombat.resultKind || (action.type === 'COMBAT_RESOLVE_RETREAT' ? 'retreat' : 'defeat'))
+        : null;
+      return [baseEvent('COMBAT_RESOLVED', action, {
+        at,
+        winnerId,
+        loserId,
+        attackerId: prevCombat.attackerId ?? null,
+        defenderId: prevCombat.defenderId ?? null,
+        totals,
+        rounds: prevCombat.round ?? 1,
+        resultKind,
+      })];
+    }
+
     case 'CONFIRM_IMPERIAL_CLAIM': {
       const events = [baseEvent('IMPERIAL_CLAIMED', action, {
         at,
@@ -491,8 +527,25 @@ export function formatGameEvent(event, players = []) {
       return 'Фаза статуса подтверждена';
     case 'AGENDA_PHASE_FINISHED':
       return 'Фаза политики завершена';
-    case 'COMBAT_RESOLVED':
+    case 'COMBAT_RESOLVED': {
+      if (event.winnerId != null && event.loserId != null) {
+        const wDealt = Number(event.totals?.[event.winnerId]) || 0;
+        const lDealt = Number(event.totals?.[event.loserId]) || 0;
+        const dmg = (wDealt || lDealt)
+          ? ` · урон ${wDealt}:${lDealt}`
+          : '';
+        if (event.resultKind === 'retreat') {
+          return `${name(event.loserId)} отступил от ${name(event.winnerId)}${dmg}`;
+        }
+        return `${name(event.winnerId)} победил ${name(event.loserId)}${dmg}`;
+      }
+      if (event.loserId != null) {
+        return event.resultKind === 'retreat'
+          ? `Бой: отступление ${name(event.loserId)}`
+          : `Бой: поражение ${name(event.loserId)}`;
+      }
       return 'Зафиксирован бой';
+    }
     case 'IMPERIAL_CLAIM_STARTED':
       return `${name(event.playerId)} использует Экспансию`;
     case 'IMPERIAL_CLAIMED': {

@@ -3,6 +3,7 @@ import {
   EMPTY_STRATEGY_RESOLUTION,
   EMPTY_IMPERIAL_CLAIM,
   EMPTY_TECH_RESEARCH,
+  EMPTY_COMBAT,
 } from '../gameState';
 import { clearedDraft } from './draftPhase';
 
@@ -34,6 +35,7 @@ export function startNewRound(state) {
       strategyResolution: { ...EMPTY_STRATEGY_RESOLUTION },
       imperialClaim: { ...EMPTY_IMPERIAL_CLAIM },
       techResearch: { ...EMPTY_TECH_RESEARCH, picks: [], queueIds: [], byPlayer: {} },
+      combat: { ...EMPTY_COMBAT },
     }),
     clearedDraft,
   );

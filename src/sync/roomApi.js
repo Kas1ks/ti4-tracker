@@ -22,6 +22,20 @@ export async function createRoom(state, { createSecret } = {}) {
   return res.json();
 }
 
+/** All live rooms on the server (hub «Активные партии»). */
+export async function fetchActiveRooms() {
+  const res = await fetch('/api/rooms', {
+    headers: { Accept: 'application/json' },
+  });
+  if (!res.ok) throw new Error(await readError(res));
+  const data = await res.json();
+  return {
+    rooms: Array.isArray(data?.rooms) ? data.rooms : [],
+    backend: data?.backend || null,
+    indexed: data?.indexed !== false,
+  };
+}
+
 /** Check host secret without creating a room (solo / local unlock). */
 export async function verifyHostSecret(createSecret) {
   const res = await fetch('/api/host-unlock', {

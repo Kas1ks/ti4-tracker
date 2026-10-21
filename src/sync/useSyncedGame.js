@@ -17,6 +17,7 @@ import {
   subscribeRoom,
 } from './roomApi';
 import { loadSeatSecret, saveSeatSecret, clearSeatSecret } from './seatSecrets';
+import { rememberRecentRoom } from './recentRooms';
 import {
   popUndoSnapshot,
   pushUndoSnapshot,
@@ -42,6 +43,12 @@ function playerGateMessage(error) {
       return 'Сначала завершите розыгрыш стратегии.';
     case 'imperial-claim':
       return 'Сначала завершите заявку Imperial.';
+    case 'color-taken':
+      return 'Этот цвет уже занят.';
+    case 'game-active':
+      return 'Цвет можно выбрать только до начала партии.';
+    case 'not-your-seat':
+      return 'Можно менять только своё место.';
     case 'forbidden':
       return 'Это действие сейчас недоступно.';
     default:
@@ -106,6 +113,7 @@ export function useSyncedGame() {
       ...prev,
       seq: typeof seq === 'number' ? seq : prev.seq,
       claimedSeats: extras.claimedSeats ?? prev.claimedSeats,
+      securedSeats: extras.securedSeats ?? prev.securedSeats,
     } : prev));
     return true;
   }, []);
@@ -205,7 +213,17 @@ export function useSyncedGame() {
   useEffect(() => {
     if (!room?.roomId) return undefined;
 
-    const ejectStaleSession = (message) => {
+    const ejectStaleSession = (message, { clearSeat = false } = {}) => {
+      const current = roomRef.current;
+      if (clearSeat && current?.roomId && current.seatPlayerId != null) {
+        // Drop saved seat code so a host kick cannot silent-rejoin without typing it.
+        clearSeatSecret(current.roomId, current.seatPlayerId);
+        rememberRecentRoom({
+          roomId: current.roomId,
+          role: null,
+          seatPlayerId: null,
+        });
+      }
       sessionGenRef.current += 1;
       roomRef.current = null;
       clearRoomSession();
@@ -231,14 +249,16 @@ export function useSyncedGame() {
             msg.seatRemoved
               ? 'Хост удалил ваше место.'
               : msg.released
-                ? 'Хост освободил ваше место. Войдите снова, когда будете готовы.'
+                ? 'Хост освободил ваше место. Войдите снова по коду комнаты.'
                 : 'Место занято с другого устройства. Войдите снова со своим кодом места.',
+            { clearSeat: !!msg.released || !!msg.seatRemoved },
           );
           return;
         }
         setRoom(prev => (prev ? {
           ...prev,
           claimedSeats: msg.claimedSeats ?? prev.claimedSeats,
+          securedSeats: msg.securedSeats ?? prev.securedSeats,
         } : prev));
         return;
       }
@@ -264,12 +284,14 @@ export function useSyncedGame() {
             msg.seatRemoved || seatGone
               ? 'Хост удалил ваше место.'
               : 'Сессия места устарела. Войдите снова.',
+            { clearSeat: !!(msg.seatRemoved || seatGone || msg.released) },
           );
           return;
         }
 
         applyAuthoritativeState(msg.seq, msg.state, {
           claimedSeats: msg.claimedSeats,
+          securedSeats: msg.securedSeats,
           canUndo: typeof msg.canUndo === 'boolean' ? msg.canUndo : undefined,
         });
       }
@@ -422,6 +444,10 @@ export function useSyncedGame() {
         'SET_INFLUENCE', 'LOCK_INFLUENCE', 'SET_VOTE', 'LOCK_VOTE',
         'FINISH_AGENDA_PHASE',
         'SET_STARTING_TECH_PICK', 'CONFIRM_STARTING_TECH',
+        'UPDATE_PLAYER',
+        'START_COMBAT', 'COMBAT_SET_OPPONENT', 'COMBAT_SET_HITS', 'COMBAT_ASSIGN',
+        'COMBAT_DECLARE_RETREAT', 'COMBAT_RESOLVE_RETREAT', 'COMBAT_DEFEAT',
+        'END_COMBAT',
       ];
       if (!soft.includes(stamped.type)) {
         setRoomError('Только админ может это сделать');
@@ -521,6 +547,7 @@ export function useSyncedGame() {
       roomRef.current = next;
       setRoom(next);
       saveRoomSession(next);
+      rememberRecentRoom({ roomId: next.roomId, role: ROLES.ADMIN, seatPlayerId: null });
       setRoomStatus('live');
       return created;
     } catch (err) {
@@ -565,6 +592,11 @@ export function useSyncedGame() {
       roomRef.current = next;
       setRoom(next);
       saveRoomSession(next);
+      rememberRecentRoom({
+        roomId: next.roomId,
+        role: next.role,
+        seatPlayerId: next.seatPlayerId,
+      });
       setRoomStatus('live');
       return joined;
     } catch (err) {

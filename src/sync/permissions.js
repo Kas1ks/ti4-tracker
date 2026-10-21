@@ -281,6 +281,141 @@ export function authorizeAction({ role, seatPlayerId, action, state }) {
       return { ok: true };
     }
 
+    case 'UPDATE_PLAYER': {
+      // Seated players may pick their own plastic color before the game starts.
+      if (String(action.playerId) !== String(seatPlayerId)) {
+        return { ok: false, error: 'not-your-seat' };
+      }
+      if (state?.isGameActive) {
+        return { ok: false, error: 'game-active' };
+      }
+      const patch = action.patch && typeof action.patch === 'object' ? action.patch : {};
+      const keys = Object.keys(patch);
+      if (keys.length !== 1 || keys[0] !== 'color') {
+        return { ok: false, error: 'forbidden' };
+      }
+      const color = patch.color;
+      if (color != null && color !== '') {
+        const taken = (state?.players || []).some(
+          (p) => String(p.id) !== String(seatPlayerId) && p.color === color,
+        );
+        if (taken) return { ok: false, error: 'color-taken' };
+      }
+      return { ok: true };
+    }
+
+    case 'START_COMBAT': {
+      if (activePlayer(state)?.id !== seatPlayerId) {
+        return { ok: false, error: 'not-your-turn' };
+      }
+      if (state.round?.combat?.active) return { ok: false, error: 'combat-active' };
+      if (state.round?.strategyResolution?.active) {
+        return { ok: false, error: 'strategy-resolving' };
+      }
+      if (state.round?.imperialClaim?.active) {
+        return { ok: false, error: 'imperial-claim' };
+      }
+      // Players start PvP only (neutral stays host-only).
+      if (action.mode === 'neutral') return { ok: false, error: 'forbidden' };
+      if (action.defenderId == null) return { ok: false, error: 'opponent-required' };
+      if (String(action.defenderId) === String(seatPlayerId)) {
+        return { ok: false, error: 'invalid-opponent' };
+      }
+      return { ok: true };
+    }
+
+    case 'COMBAT_SET_OPPONENT': {
+      const combat = state.round?.combat;
+      if (!combat?.active) return { ok: false, error: 'no-combat' };
+      if (activePlayer(state)?.id !== seatPlayerId) {
+        return { ok: false, error: 'not-your-turn' };
+      }
+      if (action.defenderId == null) return { ok: false, error: 'opponent-required' };
+      return { ok: true };
+    }
+
+    case 'COMBAT_SET_HITS': {
+      const combat = state.round?.combat;
+      if (!combat?.active || combat.mode !== 'pvp') return { ok: false, error: 'no-combat' };
+      if (combat.phase !== 'input') return { ok: false, error: 'wrong-phase' };
+      if (String(action.playerId) !== String(seatPlayerId)) {
+        return { ok: false, error: 'not-your-hits' };
+      }
+      const inFight = String(combat.attackerId) === String(seatPlayerId)
+        || String(combat.defenderId) === String(seatPlayerId);
+      if (!inFight) return { ok: false, error: 'not-in-combat' };
+      return { ok: true };
+    }
+
+    case 'COMBAT_ASSIGN': {
+      const combat = state.round?.combat;
+      if (!combat?.active || combat.mode !== 'pvp') return { ok: false, error: 'no-combat' };
+      if (combat.phase !== 'reveal') return { ok: false, error: 'wrong-phase' };
+      if (String(action.playerId) !== String(seatPlayerId)) {
+        return { ok: false, error: 'not-your-assign' };
+      }
+      const inFight = String(combat.attackerId) === String(seatPlayerId)
+        || String(combat.defenderId) === String(seatPlayerId);
+      if (!inFight) return { ok: false, error: 'not-in-combat' };
+      return { ok: true };
+    }
+
+    case 'COMBAT_DECLARE_RETREAT': {
+      const combat = state.round?.combat;
+      if (!combat?.active || combat.mode !== 'pvp') return { ok: false, error: 'no-combat' };
+      if (combat.phase !== 'input' && combat.phase !== 'reveal') {
+        return { ok: false, error: 'wrong-phase' };
+      }
+      if (combat.retreatPlayerId != null) return { ok: false, error: 'retreat-pending' };
+      if (String(action.playerId) !== String(seatPlayerId)) {
+        return { ok: false, error: 'not-your-retreat' };
+      }
+      const inFight = String(combat.attackerId) === String(seatPlayerId)
+        || String(combat.defenderId) === String(seatPlayerId);
+      if (!inFight) return { ok: false, error: 'not-in-combat' };
+      return { ok: true };
+    }
+
+    case 'COMBAT_RESOLVE_RETREAT': {
+      const combat = state.round?.combat;
+      if (!combat?.active || combat.mode !== 'pvp') return { ok: false, error: 'no-combat' };
+      if (combat.phase !== 'retreat_check') return { ok: false, error: 'wrong-phase' };
+      const inFight = String(combat.attackerId) === String(seatPlayerId)
+        || String(combat.defenderId) === String(seatPlayerId);
+      if (!inFight) return { ok: false, error: 'not-in-combat' };
+      return { ok: true };
+    }
+
+    case 'COMBAT_DEFEAT': {
+      const combat = state.round?.combat;
+      if (!combat?.active) return { ok: false, error: 'no-combat' };
+      if (combat.phase === 'result' || combat.phase === 'retreat_check') {
+        return { ok: false, error: 'combat-finished' };
+      }
+      if (combat.mode === 'pvp') {
+        const inFight = String(combat.attackerId) === String(seatPlayerId)
+          || String(combat.defenderId) === String(seatPlayerId);
+        if (!inFight) return { ok: false, error: 'not-in-combat' };
+        if (action.playerId != null && String(action.playerId) !== String(seatPlayerId)) {
+          return { ok: false, error: 'not-your-defeat' };
+        }
+      } else {
+        return { ok: false, error: 'forbidden' };
+      }
+      return { ok: true };
+    }
+
+    case 'END_COMBAT': {
+      // Players may dismiss the victory/defeat screen; host may end anytime.
+      const combat = state.round?.combat;
+      if (!combat?.active) return { ok: false, error: 'no-combat' };
+      if (combat.phase !== 'result') return { ok: false, error: 'forbidden' };
+      const inFight = String(combat.attackerId) === String(seatPlayerId)
+        || String(combat.defenderId) === String(seatPlayerId);
+      if (!inFight) return { ok: false, error: 'not-in-combat' };
+      return { ok: true };
+    }
+
     default:
       return { ok: false, error: 'forbidden' };
   }

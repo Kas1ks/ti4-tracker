@@ -6,6 +6,8 @@ import { useElapsedSeconds } from '../hooks/useTurnTimer';
 import { formatTime } from '../utils/game';
 
 const HOST_CARD_CLICK_DELAY_MS = 260;
+/** Mobile double-tap window — must be ≥ this before opening preview, or the 2nd tap hits the lightbox. */
+const MOBILE_DOUBLE_TAP_MS = 320;
 
 function factionOf(player) {
   return ALL_FACTIONS.find((f) => f.id === player?.factionId) || null;
@@ -38,14 +40,24 @@ function playerHasCard(draftAssignments, playerId) {
   return Object.values(draftAssignments || {}).some((ownerId) => ownerId === playerId);
 }
 
-/** Host desktop: player status rail (left). */
+/** Host desktop: player status rail (left) — ranked by VP high → low. */
 function DraftScoreRail({
   players = [],
   currentPickerId,
   draftAssignments = {},
   getPlayerScore,
 }) {
-  const seats = players.filter((p) => !p.eliminated);
+  const scoreOf = (p) => (
+    typeof getPlayerScore === 'function' ? getPlayerScore(p.id) : (p.score ?? 0)
+  );
+  const seats = players
+    .filter((p) => !p.eliminated)
+    .slice()
+    .sort((a, b) => {
+      const diff = scoreOf(b) - scoreOf(a);
+      if (diff !== 0) return diff;
+      return String(a.name || '').localeCompare(String(b.name || ''), 'ru');
+    });
 
   return (
     <aside className="draft-rail draft-rail-tablo hidden md:flex">
@@ -59,7 +71,7 @@ function DraftScoreRail({
         {seats.map((p) => {
           const isCurrent = currentPickerId != null && p.id === currentPickerId;
           const picked = playerHasCard(draftAssignments, p.id);
-          const score = typeof getPlayerScore === 'function' ? getPlayerScore(p.id) : (p.score ?? 0);
+          const score = scoreOf(p);
           return (
             <li
               key={p.id}
@@ -261,6 +273,11 @@ export function DraftModal({
   ));
   const hostClickTimerRef = useRef(null);
   const previewCloseTimerRef = useRef(null);
+  const previewOpenGenRef = useRef(0);
+  const lightboxTapRef = useRef({ at: 0 });
+  const lastGridTapRef = useRef({ id: null, at: 0 });
+  /** Touch start point — ignore preview if finger moved (scroll). */
+  const cardTouchRef = useRef({ x: 0, y: 0, moved: false });
   const previewCard = STRATEGY_CARDS.find((c) => c.id === previewCardId) || null;
   const previewTakenBy = previewCard ? draftAssignments[previewCard.id] : null;
   const previewCanPick = !!previewCard && !previewTakenBy && canPick;
@@ -273,10 +290,35 @@ export function DraftModal({
     return () => mq.removeEventListener('change', sync);
   }, []);
 
+  // Warm cache so lightbox does not flash while decoding full-size art.
+  useEffect(() => {
+    STRATEGY_CARDS.forEach((card) => {
+      const img = new Image();
+      img.decoding = 'async';
+      img.src = card.imageUrl;
+    });
+  }, []);
+
   useEffect(() => () => {
+    previewOpenGenRef.current += 1;
     if (hostClickTimerRef.current) clearTimeout(hostClickTimerRef.current);
     if (previewCloseTimerRef.current) clearTimeout(previewCloseTimerRef.current);
   }, []);
+
+  const decodeCardArt = (cardId) => {
+    const card = STRATEGY_CARDS.find((c) => c.id === cardId);
+    if (!card?.imageUrl) return Promise.resolve();
+    const img = new Image();
+    img.src = card.imageUrl;
+    if (typeof img.decode === 'function') {
+      return img.decode().catch(() => undefined);
+    }
+    if (img.complete) return Promise.resolve();
+    return new Promise((resolve) => {
+      img.onload = () => resolve();
+      img.onerror = () => resolve();
+    });
+  };
 
   const openCardPreview = (cardId) => {
     if (hostClickTimerRef.current) {
@@ -287,19 +329,28 @@ export function DraftModal({
       clearTimeout(previewCloseTimerRef.current);
       previewCloseTimerRef.current = null;
     }
-    setPreviewCardId(cardId);
+    const gen = ++previewOpenGenRef.current;
+    // Decode first, then mount already-open — avoids closed→open blink + empty-art flash.
+    decodeCardArt(cardId).then(() => {
+      if (gen !== previewOpenGenRef.current) return;
+      lightboxTapRef.current.at = 0;
+      setPreviewCardId(cardId);
+      setPreviewAnimOpen(true);
+    });
   };
 
   const closeCardPreview = () => {
     if (previewCardId == null || previewCloseTimerRef.current) return;
+    previewOpenGenRef.current += 1;
     setPreviewAnimOpen(false);
     previewCloseTimerRef.current = setTimeout(() => {
       previewCloseTimerRef.current = null;
       setPreviewCardId(null);
-    }, 320);
+    }, 200);
   };
 
   const pickCard = (cardId) => {
+    previewOpenGenRef.current += 1;
     if (hostClickTimerRef.current) {
       clearTimeout(hostClickTimerRef.current);
       hostClickTimerRef.current = null;
@@ -313,18 +364,6 @@ export function DraftModal({
     handleSelectCard(cardId);
   };
 
-  useEffect(() => {
-    if (previewCardId == null) {
-      setPreviewAnimOpen(false);
-      return undefined;
-    }
-    setPreviewAnimOpen(false);
-    const frame = requestAnimationFrame(() => {
-      requestAnimationFrame(() => setPreviewAnimOpen(true));
-    });
-    return () => cancelAnimationFrame(frame);
-  }, [previewCardId]);
-
   useEscapeKey(() => {
     if (previewCardId != null) {
       closeCardPreview();
@@ -333,7 +372,33 @@ export function DraftModal({
     setShowDraftModal(false);
   }, wantOpen || previewCardId != null);
 
-  const onHostCardClick = (cardId) => {
+  const onPreviewCardClick = (cardId, pickDisabled) => {
+    if (isMobileViewport) {
+      const now = performance.now();
+      const last = lastGridTapRef.current;
+      // Double-tap on grid → pick (must fire before preview opens).
+      if (last.id === cardId && now - last.at < MOBILE_DOUBLE_TAP_MS) {
+        lastGridTapRef.current = { id: null, at: 0 };
+        if (hostClickTimerRef.current) {
+          clearTimeout(hostClickTimerRef.current);
+          hostClickTimerRef.current = null;
+        }
+        previewOpenGenRef.current += 1;
+        if (!pickDisabled) pickCard(cardId);
+        else openCardPreview(cardId);
+        return;
+      }
+      lastGridTapRef.current = { id: cardId, at: now };
+      // Wait the full double-tap window, then open preview.
+      if (hostClickTimerRef.current) clearTimeout(hostClickTimerRef.current);
+      hostClickTimerRef.current = setTimeout(() => {
+        hostClickTimerRef.current = null;
+        openCardPreview(cardId);
+      }, MOBILE_DOUBLE_TAP_MS);
+      return;
+    }
+
+    // Desktop host: delay single-click preview so dblclick can pick.
     if (hostClickTimerRef.current) {
       clearTimeout(hostClickTimerRef.current);
       hostClickTimerRef.current = null;
@@ -343,6 +408,18 @@ export function DraftModal({
       hostClickTimerRef.current = null;
       openCardPreview(cardId);
     }, HOST_CARD_CLICK_DELAY_MS);
+  };
+
+  const onLightboxArtPointerUp = (event) => {
+    if (!isMobileViewport || !previewCanPick || !previewCard) return;
+    event.stopPropagation();
+    const now = performance.now();
+    if (lightboxTapRef.current.at > 0 && now - lightboxTapRef.current.at < MOBILE_DOUBLE_TAP_MS) {
+      lightboxTapRef.current.at = 0;
+      pickCard(previewCard.id);
+      return;
+    }
+    lightboxTapRef.current.at = now;
   };
 
   return (
@@ -481,40 +558,71 @@ export function DraftModal({
                             const glow = CARD_GLOW[card.id] || '#c9a227';
                             const bonus = tradeGoodBonusForCard(strategyCardBonuses, card.id);
                             const pickDisabled = isTaken || !canPick;
-                            const hostCardMode = canAdmin && !isMobileViewport;
+                            // Mobile + desktop host: tap to enlarge, double-tap / lightbox to pick.
+                            const cardPreviewMode = isMobileViewport || canAdmin;
 
                             return (
                               <button
                                 key={card.id}
                                 type="button"
-                                disabled={!hostCardMode && pickDisabled}
+                                disabled={!cardPreviewMode && pickDisabled}
                                 title={
-                                  hostCardMode
+                                  cardPreviewMode
                                     ? (pickDisabled
                                       ? 'Клик — увеличить'
                                       : 'Клик — увеличить · двойной клик — выбрать')
                                     : undefined
                                 }
-                                onClick={() => {
-                                  if (isMobileViewport) {
-                                    if (!pickDisabled) handleSelectCard(card.id);
-                                    return;
+                                onTouchStart={(event) => {
+                                  if (!cardPreviewMode || !isMobileViewport) return;
+                                  const t = event.changedTouches[0] || event.touches[0];
+                                  if (!t) return;
+                                  cardTouchRef.current = { x: t.clientX, y: t.clientY, moved: false };
+                                }}
+                                onTouchMove={(event) => {
+                                  if (!cardPreviewMode || !isMobileViewport) return;
+                                  const t = event.changedTouches[0] || event.touches[0];
+                                  if (!t) return;
+                                  const dx = t.clientX - cardTouchRef.current.x;
+                                  const dy = t.clientY - cardTouchRef.current.y;
+                                  if ((dx * dx + dy * dy) > 100) {
+                                    cardTouchRef.current.moved = true;
+                                    // Cancel pending single-tap preview if user started scrolling.
+                                    if (hostClickTimerRef.current) {
+                                      clearTimeout(hostClickTimerRef.current);
+                                      hostClickTimerRef.current = null;
+                                    }
+                                    lastGridTapRef.current = { id: null, at: 0 };
                                   }
-                                  if (hostCardMode) {
-                                    onHostCardClick(card.id);
+                                }}
+                                onTouchEnd={(event) => {
+                                  // Touch: handle here (prevents delayed synthetic click that breaks double-tap).
+                                  if (!cardPreviewMode || !isMobileViewport) return;
+                                  if (cardTouchRef.current.moved) return;
+                                  event.preventDefault();
+                                  onPreviewCardClick(card.id, pickDisabled);
+                                }}
+                                onClick={() => {
+                                  if (cardPreviewMode) {
+                                    if (isMobileViewport) return; // already handled in onTouchEnd
+                                    onPreviewCardClick(card.id, pickDisabled);
                                     return;
                                   }
                                   if (!pickDisabled) handleSelectCard(card.id);
                                 }}
                                 onDoubleClick={(event) => {
-                                  if (!hostCardMode) return;
+                                  if (!cardPreviewMode || isMobileViewport) return;
                                   event.preventDefault();
+                                  if (hostClickTimerRef.current) {
+                                    clearTimeout(hostClickTimerRef.current);
+                                    hostClickTimerRef.current = null;
+                                  }
                                   if (!pickDisabled) pickCard(card.id);
                                   else openCardPreview(card.id);
                                 }}
                                 style={{ '--draft-card-glow': glow }}
                                 className={`draft-card ${isTaken ? 'is-taken' : ''} ${
-                                  hostCardMode || !pickDisabled ? 'is-pickable' : 'is-disabled'
+                                  cardPreviewMode || !pickDisabled ? 'is-pickable' : 'is-disabled'
                                 }`}
                               >
                                 {bonus > 0 && (
@@ -688,6 +796,7 @@ export function DraftModal({
 
       {previewCard && (
         <div
+          key={previewCard.id}
           className={`draft-card-lightbox ${previewAnimOpen ? 'is-open' : ''}`}
           role="dialog"
           aria-modal="true"
@@ -711,6 +820,9 @@ export function DraftModal({
               alt={previewCard.name}
               className="draft-card-lightbox-art"
               draggable={false}
+              decoding="sync"
+              fetchPriority="high"
+              onPointerUp={onLightboxArtPointerUp}
             />
             {previewCanPick && (
               <button
@@ -718,7 +830,7 @@ export function DraftModal({
                 className="draft-card-lightbox-pick"
                 onClick={() => pickCard(previewCard.id)}
               >
-                Выбрать эту карту
+                Взять
               </button>
             )}
           </div>

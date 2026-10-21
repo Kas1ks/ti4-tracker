@@ -12,6 +12,14 @@ run_worker_first = true
 name = "GAME_ROOMS"
 class_name = "GameRoom"
 
+[[durable_objects.bindings]]
+name = "ROOM_DIRECTORY"
+class_name = "RoomDirectory"
+
 [[migrations]]
 tag = "v1-game-rooms"
 new_sqlite_classes = ["GameRoom"]
+
+[[migrations]]
+tag = "v2-room-directory"
+new_classes = ["RoomDirectory"]

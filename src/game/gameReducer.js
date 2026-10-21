@@ -3,6 +3,7 @@ import {
   EMPTY_STRATEGY_RESOLUTION,
   EMPTY_IMPERIAL_CLAIM,
   EMPTY_TECH_RESEARCH,
+  EMPTY_COMBAT,
   EMPTY_STARTING_TECH_DRAFT,
   createEmptyGameState,
   normalizeGameState,
@@ -122,6 +123,7 @@ function endRound(state, at = Date.now()) {
     strategyResolution: { ...EMPTY_STRATEGY_RESOLUTION },
     imperialClaim: { ...EMPTY_IMPERIAL_CLAIM },
     techResearch: { ...EMPTY_TECH_RESEARCH, picks: [], queueIds: [], byPlayer: {} },
+    combat: { ...EMPTY_COMBAT },
   });
   if (next.meta.isAgendaPhasePending) {
     return withPolitics(next, { showModal: true });
@@ -160,11 +162,393 @@ function startRound(state, at = Date.now()) {
     strategyResolution: { ...EMPTY_STRATEGY_RESOLUTION },
     imperialClaim: { ...EMPTY_IMPERIAL_CLAIM },
     techResearch: { ...EMPTY_TECH_RESEARCH, picks: [], queueIds: [], byPlayer: {} },
+    combat: { ...EMPTY_COMBAT },
   });
+}
+
+function combatOf(state) {
+  return state.round?.combat || EMPTY_COMBAT;
+}
+
+function emptyPvpHits(attackerId, defenderId) {
+  return {
+    [attackerId]: null,
+    [defenderId]: null,
+  };
+}
+
+function emptyPvpAssigned(attackerId, defenderId) {
+  return {
+    [attackerId]: false,
+    [defenderId]: false,
+  };
+}
+
+function combatParticipantIds(combat) {
+  if (!combat?.active || combat.mode !== 'pvp') return [];
+  const ids = [];
+  if (combat.attackerId != null) ids.push(combat.attackerId);
+  if (combat.defenderId != null) ids.push(combat.defenderId);
+  return ids;
+}
+
+function bothHitsEntered(combat) {
+  const ids = combatParticipantIds(combat);
+  if (ids.length < 2) return false;
+  return ids.every((id) => {
+    const v = combat.hits?.[id];
+    return v != null && Number.isFinite(Number(v));
+  });
+}
+
+function bothAssigned(combat) {
+  const ids = combatParticipantIds(combat);
+  if (ids.length < 2) return false;
+  return ids.every((id) => !!combat.assigned?.[id]);
+}
+
+function buildPvpCombat(at, attackerId, defenderId, prevTotals = {}) {
+  return {
+    active: true,
+    startedAt: at,
+    mode: 'pvp',
+    round: 1,
+    phase: 'input',
+    attackerId,
+    defenderId,
+    hits: emptyPvpHits(attackerId, defenderId),
+    assigned: emptyPvpAssigned(attackerId, defenderId),
+    totals: { ...prevTotals },
+    retreatPlayerId: null,
+    winnerId: null,
+    loserId: null,
+    resultKind: null,
+  };
+}
+
+/** Pause turn clock for combat; combat seconds are tracked separately (meta.combatTime). */
+function startCombat(state, at = Date.now(), opts = {}) {
+  if (!state.round?.active) return state;
+  if (combatOf(state).active) return state;
+  if (strategyResolutionOf(state).active) return state;
+  if (imperialClaimOf(state).active) return state;
+  if (techResearchOf(state)?.active) return state;
+
+  const pausedAccum = liveTurnElapsed(state, at);
+  const attackerId = opts.attackerId ?? activePlayer(state)?.id ?? null;
+  const defenderId = opts.defenderId ?? null;
+  const mode = opts.mode === 'neutral'
+    ? 'neutral'
+    : (defenderId != null && attackerId != null ? 'pvp' : null);
+
+  let combat;
+  if (mode === 'pvp') {
+    if (String(attackerId) === String(defenderId)) return state;
+    const defender = state.players.find((p) => String(p.id) === String(defenderId) && !p.eliminated);
+    if (!defender) return state;
+    combat = buildPvpCombat(at, attackerId, defender.id);
+  } else if (mode === 'neutral') {
+    combat = {
+      ...EMPTY_COMBAT,
+      active: true,
+      startedAt: at,
+      mode: 'neutral',
+      phase: 'pick',
+      attackerId,
+      defenderId: null,
+    };
+  } else {
+    combat = {
+      ...EMPTY_COMBAT,
+      active: true,
+      startedAt: at,
+      mode: null,
+      phase: 'pick',
+      attackerId,
+    };
+  }
+
+  return withRound(state, {
+    turnStartedAt: null,
+    turnPausedAccum: pausedAccum,
+    combat,
+  });
+}
+
+function endCombat(state, at = Date.now()) {
+  const combat = combatOf(state);
+  if (!combat.active) return state;
+
+  let combatSecs = 0;
+  if (Number.isFinite(combat.startedAt)) {
+    combatSecs = Math.max(0, Math.floor((at - combat.startedAt) / 1000));
+  }
+  const combatTime = Math.max(0, (state.meta?.combatTime || 0) + combatSecs);
+
+  return withMeta(
+    withRound(state, {
+      combat: { ...EMPTY_COMBAT },
+      // Resume action-phase turn clock; paused accum still holds pre-combat turn time.
+      turnStartedAt: Number.isFinite(state.round?.turnStartedAt) ? state.round.turnStartedAt : at,
+    }),
+    { combatTime },
+  );
+}
+
+function combatSetOpponent(state, action) {
+  const combat = combatOf(state);
+  if (!combat.active) return state;
+  if (combat.mode === 'pvp' && combat.phase !== 'pick' && !action.clear && !action.neutral) {
+    return state;
+  }
+
+  const at = Number.isFinite(combat.startedAt) ? combat.startedAt : actionAt(action);
+  const attackerId = action.attackerId ?? combat.attackerId ?? activePlayer(state)?.id ?? null;
+
+  if (action.neutral) {
+    return withRound(state, {
+      combat: {
+        ...EMPTY_COMBAT,
+        active: true,
+        startedAt: at,
+        mode: 'neutral',
+        phase: 'pick',
+        attackerId,
+        defenderId: null,
+      },
+    });
+  }
+
+  if (action.clear) {
+    return withRound(state, {
+      combat: {
+        ...EMPTY_COMBAT,
+        active: true,
+        startedAt: at,
+        mode: null,
+        phase: 'pick',
+        attackerId,
+        defenderId: null,
+      },
+    });
+  }
+
+  const defenderId = action.defenderId;
+  if (defenderId == null || attackerId == null) return state;
+  if (String(attackerId) === String(defenderId)) return state;
+  const defender = state.players.find((p) => String(p.id) === String(defenderId) && !p.eliminated);
+  if (!defender) return state;
+
+  return withRound(state, {
+    combat: buildPvpCombat(at, attackerId, defender.id, combat.totals || {}),
+  });
+}
+
+function combatSetHits(state, action) {
+  const combat = combatOf(state);
+  if (!combat.active || combat.mode !== 'pvp' || combat.phase !== 'input') return state;
+  const playerId = action.playerId;
+  if (playerId == null) return state;
+  if (!combatParticipantIds(combat).some((id) => String(id) === String(playerId))) return state;
+
+  const hitsVal = Math.max(0, Math.floor(Number(action.hits) || 0));
+  const hits = { ...(combat.hits || {}), [playerId]: hitsVal };
+  let next = { ...combat, hits };
+  if (bothHitsEntered(next)) {
+    next = {
+      ...next,
+      phase: 'reveal',
+      assigned: emptyPvpAssigned(next.attackerId, next.defenderId),
+    };
+  }
+  return withRound(state, { combat: next });
+}
+
+function combatAssign(state, action) {
+  const combat = combatOf(state);
+  if (!combat.active || combat.mode !== 'pvp' || combat.phase !== 'reveal') return state;
+  const playerId = action.playerId;
+  if (playerId == null) return state;
+  if (!combatParticipantIds(combat).some((id) => String(id) === String(playerId))) return state;
+
+  const assigned = { ...(combat.assigned || {}), [playerId]: true };
+  let next = { ...combat, assigned };
+  if (bothAssigned(next)) {
+    const totals = { ...(next.totals || {}) };
+    for (const id of combatParticipantIds(next)) {
+      const dealt = Number(next.hits?.[id]) || 0;
+      totals[id] = (Number(totals[id]) || 0) + dealt;
+    }
+    const cleared = {
+      ...next,
+      totals,
+      hits: emptyPvpHits(next.attackerId, next.defenderId),
+      assigned: emptyPvpAssigned(next.attackerId, next.defenderId),
+    };
+    // After a declared retreat, finish this round then ask if retreat succeeded.
+    if (cleared.retreatPlayerId != null) {
+      next = { ...cleared, phase: 'retreat_check' };
+    } else {
+      next = {
+        ...cleared,
+        round: (Number(next.round) || 1) + 1,
+        phase: 'input',
+      };
+    }
+  }
+  return withRound(state, { combat: next });
+}
+
+/** One participant announces retreat; current round must still be completed. */
+function combatDeclareRetreat(state, action) {
+  const combat = combatOf(state);
+  if (!combat.active || combat.mode !== 'pvp') return state;
+  if (combat.phase !== 'input' && combat.phase !== 'reveal') return state;
+  if (combat.retreatPlayerId != null) return state;
+  const playerId = action.playerId;
+  if (playerId == null) return state;
+  if (!combatParticipantIds(combat).some((id) => String(id) === String(playerId))) return state;
+  return withRound(state, {
+    combat: { ...combat, retreatPlayerId: playerId },
+  });
+}
+
+/**
+ * After retreat_check: success ends the fight (retreater loses the system);
+ * failure clears the flag and continues with the next combat round.
+ */
+function combatResolveRetreat(state, action) {
+  const combat = combatOf(state);
+  if (!combat.active || combat.mode !== 'pvp' || combat.phase !== 'retreat_check') return state;
+  const retreatPlayerId = combat.retreatPlayerId;
+  if (retreatPlayerId == null) return state;
+
+  if (action.success) {
+    return finalizeCombatResult(state, {
+      loserId: retreatPlayerId,
+      resultKind: 'retreat',
+    });
+  }
+
+  return withRound(state, {
+    combat: {
+      ...combat,
+      retreatPlayerId: null,
+      phase: 'input',
+      round: (Number(combat.round) || 1) + 1,
+      hits: emptyPvpHits(combat.attackerId, combat.defenderId),
+      assigned: emptyPvpAssigned(combat.attackerId, combat.defenderId),
+    },
+  });
+}
+
+/** Fold current-round hits into totals for damage / result display. */
+function foldedCombatTotals(combat) {
+  const totals = { ...(combat.totals || {}) };
+  for (const id of combatParticipantIds(combat)) {
+    const roundHits = combat.hits?.[id];
+    if (roundHits != null && Number.isFinite(Number(roundHits))) {
+      totals[id] = (Number(totals[id]) || 0) + Math.max(0, Math.floor(Number(roundHits)));
+    }
+  }
+  return totals;
+}
+
+/** Apply folded PvP damage and open the result screen. */
+function finalizeCombatResult(state, { loserId, resultKind }) {
+  const combat = combatOf(state);
+  if (!combat.active || combat.mode !== 'pvp') return state;
+  if (combat.phase === 'result') return state;
+  if (
+    loserId == null
+    || !combatParticipantIds(combat).some((id) => String(id) === String(loserId))
+  ) {
+    return state;
+  }
+
+  const foldedTotals = foldedCombatTotals(combat);
+  const damageByPlayerId = {};
+  for (const id of combatParticipantIds(combat)) {
+    const dealt = Number(foldedTotals[id]) || 0;
+    if (dealt > 0) damageByPlayerId[id] = dealt;
+  }
+
+  let next = state;
+  if (Object.keys(damageByPlayerId).length > 0) {
+    next = mapPlayers(next, (player) => (
+      damageByPlayerId[player.id]
+        ? { ...player, damageDealt: (player.damageDealt || 0) + damageByPlayerId[player.id] }
+        : player
+    ));
+  }
+
+  const winnerId = combatParticipantIds(combat)
+    .find((id) => String(id) !== String(loserId)) ?? null;
+
+  return withRound(next, {
+    combat: {
+      ...combat,
+      phase: 'result',
+      hits: emptyPvpHits(combat.attackerId, combat.defenderId),
+      assigned: emptyPvpAssigned(combat.attackerId, combat.defenderId),
+      totals: foldedTotals,
+      winnerId,
+      loserId,
+      resultKind: resultKind === 'retreat' ? 'retreat' : 'defeat',
+      retreatPlayerId: null,
+    },
+  });
+}
+
+/**
+ * Sum totals + current-round hits into damageDealt.
+ * With playerId (loser): keep combat in phase=result for victory/defeat screen.
+ * Without loser: end immediately (host abort).
+ */
+function combatDefeat(state, action) {
+  const combat = combatOf(state);
+  if (!combat.active) return state;
+  if (combat.phase === 'result') return state;
+  // During retreat_check players must answer the retreat dialog; host abort (no loser) still closes.
+  if (combat.phase === 'retreat_check' && action.playerId != null) return state;
+
+  const loserId = action.playerId ?? null;
+  if (
+    combat.mode === 'pvp'
+    && loserId != null
+    && combatParticipantIds(combat).some((id) => String(id) === String(loserId))
+  ) {
+    return finalizeCombatResult(state, {
+      loserId,
+      resultKind: 'defeat',
+    });
+  }
+
+  // Host abort / neutral: bank damage then close.
+  const foldedTotals = combat.mode === 'pvp' ? foldedCombatTotals(combat) : {};
+  const damageByPlayerId = {};
+  if (combat.mode === 'pvp') {
+    for (const id of combatParticipantIds(combat)) {
+      const dealt = Number(foldedTotals[id]) || 0;
+      if (dealt > 0) damageByPlayerId[id] = dealt;
+    }
+  }
+
+  let next = state;
+  if (Object.keys(damageByPlayerId).length > 0) {
+    next = mapPlayers(next, (player) => (
+      damageByPlayerId[player.id]
+        ? { ...player, damageDealt: (player.damageDealt || 0) + damageByPlayerId[player.id] }
+        : player
+    ));
+  }
+
+  return endCombat(next, actionAt(action));
 }
 
 /** Advance to the next player who has not passed; end the round if nobody is left. */
 function nextTurn(state, at = Date.now()) {
+  if (combatOf(state).active) return state;
   if (state.round?.strategyResolution?.active) return state;
   if (state.round?.imperialClaim?.active) return state;
   if (state.round?.techResearch?.active) return state;
@@ -194,10 +578,12 @@ function nextTurn(state, at = Date.now()) {
     strategyResolution: { ...EMPTY_STRATEGY_RESOLUTION },
     imperialClaim: { ...EMPTY_IMPERIAL_CLAIM },
     techResearch: { ...EMPTY_TECH_RESEARCH, picks: [], queueIds: [], byPlayer: {} },
+    combat: { ...EMPTY_COMBAT },
   });
 }
 
 function passTurn(state, playerId, at = Date.now()) {
+  if (combatOf(state).active) return state;
   if (state.round?.strategyResolution?.active) return state;
   if (state.round?.imperialClaim?.active) return state;
   if (state.round?.techResearch?.active) return state;
@@ -326,6 +712,7 @@ function startStrategyResolution(state, cardId, at = Date.now()) {
 function beginStrategyPlay(state, cardId, at = Date.now()) {
   const player = activePlayer(state);
   if (!player?.cards?.length) return state;
+  if (combatOf(state).active) return state;
   if (state.round.strategyActionTaken) return state;
   if (strategyResolutionOf(state).active) return state;
   if (imperialClaimOf(state).active) return state;
@@ -1014,6 +1401,34 @@ export function gameReducer(state, action) {
         },
       };
     }
+
+    case 'START_COMBAT':
+      return startCombat(state, actionAt(action), {
+        mode: action.mode,
+        attackerId: action.attackerId,
+        defenderId: action.defenderId,
+      });
+
+    case 'COMBAT_SET_OPPONENT':
+      return combatSetOpponent(state, action);
+
+    case 'COMBAT_SET_HITS':
+      return combatSetHits(state, action);
+
+    case 'COMBAT_ASSIGN':
+      return combatAssign(state, action);
+
+    case 'COMBAT_DECLARE_RETREAT':
+      return combatDeclareRetreat(state, action);
+
+    case 'COMBAT_RESOLVE_RETREAT':
+      return combatResolveRetreat(state, action);
+
+    case 'COMBAT_DEFEAT':
+      return combatDefeat(state, action);
+
+    case 'END_COMBAT':
+      return endCombat(state, actionAt(action));
 
     case 'ADD_COMBAT_DAMAGE':
       return mapPlayers(state, player => (
