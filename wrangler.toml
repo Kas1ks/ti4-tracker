@@ -22,7 +22,7 @@ new_sqlite_classes = ["GameRoom"]
 
 [[migrations]]
 tag = "v2-room-directory"
-new_classes = ["RoomDirectory"]
+new_sqlite_classes = ["RoomDirectory"]
 
 # Staging / previous prod snapshot:
 #   https://ti4-tracker-dv.skvcom1.workers.dev
@@ -50,4 +50,4 @@ new_sqlite_classes = ["GameRoom"]
 
 [[env.dev.migrations]]
 tag = "v2-room-directory"
-new_classes = ["RoomDirectory"]
+new_sqlite_classes = ["RoomDirectory"]
