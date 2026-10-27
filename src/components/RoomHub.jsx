@@ -560,8 +560,6 @@ export function RoomHub({
 
               {roomError && <p className="hub-home-error">{roomError}</p>}
               {soonNote && <p className="hub-home-soon" role="status">{soonNote}</p>}
-
-              <PwaInstallBanner variant="hub" />
             </div>
 
             {renderActiveParties()}
@@ -569,6 +567,7 @@ export function RoomHub({
         </div>
 
         <div className="hub-home-bottom">
+          <PwaInstallBanner variant="hub" />
           {renderActiveParties('hub-active-mobile')}
           {dock}
         </div>

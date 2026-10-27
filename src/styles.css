@@ -14730,11 +14730,13 @@ i.pcbat-btn-ico {
     display: none;
   }
 
-  /* Keep install hint visible on phones (JS only shows the banner on mobile). */
-  .hub-hero .hub-pwa {
+  /* Install hint lives in hub-home-bottom so it is not clipped by the hero flex. */
+  .hub-home-bottom .hub-pwa {
     display: block;
-    margin-top: 1rem;
+    width: 100%;
     max-width: none;
+    margin-top: 0;
+    box-sizing: border-box;
   }
 
   .hub-home-bottom {

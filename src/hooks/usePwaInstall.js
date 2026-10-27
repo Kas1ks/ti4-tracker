@@ -1,12 +1,38 @@
 import { useEffect, useState } from 'react';
 
 const DISMISS_KEY = 'ti4_pwa_install_dismissed';
+/** «Позже» hides the banner for a day — not forever (so uninstall → reopen still sees it). */
+const DISMISS_TTL_MS = 24 * 60 * 60 * 1000;
 
 function isStandaloneDisplay() {
   if (typeof window === 'undefined') return false;
   const mq = window.matchMedia?.('(display-mode: standalone)')?.matches;
   const ios = window.navigator.standalone === true;
   return Boolean(mq || ios);
+}
+
+function readDismissed() {
+  try {
+    const raw = localStorage.getItem(DISMISS_KEY);
+    if (!raw) return false;
+    // Legacy: plain "1" from older builds — clear so banner can show again.
+    if (raw === '1') {
+      localStorage.removeItem(DISMISS_KEY);
+      return false;
+    }
+    const until = Number(raw);
+    if (!Number.isFinite(until)) {
+      localStorage.removeItem(DISMISS_KEY);
+      return false;
+    }
+    if (until <= Date.now()) {
+      localStorage.removeItem(DISMISS_KEY);
+      return false;
+    }
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function isIos() {
@@ -38,13 +64,7 @@ function isMobileViewport() {
 export function usePwaInstall() {
   const [deferred, setDeferred] = useState(null);
   const [installed, setInstalled] = useState(() => isStandaloneDisplay());
-  const [dismissed, setDismissed] = useState(() => {
-    try {
-      return localStorage.getItem(DISMISS_KEY) === '1';
-    } catch {
-      return false;
-    }
-  });
+  const [dismissed, setDismissed] = useState(() => readDismissed());
 
   useEffect(() => {
     const onBeforeInstall = (event) => {
@@ -66,7 +86,7 @@ export function usePwaInstall() {
   const dismiss = () => {
     setDismissed(true);
     try {
-      localStorage.setItem(DISMISS_KEY, '1');
+      localStorage.setItem(DISMISS_KEY, String(Date.now() + DISMISS_TTL_MS));
     } catch {
       /* ignore */
     }
