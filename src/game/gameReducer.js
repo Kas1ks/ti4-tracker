@@ -28,6 +28,11 @@ import {
   resolveThundersEdgeControl,
   setExpeditionSlice,
 } from './expeditionActions';
+import {
+  NEUTRAL_OPPONENT_ID,
+  NEUTRAL_UNITS,
+  emptyNeutralCounts,
+} from '../data/neutralUnits';
 import { isVictoryActionAllowed, isVictoryReached } from './victory';
 import {
   mapPlayers,
@@ -47,6 +52,7 @@ import {
   turnOrder,
 } from './selectors';
 import { reduceDraftPhase } from './reducers/draftPhase';
+import { reduceDevTools } from './reducers/devTools';
 import { reducePoliticsPhase } from './reducers/politicsPhase';
 import { reduceStatusPhase } from './reducers/statusPhase';
 
@@ -132,6 +138,8 @@ function endRound(state, at = Date.now()) {
     show: true,
     checks: { ...EMPTY_STATUS_CHECKS },
     scoring: { active: false, responses: {}, orderIds: [], currentIdx: 0 },
+    objectiveRevealed: false,
+    revealShow: null,
   });
 }
 
@@ -192,6 +200,16 @@ function combatParticipantIds(combat) {
   return ids;
 }
 
+/** Damage / hit keys for the current combat (PvP seats or player + neutral). */
+function combatSideIds(combat) {
+  if (!combat?.active) return [];
+  if (combat.mode === 'pvp') return combatParticipantIds(combat);
+  if (combat.mode === 'neutral' && combat.attackerId != null) {
+    return [combat.attackerId, NEUTRAL_OPPONENT_ID];
+  }
+  return [];
+}
+
 function bothHitsEntered(combat) {
   const ids = combatParticipantIds(combat);
   if (ids.length < 2) return false;
@@ -207,6 +225,41 @@ function bothAssigned(combat) {
   return ids.every((id) => !!combat.assigned?.[id]);
 }
 
+function emptyNeutralAssigned(attackerId) {
+  return {
+    [attackerId]: false,
+    [NEUTRAL_OPPONENT_ID]: false,
+  };
+}
+
+function bothNeutralAssigned(combat) {
+  if (combat?.attackerId == null) return false;
+  return !!combat.assigned?.[combat.attackerId] && !!combat.assigned?.[NEUTRAL_OPPONENT_ID];
+}
+
+function sanitizeNeutralCounts(raw) {
+  const base = emptyNeutralCounts();
+  const src = raw && typeof raw === 'object' ? raw : {};
+  const out = { ...base };
+  for (const unit of NEUTRAL_UNITS) {
+    let n = Math.max(0, Math.floor(Number(src[unit.id]) || 0));
+    if (unit.max != null) n = Math.min(n, unit.max);
+    out[unit.id] = n;
+  }
+  return out;
+}
+
+function neutralUnitTotal(counts) {
+  return Object.values(counts || {}).reduce((s, n) => s + (Number(n) || 0), 0);
+}
+
+function emptyNeutralHits(attackerId) {
+  return {
+    [attackerId]: null,
+    [NEUTRAL_OPPONENT_ID]: null,
+  };
+}
+
 function buildPvpCombat(at, attackerId, defenderId, prevTotals = {}) {
   return {
     active: true,
@@ -219,6 +272,30 @@ function buildPvpCombat(at, attackerId, defenderId, prevTotals = {}) {
     hits: emptyPvpHits(attackerId, defenderId),
     assigned: emptyPvpAssigned(attackerId, defenderId),
     totals: { ...prevTotals },
+    neutralCounts: {},
+    neutralRoll: null,
+    retreatPlayerId: null,
+    winnerId: null,
+    loserId: null,
+    resultKind: null,
+  };
+}
+
+function buildNeutralCombat(at, attackerId, prevTotals = {}, counts = null) {
+  const neutralCounts = sanitizeNeutralCounts(counts);
+  return {
+    active: true,
+    startedAt: at,
+    mode: 'neutral',
+    round: 1,
+    phase: 'setup',
+    attackerId,
+    defenderId: null,
+    hits: emptyNeutralHits(attackerId),
+    assigned: emptyNeutralAssigned(attackerId),
+    totals: { ...prevTotals },
+    neutralCounts,
+    neutralRoll: null,
     retreatPlayerId: null,
     winnerId: null,
     loserId: null,
@@ -248,15 +325,8 @@ function startCombat(state, at = Date.now(), opts = {}) {
     if (!defender) return state;
     combat = buildPvpCombat(at, attackerId, defender.id);
   } else if (mode === 'neutral') {
-    combat = {
-      ...EMPTY_COMBAT,
-      active: true,
-      startedAt: at,
-      mode: 'neutral',
-      phase: 'pick',
-      attackerId,
-      defenderId: null,
-    };
+    if (attackerId == null) return state;
+    combat = buildNeutralCombat(at, attackerId);
   } else {
     combat = {
       ...EMPTY_COMBAT,
@@ -306,16 +376,9 @@ function combatSetOpponent(state, action) {
   const attackerId = action.attackerId ?? combat.attackerId ?? activePlayer(state)?.id ?? null;
 
   if (action.neutral) {
+    if (attackerId == null) return state;
     return withRound(state, {
-      combat: {
-        ...EMPTY_COMBAT,
-        active: true,
-        startedAt: at,
-        mode: 'neutral',
-        phase: 'pick',
-        attackerId,
-        defenderId: null,
-      },
+      combat: buildNeutralCombat(at, attackerId, combat.totals || {}),
     });
   }
 
@@ -344,70 +407,240 @@ function combatSetOpponent(state, action) {
   });
 }
 
+function combatSetNeutralCounts(state, action) {
+  const combat = combatOf(state);
+  if (!combat.active || combat.mode !== 'neutral') return state;
+  // setup/input: compose force; reveal: host removes casualties before assign.
+  if (combat.phase !== 'setup' && combat.phase !== 'input' && combat.phase !== 'reveal') {
+    return state;
+  }
+  const neutralCounts = sanitizeNeutralCounts(action.counts);
+  return withRound(state, { combat: { ...combat, neutralCounts } });
+}
+
+/** Leave setup → input once composition has at least one unit. */
+function combatBeginNeutral(state, action) {
+  const combat = combatOf(state);
+  if (!combat.active || combat.mode !== 'neutral' || combat.phase !== 'setup') return state;
+  const counts = sanitizeNeutralCounts(action.counts ?? combat.neutralCounts);
+  if (neutralUnitTotal(counts) < 1) return state;
+  const attackerId = combat.attackerId;
+  if (attackerId == null) return state;
+  return withRound(state, {
+    combat: {
+      ...combat,
+      neutralCounts: counts,
+      phase: 'input',
+      hits: emptyNeutralHits(attackerId),
+      assigned: emptyNeutralAssigned(attackerId),
+      neutralRoll: null,
+    },
+  });
+}
+
 function combatSetHits(state, action) {
   const combat = combatOf(state);
-  if (!combat.active || combat.mode !== 'pvp' || combat.phase !== 'input') return state;
+  if (!combat.active) return state;
   const playerId = action.playerId;
   if (playerId == null) return state;
-  if (!combatParticipantIds(combat).some((id) => String(id) === String(playerId))) return state;
 
-  const hitsVal = Math.max(0, Math.floor(Number(action.hits) || 0));
-  const hits = { ...(combat.hits || {}), [playerId]: hitsVal };
-  let next = { ...combat, hits };
-  if (bothHitsEntered(next)) {
-    next = {
-      ...next,
-      phase: 'reveal',
-      assigned: emptyPvpAssigned(next.attackerId, next.defenderId),
-    };
+  if (combat.mode === 'pvp') {
+    // Host steppers send adjust:true — change numbers without locking into reveal.
+    // Phones omit adjust — when both sides submitted, auto-advance to reveal.
+    const hostAdjust = !!action.adjust;
+    if (hostAdjust) {
+      if (combat.phase !== 'input' && combat.phase !== 'reveal') return state;
+    } else if (combat.phase !== 'input') {
+      return state;
+    }
+    if (!combatParticipantIds(combat).some((id) => String(id) === String(playerId))) return state;
+    const hitsVal = Math.max(0, Math.floor(Number(action.hits) || 0));
+    const hits = { ...(combat.hits || {}), [playerId]: hitsVal };
+    let next = { ...combat, hits };
+    if (hostAdjust) {
+      // Editing after lock-in: clear assign checkmarks so host can re-confirm.
+      if (combat.phase === 'reveal') {
+        next = {
+          ...next,
+          assigned: emptyPvpAssigned(next.attackerId, next.defenderId),
+        };
+      }
+      return withRound(state, { combat: next });
+    }
+    if (bothHitsEntered(next)) {
+      next = {
+        ...next,
+        phase: 'reveal',
+        assigned: emptyPvpAssigned(next.attackerId, next.defenderId),
+      };
+    }
+    return withRound(state, { combat: next });
   }
-  return withRound(state, { combat: next });
+
+  if (combat.mode === 'neutral') {
+    if (combat.phase !== 'input' && combat.phase !== 'rolling') return state;
+    if (String(playerId) !== String(combat.attackerId)) return state;
+    if (neutralUnitTotal(combat.neutralCounts) < 1) return state;
+    const hitsVal = Math.max(0, Math.floor(Number(action.hits) || 0));
+    // Host finishes the dice spectacle with a roll payload; phone only sends hits → rolling.
+    const completingRoll = action.neutralRoll != null
+      || Object.prototype.hasOwnProperty.call(action, 'neutralHits');
+
+    if (!completingRoll) {
+      if (combat.phase !== 'input') return state;
+      return withRound(state, {
+        combat: {
+          ...combat,
+          hits: {
+            [combat.attackerId]: hitsVal,
+            [NEUTRAL_OPPONENT_ID]: null,
+          },
+          neutralRoll: null,
+          phase: 'rolling',
+          assigned: emptyNeutralAssigned(combat.attackerId),
+        },
+      });
+    }
+
+    const neutralHits = Math.max(0, Math.floor(Number(action.neutralHits) || 0));
+    const neutralRoll = action.neutralRoll && typeof action.neutralRoll === 'object'
+      ? {
+        hits: neutralHits,
+        diceTotal: Math.max(0, Math.floor(Number(action.neutralRoll.diceTotal) || 0)),
+        details: Array.isArray(action.neutralRoll.details) ? action.neutralRoll.details : [],
+      }
+      : { hits: neutralHits, diceTotal: 0, details: [] };
+    // Prefer locked player hits from rolling phase if host only attaches the roll.
+    const playerHits = combat.phase === 'rolling' && combat.hits?.[combat.attackerId] != null
+      ? Math.max(0, Math.floor(Number(combat.hits[combat.attackerId]) || 0))
+      : hitsVal;
+
+    return withRound(state, {
+      combat: {
+        ...combat,
+        hits: {
+          [combat.attackerId]: playerHits,
+          [NEUTRAL_OPPONENT_ID]: neutralHits,
+        },
+        neutralRoll,
+        phase: 'reveal',
+        assigned: emptyNeutralAssigned(combat.attackerId),
+      },
+    });
+  }
+
+  return state;
 }
 
 function combatAssign(state, action) {
-  const combat = combatOf(state);
-  if (!combat.active || combat.mode !== 'pvp' || combat.phase !== 'reveal') return state;
+  let combat = combatOf(state);
+  if (!combat.active) return state;
+  // Host "Присвоить оба" from input: both hits already in → enter reveal, then assign.
+  if (
+    combat.mode === 'pvp'
+    && combat.phase === 'input'
+    && action.hostAdvance
+    && bothHitsEntered(combat)
+  ) {
+    combat = {
+      ...combat,
+      phase: 'reveal',
+      assigned: emptyPvpAssigned(combat.attackerId, combat.defenderId),
+    };
+  }
+  if (combat.phase !== 'reveal') return state;
   const playerId = action.playerId;
   if (playerId == null) return state;
-  if (!combatParticipantIds(combat).some((id) => String(id) === String(playerId))) return state;
 
-  const assigned = { ...(combat.assigned || {}), [playerId]: true };
-  let next = { ...combat, assigned };
-  if (bothAssigned(next)) {
-    const totals = { ...(next.totals || {}) };
-    for (const id of combatParticipantIds(next)) {
-      const dealt = Number(next.hits?.[id]) || 0;
-      totals[id] = (Number(totals[id]) || 0) + dealt;
-    }
-    const cleared = {
-      ...next,
-      totals,
-      hits: emptyPvpHits(next.attackerId, next.defenderId),
-      assigned: emptyPvpAssigned(next.attackerId, next.defenderId),
-    };
-    // After a declared retreat, finish this round then ask if retreat succeeded.
-    if (cleared.retreatPlayerId != null) {
-      next = { ...cleared, phase: 'retreat_check' };
-    } else {
-      next = {
-        ...cleared,
-        round: (Number(next.round) || 1) + 1,
-        phase: 'input',
+  if (combat.mode === 'pvp') {
+    if (!combatParticipantIds(combat).some((id) => String(id) === String(playerId))) return state;
+    const assigned = { ...(combat.assigned || {}), [playerId]: true };
+    let next = { ...combat, assigned };
+    if (bothAssigned(next)) {
+      const totals = { ...(next.totals || {}) };
+      for (const id of combatParticipantIds(next)) {
+        const dealt = Number(next.hits?.[id]) || 0;
+        totals[id] = (Number(totals[id]) || 0) + dealt;
+      }
+      const cleared = {
+        ...next,
+        totals,
+        hits: emptyPvpHits(next.attackerId, next.defenderId),
+        assigned: emptyPvpAssigned(next.attackerId, next.defenderId),
       };
+      if (cleared.retreatPlayerId != null) {
+        next = { ...cleared, phase: 'retreat_check' };
+      } else {
+        next = {
+          ...cleared,
+          round: (Number(next.round) || 1) + 1,
+          phase: 'input',
+        };
+      }
     }
+    return withRound(state, { combat: next });
   }
-  return withRound(state, { combat: next });
+
+  if (combat.mode === 'neutral') {
+    // Player assigns for self (attackerId); host assigns for neutrals (NEUTRAL_OPPONENT_ID + counts).
+    const isPlayerAssign = String(playerId) === String(combat.attackerId);
+    const isNeutralAssign = String(playerId) === NEUTRAL_OPPONENT_ID;
+    if (!isPlayerAssign && !isNeutralAssign) return state;
+
+    let nextCounts = combat.neutralCounts;
+    const assigned = { ...(combat.assigned || {}) };
+    if (isNeutralAssign) {
+      if (action.counts != null) nextCounts = sanitizeNeutralCounts(action.counts);
+      assigned[NEUTRAL_OPPONENT_ID] = true;
+    }
+    if (isPlayerAssign) {
+      assigned[combat.attackerId] = true;
+    }
+
+    let next = { ...combat, assigned, neutralCounts: nextCounts };
+    if (bothNeutralAssigned(next)) {
+      const totals = { ...(next.totals || {}) };
+      for (const id of combatSideIds(next)) {
+        const dealt = Number(next.hits?.[id]) || 0;
+        totals[id] = (Number(totals[id]) || 0) + dealt;
+      }
+      const cleared = {
+        ...next,
+        totals,
+        hits: emptyNeutralHits(next.attackerId),
+        assigned: emptyNeutralAssigned(next.attackerId),
+        neutralRoll: null,
+      };
+      if (cleared.retreatPlayerId != null) {
+        next = { ...cleared, phase: 'retreat_check' };
+      } else {
+        next = {
+          ...cleared,
+          round: (Number(next.round) || 1) + 1,
+          phase: 'input',
+        };
+      }
+    }
+    return withRound(state, { combat: next });
+  }
+
+  return state;
 }
 
 /** One participant announces retreat; current round must still be completed. */
 function combatDeclareRetreat(state, action) {
   const combat = combatOf(state);
-  if (!combat.active || combat.mode !== 'pvp') return state;
+  if (!combat.active) return state;
+  if (combat.mode !== 'pvp' && combat.mode !== 'neutral') return state;
   if (combat.phase !== 'input' && combat.phase !== 'reveal') return state;
   if (combat.retreatPlayerId != null) return state;
   const playerId = action.playerId;
   if (playerId == null) return state;
-  if (!combatParticipantIds(combat).some((id) => String(id) === String(playerId))) return state;
+  if (combat.mode === 'pvp') {
+    if (!combatParticipantIds(combat).some((id) => String(id) === String(playerId))) return state;
+  } else if (String(playerId) !== String(combat.attackerId)) {
+    return state;
+  }
   return withRound(state, {
     combat: { ...combat, retreatPlayerId: playerId },
   });
@@ -419,7 +652,8 @@ function combatDeclareRetreat(state, action) {
  */
 function combatResolveRetreat(state, action) {
   const combat = combatOf(state);
-  if (!combat.active || combat.mode !== 'pvp' || combat.phase !== 'retreat_check') return state;
+  if (!combat.active || combat.phase !== 'retreat_check') return state;
+  if (combat.mode !== 'pvp' && combat.mode !== 'neutral') return state;
   const retreatPlayerId = combat.retreatPlayerId;
   if (retreatPlayerId == null) return state;
 
@@ -430,14 +664,22 @@ function combatResolveRetreat(state, action) {
     });
   }
 
+  const hits = combat.mode === 'neutral'
+    ? emptyNeutralHits(combat.attackerId)
+    : emptyPvpHits(combat.attackerId, combat.defenderId);
+  const assigned = combat.mode === 'neutral'
+    ? emptyNeutralAssigned(combat.attackerId)
+    : emptyPvpAssigned(combat.attackerId, combat.defenderId);
+
   return withRound(state, {
     combat: {
       ...combat,
       retreatPlayerId: null,
       phase: 'input',
       round: (Number(combat.round) || 1) + 1,
-      hits: emptyPvpHits(combat.attackerId, combat.defenderId),
-      assigned: emptyPvpAssigned(combat.attackerId, combat.defenderId),
+      hits,
+      assigned,
+      neutralRoll: null,
     },
   });
 }
@@ -445,7 +687,7 @@ function combatResolveRetreat(state, action) {
 /** Fold current-round hits into totals for damage / result display. */
 function foldedCombatTotals(combat) {
   const totals = { ...(combat.totals || {}) };
-  for (const id of combatParticipantIds(combat)) {
+  for (const id of combatSideIds(combat)) {
     const roundHits = combat.hits?.[id];
     if (roundHits != null && Number.isFinite(Number(roundHits))) {
       totals[id] = (Number(totals[id]) || 0) + Math.max(0, Math.floor(Number(roundHits)));
@@ -454,21 +696,20 @@ function foldedCombatTotals(combat) {
   return totals;
 }
 
-/** Apply folded PvP damage and open the result screen. */
+/** Apply folded damage and open the result screen (PvP or neutral). */
 function finalizeCombatResult(state, { loserId, resultKind }) {
   const combat = combatOf(state);
-  if (!combat.active || combat.mode !== 'pvp') return state;
+  if (!combat.active || (combat.mode !== 'pvp' && combat.mode !== 'neutral')) return state;
   if (combat.phase === 'result') return state;
-  if (
-    loserId == null
-    || !combatParticipantIds(combat).some((id) => String(id) === String(loserId))
-  ) {
-    return state;
-  }
+  if (loserId == null) return state;
+
+  const sides = combatSideIds(combat);
+  if (!sides.some((id) => String(id) === String(loserId))) return state;
 
   const foldedTotals = foldedCombatTotals(combat);
   const damageByPlayerId = {};
-  for (const id of combatParticipantIds(combat)) {
+  for (const id of sides) {
+    if (String(id) === NEUTRAL_OPPONENT_ID) continue;
     const dealt = Number(foldedTotals[id]) || 0;
     if (dealt > 0) damageByPlayerId[id] = dealt;
   }
@@ -482,20 +723,26 @@ function finalizeCombatResult(state, { loserId, resultKind }) {
     ));
   }
 
-  const winnerId = combatParticipantIds(combat)
-    .find((id) => String(id) !== String(loserId)) ?? null;
+  const winnerId = sides.find((id) => String(id) !== String(loserId)) ?? null;
+  const clearedHits = combat.mode === 'neutral'
+    ? emptyNeutralHits(combat.attackerId)
+    : emptyPvpHits(combat.attackerId, combat.defenderId);
+  const clearedAssigned = combat.mode === 'neutral'
+    ? emptyNeutralAssigned(combat.attackerId)
+    : emptyPvpAssigned(combat.attackerId, combat.defenderId);
 
   return withRound(next, {
     combat: {
       ...combat,
       phase: 'result',
-      hits: emptyPvpHits(combat.attackerId, combat.defenderId),
-      assigned: emptyPvpAssigned(combat.attackerId, combat.defenderId),
+      hits: clearedHits,
+      assigned: clearedAssigned,
       totals: foldedTotals,
       winnerId,
       loserId,
       resultKind: resultKind === 'retreat' ? 'retreat' : 'defeat',
       retreatPlayerId: null,
+      neutralRoll: null,
     },
   });
 }
@@ -514,9 +761,9 @@ function combatDefeat(state, action) {
 
   const loserId = action.playerId ?? null;
   if (
-    combat.mode === 'pvp'
+    (combat.mode === 'pvp' || combat.mode === 'neutral')
     && loserId != null
-    && combatParticipantIds(combat).some((id) => String(id) === String(loserId))
+    && combatSideIds(combat).some((id) => String(id) === String(loserId))
   ) {
     return finalizeCombatResult(state, {
       loserId,
@@ -524,14 +771,15 @@ function combatDefeat(state, action) {
     });
   }
 
-  // Host abort / neutral: bank damage then close.
-  const foldedTotals = combat.mode === 'pvp' ? foldedCombatTotals(combat) : {};
+  // Host abort: bank player damage then close.
+  const foldedTotals = (combat.mode === 'pvp' || combat.mode === 'neutral')
+    ? foldedCombatTotals(combat)
+    : {};
   const damageByPlayerId = {};
-  if (combat.mode === 'pvp') {
-    for (const id of combatParticipantIds(combat)) {
-      const dealt = Number(foldedTotals[id]) || 0;
-      if (dealt > 0) damageByPlayerId[id] = dealt;
-    }
+  for (const id of combatSideIds(combat)) {
+    if (String(id) === NEUTRAL_OPPONENT_ID) continue;
+    const dealt = Number(foldedTotals[id]) || 0;
+    if (dealt > 0) damageByPlayerId[id] = dealt;
   }
 
   let next = state;
@@ -1165,6 +1413,19 @@ export function gameReducer(state, action) {
   const statusResult = reduceStatusPhase(state, action);
   if (statusResult != null) return statusResult;
 
+  const isPassBlocked = (s) => (
+    !!combatOf(s).active
+    || !!s.round?.strategyResolution?.active
+    || !!s.round?.imperialClaim?.active
+    || !!s.round?.techResearch?.active
+  );
+  const devResult = reduceDevTools(state, action, {
+    startRound,
+    endRound,
+    isPassBlocked,
+  });
+  if (devResult != null) return devResult;
+
   switch (action.type) {
     // --- Setup ---
     case 'SET_TARGET_SCORE':
@@ -1411,6 +1672,12 @@ export function gameReducer(state, action) {
 
     case 'COMBAT_SET_OPPONENT':
       return combatSetOpponent(state, action);
+
+    case 'COMBAT_SET_NEUTRAL_COUNTS':
+      return combatSetNeutralCounts(state, action);
+
+    case 'COMBAT_BEGIN_NEUTRAL':
+      return combatBeginNeutral(state, action);
 
     case 'COMBAT_SET_HITS':
       return combatSetHits(state, action);

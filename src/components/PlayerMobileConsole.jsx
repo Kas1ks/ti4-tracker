@@ -64,10 +64,6 @@ export function PlayerMobileConsole({
   objectives,
   completions,
   scoring,
-  onSelectPublic,
-  onToggleSecret,
-  onConfirmScoring,
-  onPassScoring,
   roundActive,
   canPlay,
   canNextTurn,
@@ -75,6 +71,9 @@ export function PlayerMobileConsole({
   combat = null,
   combatSessionTime = 0,
   onStartCombat,
+  onStartNeutral,
+  onSetNeutralCounts,
+  onBeginNeutral,
   onCombatSetHits,
   onCombatAssign,
   onCombatDeclareRetreat,
@@ -92,8 +91,6 @@ export function PlayerMobileConsole({
   const [techSheetPlayerId, setTechSheetPlayerId] = useState(null);
   const scoringActive = !!scoring?.active;
   const myResponse = me ? scoring?.responses?.[me.id] : null;
-  const currentScoringId = scoring?.orderIds?.[scoring?.currentIdx];
-  const isMyScoringTurn = scoringActive && me && me.id === currentScoringId;
   const isMyTurn = !!(me && activePlayer && activePlayer.id === me.id && !passed[me.id]);
 
   const openObjectives = (view = 'personal') => {
@@ -102,11 +99,7 @@ export function PlayerMobileConsole({
   };
 
   useEffect(() => {
-    if (scoringActive) {
-      setObjView('personal');
-      setTab('objectives');
-      return;
-    }
+    if (scoringActive) return;
     if (isMyTurn) setTab('turn');
   }, [scoringActive, isMyTurn]);
 
@@ -134,7 +127,6 @@ export function PlayerMobileConsole({
             meFaction={meFaction}
             myScore={myScore}
             targetScore={targetScore}
-            speakerId={speakerId}
             isMyTurn={isMyTurn}
             waiting={waiting}
             activePlayer={activePlayer}
@@ -156,6 +148,9 @@ export function PlayerMobileConsole({
             combat={combat}
             combatSessionTime={combatSessionTime}
             onStartCombat={onStartCombat}
+            onStartNeutral={onStartNeutral}
+            onSetNeutralCounts={onSetNeutralCounts}
+            onBeginNeutral={onBeginNeutral}
             onCombatSetHits={onCombatSetHits}
             onCombatAssign={onCombatAssign}
             onCombatDeclareRetreat={onCombatDeclareRetreat}
@@ -183,13 +178,6 @@ export function PlayerMobileConsole({
             onObjViewChange={setObjView}
             scoringActive={scoringActive}
             myResponse={myResponse}
-            isMyScoringTurn={isMyScoringTurn}
-            currentScoringId={currentScoringId}
-            scoringOrderIds={scoring?.orderIds || []}
-            onSelectPublic={onSelectPublic}
-            onToggleSecret={onToggleSecret}
-            onConfirmScoring={onConfirmScoring}
-            onPassScoring={onPassScoring}
           />
         </div>
 
@@ -257,12 +245,62 @@ export function PlayerMobileConsole({
   );
 }
 
+function strategyShortName(card) {
+  return String(card.ruName || card.name || '').replace(/^\d+\.\s*/, '');
+}
+
+/**
+ * Краткие тексты КС (базовая / PoK формулировка, сжато под UI).
+ * Правки текстов — сюда; имена карт из STRATEGY_CARDS.
+ */
+const STRATEGY_ABILITY_BLURBS = {
+  1: {
+    // Лидерство
+    primary: 'Получите 3 жетона приказов. Можете потратить влияние: +1 жетон за каждые 3 потраченных влияния.',
+    secondary: 'Потратьте 1 жетон приказа из пула стратегии → получите +1 жетон за каждые 3 потраченных влияния.',
+  },
+  2: {
+    // Дипломатия
+    primary: 'Выберите систему (не Мекатол). Каждый другой игрок кладёт туда жетон приказа из подкреплений. Подготовьте до 2-х своих истощённых планет.',
+    secondary: 'Потратьте 1 жетон из пула стратегии → Подготовьте до 2-х своих истощённых планет.',
+  },
+  3: {
+    // Политика
+    primary: 'Выберите игрока (не текущего спикера) — он получает жетон спикера. Возьмите 2 карты действий, посмотри 2 карты политики и верните обратно в колодну в нужном вам порядке.',
+    secondary: 'Потратьте 1 жетон из пула стратегии → возьмите 2 карты действий.',
+  },
+  4: {
+    // Строительство
+    primary: 'Используйте ПРОИЗВОДТВО одной из ваших баз и постройте одну постройку или постройте 2 постройки.',
+    secondary: 'Потратьте 1 жетон из пула стратегии → разместите 1 постройку на своей планете.',
+  },
+  5: {
+    // Торговля
+    primary: 'Получите 3 товара. Пополните продукцию, выберите количество игроков которые могут использовать второстепенное свойство бесплатно.',
+    secondary: 'Потратьте 1 жетон из пула стратегии → пополните продукцию.',
+  },
+  6: {
+    // Война
+    primary: 'Выполните тактическое действие не размещая жетон, даже если жетон есть система будет считать активной, может перераспределить жетоны стратегии',
+    secondary: 'Потратьте 1 жетон из пула стратегии → Используйте производство всех юнитов в родной системе.',
+  },
+  7: {
+    // Технологии
+    primary: 'Исследуйте 1 технологию. Можете потратить 6 ресурсов, чтобы исследовать ещё 1.',
+    secondary: 'Потратьте 1 жетон из пула стратегии и 4 ресурса → исследуйте 1 технологию.',
+  },
+  8: {
+    // Империя / Экспансия
+    primary: 'Если контролируете Мекатол Рекс — получите 1 ПО. Возьмите 1 секретную цель.',
+    secondary: 'Потратьте 1 жетон из пула стратегии → возьмите 1 секретную цель.',
+  },
+};
+
 function TurnTab({
   me,
   meFaction,
   myScore,
   targetScore,
-  speakerId,
   isMyTurn,
   waiting,
   activePlayer,
@@ -284,6 +322,9 @@ function TurnTab({
   combat = null,
   combatSessionTime = 0,
   onStartCombat,
+  onStartNeutral,
+  onSetNeutralCounts,
+  onBeginNeutral,
   onCombatSetHits,
   onCombatAssign,
   onCombatDeclareRetreat,
@@ -300,13 +341,11 @@ function TurnTab({
     : null;
 
   const activeAccent = activePlayer?.color || '#f87171';
-  const meAccent = me?.color || '#38bdf8';
-  const statusLabel = me?.id === speakerId ? 'Спикер' : passed[me?.id] ? 'Пас' : 'В игре';
-  const statusIcon = me?.id === speakerId
-    ? 'fa-landmark'
-    : passed[me?.id]
-      ? 'fa-flag'
-      : 'fa-user';
+  const resolvingCard = strategyResolutionActive && resolvingCardId != null
+    ? (strategyCards.find(c => c.id === resolvingCardId)
+      || STRATEGY_CARDS.find(c => c.id === resolvingCardId))
+    : null;
+  const passReady = canPlay && allStrategiesPlayed && !strategyResolutionActive;
 
   const openGuideFor = (factionId, playerName) => {
     if (!factionId) return;
@@ -325,13 +364,22 @@ function TurnTab({
       ? activePlayer?.name
       : null;
   const heroOpenable = !!heroFactionId;
+  const heroAvatar = isMyTurn ? meFaction : waiting ? activeFaction : null;
+  const heroColor = isMyTurn ? me?.color : waiting ? activePlayer?.color : null;
+
+  const renderHeroTimer = () => (
+    <div className="pt-hero-side">
+      <div className="pt-clock-label">ход</div>
+      <div className="pt-clock">{formatTime(turnTime)}</div>
+    </div>
+  );
 
   return (
     <div className="player-turn">
       <section
         className={`pt-hero ${isMyTurn ? 'is-mine' : waiting ? 'is-wait' : 'is-idle'}${
           heroOpenable ? ' is-openable' : ''
-        }`}
+        }${strategyResolutionActive && isMyTurn ? ' is-resolving' : ''}`}
         style={{
           '--pt-accent': isMyTurn ? '#e8c547' : waiting ? activeAccent : '#64748b',
         }}
@@ -350,16 +398,24 @@ function TurnTab({
         }}
       >
         {isMyTurn ? (
-          <>
-            <div className="pt-hero-main">
-              <div className="pt-hero-copy">
-                <div className="pt-hero-title">Ваш ход</div>
-              </div>
-              <div className="pt-hero-side">
-                <div className="pt-clock">{formatTime(turnTime)}</div>
-              </div>
+          <div className="pt-hero-main">
+            <div className="pt-avatar" style={factionIconBorder(heroColor)}>
+              <img src={heroAvatar?.iconUrl} alt="" />
             </div>
-          </>
+            <div className="pt-hero-copy">
+              <div className="pt-kicker is-gold">Ваш ход</div>
+              <div className="pt-hero-title truncate">{me?.name || 'Вы'}</div>
+              {strategyResolutionActive ? (
+                <div className="pt-hero-sub is-busy">
+                  Розыгрыш
+                  {resolvingCard ? `: ${strategyShortName(resolvingCard)}` : ' стратегии'}
+                </div>
+              ) : (
+                <div className="pt-hero-sub truncate">{meFaction?.name || ''}</div>
+              )}
+            </div>
+            {renderHeroTimer()}
+          </div>
         ) : waiting ? (
           <div className="pt-hero-main">
             <div className="pt-avatar" style={factionIconBorder(activePlayer.color)}>
@@ -368,10 +424,9 @@ function TurnTab({
             <div className="pt-hero-copy">
               <div className="pt-kicker">Сейчас ходит</div>
               <div className="pt-hero-title truncate">{activePlayer.name}</div>
+              <div className="pt-hero-sub truncate">{activeFaction?.name || ''}</div>
             </div>
-            <div className="pt-hero-side">
-              <div className="pt-clock">{formatTime(turnTime)}</div>
-            </div>
+            {renderHeroTimer()}
           </div>
         ) : (
           <div className="pt-hero-idle">
@@ -396,76 +451,93 @@ function TurnTab({
       />
 
       {me && (
-        <div className="pt-stats">
-          <div className="pt-stat is-cyan">
-            <div className="pt-stat-label">ПО</div>
-            <div className="pt-stat-value">
-              <span>{myScore}</span>
-              <small>/ {targetScore}</small>
-            </div>
+        <div className="pt-stats is-compact is-two" aria-label="Ваши показатели">
+          <div className="pt-stat-chip is-cyan">
+            <i className="fa-solid fa-trophy pt-stat-chip-ico" aria-hidden="true" />
+            <span className="pt-stat-chip-k">ПО</span>
+            <span className="pt-stat-chip-v">{myScore}<small> / {targetScore}</small></span>
           </div>
-          <div className="pt-stat is-violet">
-            <div className="pt-stat-label">Секреты</div>
-            <div className="pt-stat-value">
-              <i className="fa-solid fa-lock pt-stat-ico" aria-hidden="true" />
-              <span>{me.secrets ?? 0}</span>
-            </div>
-          </div>
-          <div className="pt-stat is-gold">
-            <div className="pt-stat-label">Статус</div>
-            <div className="pt-stat-value is-sm">
-              <i className={`fa-solid ${statusIcon} pt-stat-ico`} aria-hidden="true" />
-              <span>{statusLabel}</span>
-            </div>
+          <div className="pt-stat-chip is-violet">
+            <i className="fa-solid fa-scroll pt-stat-chip-ico" aria-hidden="true" />
+            <span className="pt-stat-chip-k">Секреты</span>
+            <span className="pt-stat-chip-v">{me.secrets ?? 0}</span>
           </div>
         </div>
       )}
 
-      {me && (
-        <section className="pt-me" style={{ '--pt-accent': meAccent }}>
-          <div className="pt-avatar" style={factionIconBorder(me.color)}>
-            <img src={meFaction?.iconUrl} alt={meFaction?.name || ''} />
-          </div>
-          <div className="pt-me-copy">
-            <div className="pt-me-name truncate">{me.name}</div>
-            <div className="pt-me-faction truncate">{meFaction?.name}</div>
-          </div>
-          <div className="pt-me-side">
-            <div className="pt-me-total-label">Всего</div>
-            <div className="pt-me-total">{formatTime(me.totalTime || 0)}</div>
-          </div>
-          <i className="fa-solid fa-chevron-right pt-me-chev" aria-hidden="true" />
-        </section>
-      )}
-
       {isMyTurn && strategyCards.length > 0 && (
         <div className="pt-cards">
-          <div className="pt-kicker">Карты стратегии</div>
+          <div className="pt-section-head">
+            <span className="pt-kicker is-gold">
+              {strategyCards.length === 1 ? 'Карта стратегии' : 'Карты стратегии'}
+            </span>
+            <i className="fa-solid fa-circle-info pt-section-info" aria-hidden="true" title="Основное и вторичное действие" />
+          </div>
           {strategyCards.map(card => {
             const livePlayed = isStrategyCardPlayed(activePlayer || me, card.id);
             const resolving = strategyResolutionActive && resolvingCardId === card.id;
             const blockedThisTurn = !livePlayed && strategyActionTaken && !resolving;
             const disabled = !canPlay || livePlayed || blockedThisTurn || resolving;
+            const btnClass = livePlayed
+              ? 'is-done'
+              : resolving
+                ? 'is-busy'
+                : blockedThisTurn || !canPlay
+                  ? 'is-off'
+                  : 'is-play';
+            const btnLabel = livePlayed
+              ? 'Сыграна'
+              : resolving
+                ? 'Розыгрыш…'
+                : blockedThisTurn
+                  ? 'Позже'
+                  : 'Сыграть карту';
+            const blurbs = STRATEGY_ABILITY_BLURBS[card.id];
             return (
-              <div key={card.id} className="pt-card">
-                <img
-                  src={card.imageUrl || STRATEGY_CARDS.find(c => c.id === card.id)?.imageUrl}
-                  alt={card.ruName || card.name}
-                  className="pt-card-art"
-                />
-                <div className="pt-card-meta">
-                  <div className="pt-card-id">#{card.id}</div>
-                  <div className="pt-card-name">{card.ruName || card.name}</div>
+              <div
+                key={card.id}
+                className={`pt-card is-block${livePlayed ? ' is-played' : ''}${resolving ? ' is-resolving' : ''}`}
+              >
+                <div className="pt-card-body">
+                  <img
+                    src={card.imageUrl || STRATEGY_CARDS.find(c => c.id === card.id)?.imageUrl}
+                    alt=""
+                    className="pt-card-art"
+                  />
+                  <div className="pt-card-meta">
+                    <div className="pt-card-title">
+                      <span className="pt-card-id">#{card.id}</span>
+                      {' '}
+                      {strategyShortName(card)}
+                    </div>
+                    {blurbs && (
+                      <div className="pt-card-abilities">
+                        <div className="pt-ability">
+                          <i className="fa-solid fa-users pt-ability-ico is-primary" aria-hidden="true" />
+                          <p>{blurbs.primary}</p>
+                        </div>
+                        <div className="pt-ability">
+                          <i className="fa-solid fa-arrow-right-arrow-left pt-ability-ico is-secondary" aria-hidden="true" />
+                          <p>{blurbs.secondary}</p>
+                        </div>
+                      </div>
+                    )}
+                    {blockedThisTurn && (
+                      <div className="pt-card-hint">Вторая карта — на следующем ходу</div>
+                    )}
+                  </div>
                 </div>
                 <button
                   type="button"
                   disabled={disabled}
                   onClick={() => onPlayStrategy(card.id)}
-                  className={`pt-card-btn ${
-                    livePlayed ? 'is-done' : resolving ? 'is-busy' : blockedThisTurn || !canPlay ? 'is-off' : 'is-play'
-                  }`}
+                  className={`pt-card-btn ${btnClass}`}
                 >
-                  {livePlayed ? '✓' : resolving ? '…' : blockedThisTurn ? 'Позже' : 'Сыграть'}
+                  {!livePlayed && !resolving && !blockedThisTurn && canPlay && (
+                    <i className="fa-solid fa-play" aria-hidden="true" />
+                  )}
+                  {livePlayed && <i className="fa-solid fa-check" aria-hidden="true" />}
+                  {btnLabel}
                 </button>
               </div>
             );
@@ -474,48 +546,65 @@ function TurnTab({
       )}
 
       {isMyTurn && (
-        <div className="pt-actions">
-          {canNextTurn ? (
-            <button type="button" onClick={onNextTurn} className="pt-action is-primary">
-              Завершить ход <i className="fa-solid fa-forward" aria-hidden="true" />
-            </button>
-          ) : strategyResolutionActive ? (
-            <button type="button" disabled className="pt-action is-off" title="Дождитесь окончания розыгрыша карты стратегии">
-              Завершить ход <i className="fa-solid fa-forward" aria-hidden="true" />
-            </button>
-          ) : null}
-          <PlayerCombatSheet
-            me={me}
-            players={players}
-            combat={combat}
-            combatSessionTime={combatSessionTime}
-            canStartCombat={canCombat && !strategyResolutionActive}
-            onStartCombat={onStartCombat}
-            onSetHits={onCombatSetHits}
-            onAssign={onCombatAssign}
-            onDeclareRetreat={onCombatDeclareRetreat}
-            onResolveRetreat={onCombatResolveRetreat}
-            onDefeat={onCombatDefeat}
-            onDismissResult={onCombatDismissResult}
-          />
-          {canPlay && (
-            <button
-              type="button"
-              onClick={() => onPassTurn(me.id)}
-              disabled={!allStrategiesPlayed || strategyResolutionActive}
-              title={
-                strategyResolutionActive
-                  ? 'Дождитесь окончания розыгрыша карты стратегии'
-                  : !allStrategiesPlayed
-                    ? 'Сначала сыграйте все карты стратегии'
-                    : ''
-              }
-              className={`pt-action ${allStrategiesPlayed && !strategyResolutionActive ? 'is-danger' : 'is-off'}`}
-            >
-              Пас
-            </button>
-          )}
-        </div>
+        <>
+          <div className="pt-section-head">
+            <span className="pt-kicker">Быстрые действия</span>
+          </div>
+          <div className="pt-actions is-quick">
+            <PlayerCombatSheet
+              me={me}
+              players={players}
+              combat={combat}
+              combatSessionTime={combatSessionTime}
+              canStartCombat={canCombat && !strategyResolutionActive}
+              onStartCombat={onStartCombat}
+              onStartNeutral={onStartNeutral}
+              onSetNeutralCounts={onSetNeutralCounts}
+              onBeginNeutral={onBeginNeutral}
+              onSetHits={onCombatSetHits}
+              onAssign={onCombatAssign}
+              onDeclareRetreat={onCombatDeclareRetreat}
+              onResolveRetreat={onCombatResolveRetreat}
+              onDefeat={onCombatDefeat}
+              onDismissResult={onCombatDismissResult}
+            />
+            {canPlay && (
+              <button
+                type="button"
+                onClick={() => onPassTurn(me.id)}
+                disabled={!passReady}
+                title={
+                  strategyResolutionActive
+                    ? 'Дождитесь окончания розыгрыша карты стратегии'
+                    : !allStrategiesPlayed
+                      ? 'Сначала сыграйте все карты стратегии'
+                      : ''
+                }
+                className={`pt-action is-pass${passReady ? '' : ' is-off'}`}
+              >
+                <i className="fa-solid fa-forward-fast" aria-hidden="true" />
+                Пас
+              </button>
+            )}
+          </div>
+
+          <button
+            type="button"
+            onClick={canNextTurn ? onNextTurn : undefined}
+            disabled={!canNextTurn}
+            title={
+              !canNextTurn && strategyResolutionActive
+                ? 'Дождитесь окончания розыгрыша карты стратегии'
+                : !canNextTurn
+                  ? 'Сначала завершите действия хода'
+                  : undefined
+            }
+            className={`pt-action is-primary is-wide${!canNextTurn ? ' is-off' : ''}`}
+          >
+            Завершить ход
+            <i className="fa-solid fa-forward" aria-hidden="true" />
+          </button>
+        </>
       )}
 
       {!isMyTurn && (
@@ -525,6 +614,9 @@ function TurnTab({
           combat={combat}
           combatSessionTime={combatSessionTime}
           canStartCombat={false}
+          onStartNeutral={onStartNeutral}
+          onSetNeutralCounts={onSetNeutralCounts}
+          onBeginNeutral={onBeginNeutral}
           onSetHits={onCombatSetHits}
           onAssign={onCombatAssign}
           onDeclareRetreat={onCombatDeclareRetreat}
@@ -542,11 +634,19 @@ function TurnTab({
       )}
 
       {typeof onOpenProduction === 'function' && (
-        <button type="button" onClick={onOpenProduction} className="pt-prod">
-          <i className="fa-solid fa-industry" aria-hidden="true" />
-          <span>Калькулятор производства</span>
-          <i className="fa-solid fa-chevron-right" aria-hidden="true" />
-        </button>
+        <div className="pt-tools">
+          <div className="pt-section-head">
+            <span className="pt-kicker">Инструменты</span>
+          </div>
+          <button type="button" onClick={onOpenProduction} className="pt-prod">
+            <i className="fa-solid fa-industry" aria-hidden="true" />
+            <span className="pt-prod-copy">
+              <span className="pt-prod-title">Калькулятор производства</span>
+              <span className="pt-prod-sub">Расчёт стоимости и планирование</span>
+            </span>
+            <i className="fa-solid fa-chevron-right" aria-hidden="true" />
+          </button>
+        </div>
       )}
     </div>
   );
@@ -566,13 +666,6 @@ function ObjectivesTab({
   onObjViewChange,
   scoringActive,
   myResponse,
-  isMyScoringTurn,
-  currentScoringId,
-  scoringOrderIds,
-  onSelectPublic,
-  onToggleSecret,
-  onConfirmScoring,
-  onPassScoring,
 }) {
   const [expanded, setExpanded] = useState({});
 
@@ -580,10 +673,6 @@ function ObjectivesTab({
     return <div className="text-sm text-slate-500 text-center py-8">Место не назначено</div>;
   }
 
-  const canScore = scoringActive && isMyScoringTurn && myResponse?.status === 'pending';
-  const currentPlayer = currentScoringId != null
-    ? players.find(p => p.id === currentScoringId)
-    : null;
   const activeSeats = players.filter(p => !p.eliminated);
   const stages = [
     { stage: 1, title: 'Этап I · 1 ПО', color: 'text-blue-400' },
@@ -594,118 +683,6 @@ function ObjectivesTab({
   const toggleExpand = (id) => {
     setExpanded(prev => ({ ...prev, [id]: !prev[id] }));
   };
-
-  const scoringBanner = scoringActive ? (
-    <div className="rounded-2xl border border-amber-500/40 bg-amber-950/20 p-3 space-y-2">
-      <div className="text-xs font-orbitron font-bold uppercase text-amber-300">
-        Окно скоринга · по инициативе
-      </div>
-      {canScore ? (
-        <p className="text-xs text-slate-400 leading-relaxed">
-          Ваш ход. Можно отметить <span className="text-slate-200 font-bold">1 общую</span> и{' '}
-          <span className="text-slate-200 font-bold">1 секретную</span>, затем подтвердить или спасовать.
-        </p>
-      ) : myResponse?.status === 'pending' ? (
-        <p className="text-xs text-slate-400 leading-relaxed">
-          Сейчас скорит{' '}
-          <span className="text-amber-200 font-bold">{currentPlayer?.name || '…'}</span>
-          . Ожидайте своей очереди.
-        </p>
-      ) : null}
-      {myResponse?.status === 'done' && (
-        <p className="text-xs text-emerald-400 font-bold">Вы подтвердили достижение.</p>
-      )}
-      {myResponse?.status === 'passed' && (
-        <p className="text-xs text-slate-500 font-bold">Вы спасовали.</p>
-      )}
-      {scoringOrderIds.length > 0 && (
-        <ol className="flex flex-wrap gap-1.5 pt-1">
-          {scoringOrderIds.map((id, idx) => {
-            const p = players.find(pl => pl.id === id);
-            if (!p) return null;
-            const isCurrent = id === currentScoringId;
-            return (
-              <li
-                key={id}
-                className={`inline-flex items-center gap-1 text-xs font-bold px-1.5 py-0.5 rounded-md border ${
-                  isCurrent
-                    ? 'border-amber-400/60 bg-amber-500/15 text-amber-100'
-                    : 'border-slate-700 bg-slate-950 text-slate-400'
-                }`}
-              >
-                <span className="text-slate-600">{idx + 1}</span>
-                <span
-                  className="w-2 h-2 rounded-full flex-shrink-0"
-                  style={{ backgroundColor: p.color || '#64748b' }}
-                />
-                {p.name}
-                {id === me.id && myResponse?.status === 'done' ? ' ✓' : ''}
-                {id === me.id && myResponse?.status === 'passed' ? ' —' : ''}
-              </li>
-            );
-          })}
-        </ol>
-      )}
-    </div>
-  ) : (
-    <p className="text-xs text-slate-500 px-0.5">
-      {isPersonal
-        ? 'Ваши отметки по открытым целям. Чужие достижения — во вкладке «Общая».'
-        : 'Скоринг доступен только когда хост открывает «Достижение целей» в фазе статуса.'}
-    </p>
-  );
-
-  const secretToggle = canScore && isPersonal ? (
-    <button
-      type="button"
-      onClick={() => onToggleSecret(me.id)}
-      className={`w-full text-left rounded-2xl border p-3 transition active:scale-[0.99] ${
-        myResponse?.secret
-          ? 'border-[var(--game-line-gold)] bg-[rgba(201,162,39,0.12)]'
-          : 'border-[var(--game-line)] bg-[rgba(8,10,16,0.82)]'
-      }`}
-    >
-      <div className="flex items-start gap-3">
-        <span
-          className={`mt-0.5 w-6 h-6 rounded-lg border flex items-center justify-center text-xs flex-shrink-0 ${
-            myResponse?.secret
-              ? 'bg-[var(--game-gold)] border-[var(--game-gold-bright)] text-black'
-              : 'border-slate-600 text-transparent'
-          }`}
-        >
-          ✓
-        </span>
-        <div className="min-w-0 flex-1">
-          <div className={`text-sm font-bold ${myResponse?.secret ? 'text-purple-200' : 'text-slate-100'}`}>
-            Секретная цель (+1 ПО)
-          </div>
-          <div className="text-xs text-slate-500 mt-1 font-bold uppercase">
-            Сейчас секретов: {me.secrets ?? 0}/3
-            {me.secrets >= 3 && !myResponse?.secret ? ' · лимит' : ''}
-          </div>
-        </div>
-      </div>
-    </button>
-  ) : null;
-
-  const scoreActions = canScore && isPersonal ? (
-    <div className="sticky bottom-0 pt-2 space-y-2 bg-gradient-to-t from-slate-950 via-slate-950 to-transparent">
-      <button
-        type="button"
-        onClick={() => onConfirmScoring(me.id)}
-        className="w-full py-3 rounded-2xl bg-emerald-500 text-black font-orbitron font-black text-xs uppercase tracking-wide"
-      >
-        Подтвердить достижение
-      </button>
-      <button
-        type="button"
-        onClick={() => onPassScoring(me.id)}
-        className="w-full py-3 rounded-2xl bg-slate-800 border border-slate-700 text-slate-300 font-bold text-xs uppercase tracking-wide"
-      >
-        Пас (не достигаю)
-      </button>
-    </div>
-  ) : null;
 
   return (
     <div className="space-y-4 pt-1 pb-2">
@@ -725,8 +702,11 @@ function ObjectivesTab({
         ))}
       </div>
 
-      {scoringBanner}
-      {secretToggle}
+      <p className="text-xs text-slate-500 px-0.5">
+        {isPersonal
+          ? 'Ваши отметки по открытым целям. Чужие достижения — во вкладке «Общая».'
+          : 'Справочник открытых целей и кто их уже засчитал.'}
+      </p>
 
       {isPersonal ? (
         <>
@@ -748,32 +728,16 @@ function ObjectivesTab({
                 </div>
                 {list.map((obj) => {
                   const mine = !!completions[`${me.id}_${obj.id}`];
-                  const scoredThisWindow = myResponse?.publicId === obj.id;
-                  const ownedBefore = mine && !scoredThisWindow;
-                  const interactive = canScore && !ownedBefore;
-                  const selectedNow = canScore && scoredThisWindow;
-                  const done = mine || selectedNow;
-                  /* Выполненные — узкая полоска; выбор в окне скоринга остаётся развёрнутым */
-                  const collapsed = mine && !selectedNow;
+                  const scoredThisWindow = scoringActive && myResponse?.publicId === obj.id;
+                  const done = mine || scoredThisWindow;
+                  const collapsed = mine && !scoredThisWindow;
 
                   return (
                     <div
                       key={obj.id}
-                      role={interactive ? 'button' : undefined}
-                      tabIndex={interactive ? 0 : undefined}
-                      onClick={() => {
-                        if (interactive) onSelectPublic(me.id, obj.id);
-                      }}
-                      onKeyDown={(e) => {
-                        if (!interactive) return;
-                        if (e.key === 'Enter' || e.key === ' ') {
-                          e.preventDefault();
-                          onSelectPublic(me.id, obj.id);
-                        }
-                      }}
                       className={`pm-obj-card is-personal is-stage${stage}${done ? ' is-done' : ''}${
                         collapsed ? ' is-collapsed' : ''
-                      }${interactive ? ' is-interactive' : ''}`}
+                      }`}
                       style={{ '--pm-obj-bg': `url(${OBJ_STAGE_BG[stage]})` }}
                     >
                       <div className="flex gap-3 items-center">
@@ -799,9 +763,14 @@ function ObjectivesTab({
                           >
                             {obj.desc}
                           </span>
-                          {ownedBefore && !collapsed && (
+                          {mine && !scoredThisWindow && !collapsed && (
                             <div className="text-xs text-slate-500 mt-1 font-bold uppercase">
                               Уже засчитано
+                            </div>
+                          )}
+                          {scoredThisWindow && !mine && (
+                            <div className="text-xs text-amber-400/90 mt-1 font-bold uppercase">
+                              Выбрано в окне скоринга
                             </div>
                           )}
                         </div>
@@ -923,8 +892,6 @@ function ObjectivesTab({
           Цели ещё не раскрыты
         </div>
       )}
-
-      {scoreActions}
     </div>
   );
 }

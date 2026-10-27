@@ -13,6 +13,7 @@ import { useGameDialogs } from './hooks/useGameDialogs';
 import { AppDialog } from './components/AppDialog';
 import { GameHeader } from './components/GameHeader';
 import { ActiveTurnBar } from './components/ActiveTurnBar';
+import { DevToolsPanel } from './components/DevToolsPanel';
 import { MinimizedModalControls } from './components/MinimizedModalControls';
 import { LazyWhen } from './components/LazyWhen';
 import { RoomHub } from './components/RoomHub';
@@ -129,7 +130,14 @@ function App() {
     showModal: showPoliticsModal, step: politicsStep, agendas, currentAgendaIndex,
     influenceLocked, voteReversed, oneVoteLaw,
   } = game.politics;
-  const { show: showStatusPhaseModal, checks: statusPhaseChecks, scoring: objectiveScoring } = game.statusPhase;
+  const {
+    show: showStatusPhaseModal,
+    checks: statusPhaseChecks,
+    scoring: objectiveScoring,
+    revealShow: statusRevealShow,
+  } = game.statusPhase;
+  const [spotlightObjectiveId, setSpotlightObjectiveId] = useState(null);
+  const [spotlightReady, setSpotlightReady] = useState(false);
 
   const turnOrder = select.turnOrder(game);
   const activePlayer = select.activePlayer(game);
@@ -299,6 +307,44 @@ function App() {
       ui.focusBlockingModal('statusPhase');
     }
   }, [objectiveScoring?.active, showStatusPhaseModal]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Host checked «Раскрытие новой цели»:
+  // collapse status → deal new card → hold → expand status again.
+  const STATUS_EXIT_MS = 380;
+  const REVEAL_SPOTLIGHT_MS = 7000;
+  useEffect(() => {
+    if (!statusRevealShow?.at || !showStatusPhaseModal || objectiveScoring?.active) {
+      setSpotlightObjectiveId(null);
+      setSpotlightReady(false);
+      return undefined;
+    }
+    const elapsed = Date.now() - statusRevealShow.at;
+    if (elapsed >= REVEAL_SPOTLIGHT_MS) {
+      setSpotlightObjectiveId(null);
+      setSpotlightReady(false);
+      return undefined;
+    }
+
+    ui.ensureMinimized('statusPhase');
+    setSpotlightObjectiveId(statusRevealShow.objectiveId || null);
+    setSpotlightReady(elapsed >= STATUS_EXIT_MS);
+
+    const timers = [];
+    const cardDelay = Math.max(0, STATUS_EXIT_MS - elapsed);
+    if (cardDelay > 0) {
+      timers.push(window.setTimeout(() => setSpotlightReady(true), cardDelay));
+    }
+
+    timers.push(window.setTimeout(() => {
+      setSpotlightReady(false);
+      setSpotlightObjectiveId(null);
+      if (!objectiveScoring?.active) {
+        ui.ensureExpanded('statusPhase');
+      }
+    }, REVEAL_SPOTLIGHT_MS - elapsed));
+
+    return () => timers.forEach((id) => window.clearTimeout(id));
+  }, [statusRevealShow?.at, statusRevealShow?.objectiveId, showStatusPhaseModal, objectiveScoring?.active]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (strategyResolution?.active) {
@@ -550,6 +596,28 @@ function App() {
         />
       )}
 
+      {import.meta.env.DEV && isHostClient && isGameActive && !victoryLocked && (
+        <DevToolsPanel
+          canSkipDraft={
+            !roundActive
+            && (!canStartRound || select.isDraftInProgress(game))
+          }
+          canPassAll={
+            !!roundActive
+            && !showStatusPhaseModal
+            && !objectiveScoring?.active
+            && !combatActive
+            && !strategyResolution?.active
+            && !imperialClaim?.active
+            && !techResearch?.active
+          }
+          canSkipStatus={!!showStatusPhaseModal || !!objectiveScoring?.active}
+          onSkipDraft={() => dispatch({ type: 'DEV_SKIP_STRATEGY_DRAFT' })}
+          onPassAll={() => dispatch({ type: 'DEV_PASS_ALL' })}
+          onSkipStatus={() => dispatch({ type: 'DEV_SKIP_STATUS_PHASE' })}
+        />
+      )}
+
       {!showHub && !showAdminSetup && (
         <GameHeader
           isGameActive={isGameActive}
@@ -730,10 +798,6 @@ function App() {
                   objectives={objectives}
                   completions={completions}
                   scoring={objectiveScoring}
-                  onSelectPublic={(playerId, objectiveId) => dispatch({ type: 'SELECT_SCORING_PUBLIC', playerId, objectiveId })}
-                  onToggleSecret={(playerId) => dispatch({ type: 'TOGGLE_SCORING_SECRET', playerId })}
-                  onConfirmScoring={(playerId) => dispatch({ type: 'CONFIRM_OBJECTIVE_SCORING', playerId })}
-                  onPassScoring={(playerId) => dispatch({ type: 'PASS_OBJECTIVE_SCORING', playerId })}
                   roundActive={roundActive}
                   canPlay={
                     !victoryLocked
@@ -767,10 +831,25 @@ function App() {
                     attackerId: mySeatPlayer?.id,
                     defenderId,
                   })}
-                  onCombatSetHits={(playerId, hits) => dispatch({
+                  onStartNeutral={() => dispatch({
+                    type: 'START_COMBAT',
+                    mode: 'neutral',
+                    attackerId: mySeatPlayer?.id,
+                  })}
+                  onSetNeutralCounts={(counts) => dispatch({
+                    type: 'COMBAT_SET_NEUTRAL_COUNTS',
+                    counts,
+                  })}
+                  onBeginNeutral={(counts) => dispatch({
+                    type: 'COMBAT_BEGIN_NEUTRAL',
+                    counts,
+                  })}
+                  onCombatSetHits={(playerId, hits, extra) => dispatch({
                     type: 'COMBAT_SET_HITS',
                     playerId,
                     hits,
+                    ...(extra?.neutralHits != null ? { neutralHits: extra.neutralHits } : {}),
+                    ...(extra?.neutralRoll ? { neutralRoll: extra.neutralRoll } : {}),
                   })}
                   onCombatAssign={(playerId) => dispatch({
                     type: 'COMBAT_ASSIGN',
@@ -844,6 +923,8 @@ function App() {
                 sortedPlayersForBoard={sortedPlayersForBoard}
                 getPlayerScore={getPlayerScore}
                 players={players}
+                spotlightObjectiveId={spotlightObjectiveId}
+                spotlightReady={spotlightReady}
                 adjustSecrets={(playerId, delta) => dispatch({ type: 'ADJUST_SECRETS', playerId, delta })}
                 adjustMecatol={(playerId, delta) => dispatch({ type: 'ADJUST_MECATOL', playerId, delta })}
                 vpTrack={game.vpTrack}
@@ -911,7 +992,7 @@ function App() {
             checks={statusPhaseChecks}
             scoring={objectiveScoring}
             players={players}
-            onCheck={(key) => dispatch({ type: 'TOGGLE_STATUS_CHECK', key })}
+            onCheck={(key) => dispatch({ type: 'TOGGLE_STATUS_CHECK', key, at: Date.now() })}
             onStartScoring={() => {
               ui.ensureMinimized('statusPhase');
               dispatch({ type: 'START_OBJECTIVE_SCORING' });
@@ -1062,7 +1143,7 @@ function App() {
             onSetAgendaType={(agendaType) => dispatch({ type: 'SET_AGENDA_TYPE', agendaType })}
             onSetCustomChoices={(choices) => dispatch({ type: 'SET_AGENDA_CUSTOM_CHOICES', choices })}
             onSetVote={(playerId, vote) => dispatch({ type: 'SET_VOTE', playerId, vote })}
-            onLockVote={(playerId) => dispatch({ type: 'LOCK_VOTE', playerId })}
+            onLockVote={(playerId, vote) => dispatch({ type: 'LOCK_VOTE', playerId, vote })}
             onSetInfluence={(playerId, influence, planets) => dispatch({
               type: 'SET_INFLUENCE',
               playerId,
@@ -1097,10 +1178,8 @@ function App() {
               if (combat?.active) {
                 if (combat.phase === 'result') {
                   dispatch({ type: 'END_COMBAT' });
-                } else if (combat.mode === 'pvp') {
-                  dispatch({ type: 'COMBAT_DEFEAT' });
                 } else {
-                  dispatch({ type: 'END_COMBAT' });
+                  dispatch({ type: 'COMBAT_DEFEAT' });
                 }
               }
               ui.setShowCombatModal(false);
@@ -1128,14 +1207,37 @@ function App() {
                 defenderId: opts?.defenderId,
               });
             }}
-            onSetHits={(playerId, hits) => dispatch({ type: 'COMBAT_SET_HITS', playerId, hits })}
-            onAssign={(playerId) => dispatch({ type: 'COMBAT_ASSIGN', playerId })}
+            onSetNeutralCounts={(counts) => dispatch({
+              type: 'COMBAT_SET_NEUTRAL_COUNTS',
+              counts,
+            })}
+            onBeginNeutral={(counts) => dispatch({
+              type: 'COMBAT_BEGIN_NEUTRAL',
+              counts,
+            })}
+            onSetHits={(playerId, hits, extra) => dispatch({
+              type: 'COMBAT_SET_HITS',
+              playerId,
+              hits,
+              ...(extra?.adjust ? { adjust: true } : {}),
+              ...(extra?.neutralHits != null ? { neutralHits: extra.neutralHits } : {}),
+              ...(extra?.neutralRoll ? { neutralRoll: extra.neutralRoll } : {}),
+            })}
+            onAssign={(playerId, extra) => dispatch({
+              type: 'COMBAT_ASSIGN',
+              playerId,
+              ...(extra?.hostAdvance ? { hostAdvance: true } : {}),
+              ...(extra?.counts ? { counts: extra.counts } : {}),
+            })}
             onDeclareRetreat={(playerId) => dispatch({ type: 'COMBAT_DECLARE_RETREAT', playerId })}
             onResolveRetreat={(success) => dispatch({
               type: 'COMBAT_RESOLVE_RETREAT',
               success: !!success,
             })}
-            onDefeat={() => dispatch({ type: 'COMBAT_DEFEAT' })}
+            onDefeat={(loserId) => dispatch({
+              type: 'COMBAT_DEFEAT',
+              ...(loserId != null ? { playerId: loserId } : {}),
+            })}
             onRecordDamage={(damageByPlayerId) => dispatch({ type: 'ADD_COMBAT_DAMAGE', damageByPlayerId })}
             combatHits={ui.combatHits}
             setCombatHits={ui.setCombatHits}
@@ -1304,7 +1406,10 @@ function App() {
         minimizedModals={ui.minimizedModals}
         showDraftModal={showDraftModal && (draftStep !== 'CONFIRM' || perms.can('confirmDraft'))}
         showPoliticsModal={showPoliticsModal && (politicsStep !== 'SPEAKER' || perms.can('politics'))}
-        showCombatModal={ui.showCombatModal}
+        showCombatModal={
+          ui.showCombatModal
+          || (!!combatActive && perms?.role === ROLES.ADMIN)
+        }
         showStatusPhaseModal={showStatusPhaseModal && !isViewerClient}
         scoringActive={!!objectiveScoring?.active && !isViewerClient}
         strategyResolutionActive={!!strategyResolution?.active && !isPlayerClient && !isViewerClient}

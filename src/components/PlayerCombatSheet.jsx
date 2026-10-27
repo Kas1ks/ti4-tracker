@@ -1,10 +1,17 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { ALL_FACTIONS } from '../data/gameData';
+import {
+  NEUTRAL_OPPONENT_ID,
+  NEUTRAL_UNITS,
+  emptyNeutralCounts,
+  neutralUnitIconUrl,
+  summarizeNeutralRoll,
+} from '../data/neutralUnits';
 import { formatTime } from '../utils/game';
 import combatDealArt from '../assets/combat/attack-bg.jpg';
 import combatHitsArt from '../assets/combat/hits-bg.jpg';
-import combatTakeArt from '../assets/objectives/stage2-bg.jpg';
+import combatAssignArt from '../assets/combat/assign-bg.jpg';
 
 function factionOf(player) {
   return player ? ALL_FACTIONS.find((f) => f.id === player.factionId) : null;
@@ -65,13 +72,19 @@ function CombatBtn({ className, onClick, icon, children }) {
   );
 }
 
-function FighterCard({ player, label, tone }) {
+function FighterCard({ player, label, tone, neutral = false }) {
   return (
     <article className={`pcbat-fighter is-${tone}`}>
       <div className="pcbat-fighter-glyph" aria-hidden="true">
-        <img src={factionOf(player)?.iconUrl} alt="" />
+        {neutral ? (
+          <i className="fa-solid fa-ghost pcbat-fighter-ghost" />
+        ) : (
+          <img src={factionOf(player)?.iconUrl} alt="" />
+        )}
       </div>
-      <span className="pcbat-fighter-name">{player?.name || '—'}</span>
+      <span className="pcbat-fighter-name">
+        {neutral ? 'Нейтралы' : (player?.name || '—')}
+      </span>
       <span className={`pcbat-fighter-role is-${tone}`}>{label}</span>
     </article>
   );
@@ -88,6 +101,9 @@ export function PlayerCombatSheet({
   combatSessionTime = 0,
   canStartCombat = false,
   onStartCombat,
+  onStartNeutral,
+  onSetNeutralCounts,
+  onBeginNeutral,
   onSetHits,
   onAssign,
   onDeclareRetreat,
@@ -97,16 +113,25 @@ export function PlayerCombatSheet({
 }) {
   const [picking, setPicking] = useState(false);
   const [draftHits, setDraftHits] = useState(0);
+  const [draftCounts, setDraftCounts] = useState(() => emptyNeutralCounts());
 
-  const active = !!combat?.active && combat.mode === 'pvp';
+  const isPvp = !!combat?.active && combat.mode === 'pvp';
+  const isNeutral = !!combat?.active && combat.mode === 'neutral';
+  const active = isPvp || isNeutral;
   const phase = combat?.phase;
+  const isSetup = isNeutral && phase === 'setup';
+  const isHostRolling = isNeutral && phase === 'rolling';
   const isResult = active && phase === 'result';
   const isRetreatCheck = active && phase === 'retreat_check';
-  const isTake = phase === 'reveal'
+  const isReveal = phase === 'reveal';
+  const isTake = isReveal
     || (isResult && me && String(combat.loserId) === String(me.id));
   const inFight = active
     && me
-    && (String(combat.attackerId) === String(me.id) || String(combat.defenderId) === String(me.id));
+    && (
+      String(combat.attackerId) === String(me.id)
+      || (isPvp && String(combat.defenderId) === String(me.id))
+    );
   const retreatPlayerId = combat?.retreatPlayerId ?? null;
   const retreatPending = retreatPlayerId != null;
   const retreatPlayer = retreatPending
@@ -118,13 +143,13 @@ export function PlayerCombatSheet({
   const attacker = inFight
     ? players.find((p) => String(p.id) === String(combat.attackerId))
     : null;
-  const defender = inFight
+  const defender = isPvp && inFight
     ? players.find((p) => String(p.id) === String(combat.defenderId))
     : null;
-  const opponentId = inFight
+  const opponentId = isPvp && inFight
     ? (String(combat.attackerId) === String(me.id) ? combat.defenderId : combat.attackerId)
-    : null;
-  const opponent = opponentId != null
+    : (isNeutral ? NEUTRAL_OPPONENT_ID : null);
+  const opponent = opponentId != null && opponentId !== NEUTRAL_OPPONENT_ID
     ? players.find((p) => String(p.id) === String(opponentId))
     : null;
 
@@ -139,17 +164,27 @@ export function PlayerCombatSheet({
 
   const iWon = isResult && me && String(combat.winnerId) === String(me.id);
   const iLost = isResult && me && String(combat.loserId) === String(me.id);
-  const winner = isResult
+  const winnerIsNeutral = isResult && String(combat.winnerId) === NEUTRAL_OPPONENT_ID;
+  const loserIsNeutral = isResult && String(combat.loserId) === NEUTRAL_OPPONENT_ID;
+  const winner = isResult && !winnerIsNeutral
     ? players.find((p) => String(p.id) === String(combat.winnerId))
     : null;
-  const loser = isResult
+  const loser = isResult && !loserIsNeutral
     ? players.find((p) => String(p.id) === String(combat.loserId))
     : null;
+
+  const neutralReady = Object.values(draftCounts).some((n) => (Number(n) || 0) > 0);
 
   useEffect(() => {
     if (phase === 'input' && myHits == null) setDraftHits(0);
     if (phase === 'input' && myHits != null) setDraftHits(Number(myHits) || 0);
   }, [phase, myHits, combat?.round]);
+
+  useEffect(() => {
+    if (isSetup) {
+      setDraftCounts({ ...emptyNeutralCounts(), ...(combat.neutralCounts || {}) });
+    }
+  }, [isSetup, combat?.neutralCounts]);
 
   const opponents = (players || []).filter(
     (p) => me && String(p.id) !== String(me.id) && !p.eliminated,
@@ -158,7 +193,36 @@ export function PlayerCombatSheet({
   if (!me) return null;
 
   const tone = isTake ? 'is-take' : 'is-deal';
-  const art = isTake ? combatTakeArt : combatDealArt;
+  const art = isTake ? combatAssignArt : combatDealArt;
+
+  const bumpCount = (id, delta) => {
+    const unit = NEUTRAL_UNITS.find((u) => u.id === id);
+    const max = unit?.max ?? 99;
+    setDraftCounts((prev) => {
+      const next = {
+        ...prev,
+        [id]: Math.min(max, Math.max(0, (Number(prev[id]) || 0) + delta)),
+      };
+      onSetNeutralCounts?.(next);
+      return next;
+    });
+  };
+
+  /** Phone never rolls — only host plays dice; this just locks hits into phase=rolling. */
+  const submitHits = () => {
+    if (myHits != null || isHostRolling) return;
+    onSetHits?.(me.id, draftHits);
+  };
+
+  const duelBlock = () => (
+    <div className="pcbat-duel">
+      <FighterCard player={attacker} label="Атака" tone="atk" />
+      <span className="pcbat-vs">VS</span>
+      {isNeutral
+        ? <FighterCard neutral label="Защита" tone="def" />
+        : <FighterCard player={defender} label="Защита" tone="def" />}
+    </div>
+  );
 
   const panel = ({ titleId, title, subtitle, children, onClose }) => (
     <div
@@ -191,14 +255,6 @@ export function PlayerCombatSheet({
         </header>
         {children}
       </div>
-    </div>
-  );
-
-  const duel = (left, right, leftLabel, rightLabel) => (
-    <div className="pcbat-duel">
-      <FighterCard player={left} label={leftLabel} tone="atk" />
-      <span className="pcbat-vs">VS</span>
-      <FighterCard player={right} label={rightLabel} tone="def" />
     </div>
   );
 
@@ -245,46 +301,140 @@ export function PlayerCombatSheet({
           className="pt-action is-combat"
           onClick={() => setPicking(true)}
         >
-          <i className="fa-solid fa-burst" aria-hidden="true" />
+          <i className="fa-solid fa-crosshairs" aria-hidden="true" />
           Бой
         </button>
       )}
 
-      {picking && !active && (
-        <div className="pcbat-pick" role="dialog" aria-labelledby="pcbat-pick-title">
-          <header className="pcbat-pick-head">
-            <h2 id="pcbat-pick-title" className="pcbat-pick-title">Кого атакуете?</h2>
-            <button type="button" className="pcbat-x" onClick={() => setPicking(false)} aria-label="Закрыть">
-              <i className="fa-solid fa-xmark" aria-hidden="true" />
-            </button>
-          </header>
-          <div className="pcbat-list">
-            {opponents.map((p) => {
-              const faction = ALL_FACTIONS.find((f) => f.id === p.factionId);
-              return (
-                <button
-                  key={p.id}
-                  type="button"
-                  className="pcbat-seat"
-                  style={{ '--pcbat-accent': p.color || '#64748b' }}
-                  onClick={() => {
-                    setPicking(false);
-                    onStartCombat?.(p.id);
-                  }}
-                >
-                  <span className="pcbat-seat-icon">
-                    <img src={faction?.iconUrl} alt="" />
-                  </span>
-                  <span className="pcbat-seat-name">{p.name}</span>
-                  <i className="fa-solid fa-chevron-right" aria-hidden="true" />
-                </button>
-              );
-            })}
-            {opponents.length === 0 && (
-              <p className="pcbat-empty">Нет доступных противников</p>
-            )}
+      {picking && !active && createPortal(
+        <div
+          className="pcbat-overlay"
+          role="presentation"
+          onClick={() => setPicking(false)}
+        >
+          <div
+            className="pcbat-pick"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="pcbat-pick-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <header className="pcbat-pick-head">
+              <h2 id="pcbat-pick-title" className="pcbat-pick-title">Кого атакуете?</h2>
+              <button type="button" className="pcbat-x" onClick={() => setPicking(false)} aria-label="Закрыть">
+                <i className="fa-solid fa-xmark" aria-hidden="true" />
+              </button>
+            </header>
+            <div className="pcbat-pick-grid">
+              <button
+                type="button"
+                className="pcbat-pick-card is-neutral"
+                onClick={() => {
+                  setPicking(false);
+                  onStartNeutral?.();
+                }}
+              >
+                <span className="pcbat-pick-card-icon is-ghost">
+                  <i className="fa-solid fa-ghost" aria-hidden="true" />
+                </span>
+                <span className="pcbat-pick-card-name">Нейтралы</span>
+              </button>
+              {opponents.map((p) => {
+                const faction = ALL_FACTIONS.find((f) => f.id === p.factionId);
+                return (
+                  <button
+                    key={p.id}
+                    type="button"
+                    className="pcbat-pick-card"
+                    style={{ '--pcbat-accent': p.color || '#64748b' }}
+                    onClick={() => {
+                      setPicking(false);
+                      onStartCombat?.(p.id);
+                    }}
+                  >
+                    <span className="pcbat-pick-card-icon">
+                      <img src={faction?.iconUrl} alt="" />
+                    </span>
+                    <span className="pcbat-pick-card-name">{p.name}</span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
-        </div>
+        </div>,
+        document.body,
+      )}
+
+      {inFight && isSetup && createPortal(
+        <div className="pcbat-overlay">
+          {panel({
+            titleId: 'pcbat-setup-title',
+            title: 'Нейтральные силы',
+            subtitle: 'Соберите состав — после «Отправить» кубики бросятся сами',
+            children: (
+              <>
+                {duelBlock()}
+                <div className="pcbat-neutral-grid">
+                  {NEUTRAL_UNITS.map((unit) => {
+                    const count = Number(draftCounts[unit.id]) || 0;
+                    const atMax = unit.max != null && count >= unit.max;
+                    const icon = neutralUnitIconUrl(unit);
+                    return (
+                      <div key={unit.id} className="pcbat-neutral-row">
+                        {icon ? (
+                          <img src={icon} alt="" className="pcbat-neutral-ico" />
+                        ) : (
+                          <span className="pcbat-neutral-ico is-fallback" aria-hidden="true">
+                            <i className="fa-solid fa-cube" />
+                          </span>
+                        )}
+                        <div className="pcbat-neutral-meta">
+                          <div className="pcbat-neutral-name">{unit.name}</div>
+                          <div className="pcbat-neutral-stat">
+                            Combat {unit.combat}
+                            {unit.dice > 1 ? ` · ${unit.dice}d10` : ''}
+                          </div>
+                        </div>
+                        <div className="pcbat-hits is-compact">
+                          <button
+                            type="button"
+                            className="pcbat-step"
+                            disabled={count <= 0}
+                            onClick={() => bumpCount(unit.id, -1)}
+                            aria-label={`Убрать ${unit.name}`}
+                          >
+                            −
+                          </button>
+                          <div className="pcbat-hits-value tabular-nums">{count}</div>
+                          <button
+                            type="button"
+                            className="pcbat-step"
+                            disabled={atMax}
+                            onClick={() => bumpCount(unit.id, 1)}
+                            aria-label={`Добавить ${unit.name}`}
+                          >
+                            +
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                <CombatBtn
+                  className="is-primary"
+                  onClick={() => {
+                    if (!neutralReady) return;
+                    onBeginNeutral?.(draftCounts);
+                  }}
+                  icon={<CrossedSwordsIcon />}
+                >
+                  {neutralReady ? 'В бой' : 'Выберите юнитов'}
+                </CombatBtn>
+              </>
+            ),
+          })}
+        </div>,
+        document.body,
       )}
 
       {inFight && isResult && createPortal(
@@ -294,23 +444,41 @@ export function PlayerCombatSheet({
             title: isRetreatResult
               ? (iLost ? 'Отступление' : iWon ? 'Противник отступил' : 'Отступление')
               : (iWon ? 'Победа' : iLost ? 'Поражение' : 'Бой завершён'),
-            subtitle: winner && loser
-              ? (isRetreatResult
-                ? `${loser.name} отступил от ${winner.name}`
-                : `${winner.name} победил ${loser.name}`)
-              : 'Результат зафиксирован',
+            subtitle: (() => {
+              const wName = winnerIsNeutral ? 'Нейтралы' : winner?.name;
+              const lName = loserIsNeutral ? 'Нейтралы' : loser?.name;
+              if (wName && lName) {
+                return isRetreatResult
+                  ? `${lName} отступил · ${wName} удержали систему`
+                  : `${wName} победили ${lName}`;
+              }
+              return 'Результат зафиксирован';
+            })(),
             children: (
               <>
-                {duel(
-                  winner,
-                  loser,
-                  'Победитель',
-                  isRetreatResult ? 'Отступление' : 'Поражение',
-                )}
+                <div className="pcbat-duel">
+                  <FighterCard
+                    player={winner}
+                    neutral={winnerIsNeutral}
+                    label={isRetreatResult ? 'Удержал' : 'Победитель'}
+                    tone="atk"
+                  />
+                  <span className="pcbat-vs">VS</span>
+                  <FighterCard
+                    player={loser}
+                    neutral={loserIsNeutral}
+                    label={isRetreatResult ? 'Отступил (проигрыш)' : 'Поражение'}
+                    tone="def"
+                  />
+                </div>
                 <div className="pcbat-dmg is-summary">
                   <div className="pcbat-dmg-inner">
                     <p className="pcbat-hint">
-                      Урон: <strong>{Number(combat.totals?.[combat.winnerId]) || 0}</strong>
+                      {isRetreatResult
+                        ? 'Отступление зафиксировано как проигрыш боя'
+                        : 'Урон'}
+                      {': '}
+                      <strong>{Number(combat.totals?.[combat.winnerId]) || 0}</strong>
                       {' : '}
                       <strong>{Number(combat.totals?.[combat.loserId]) || 0}</strong>
                     </p>
@@ -331,31 +499,42 @@ export function PlayerCombatSheet({
           {panel({
             titleId: 'pcbat-retreat-title',
             title: 'Отступление',
-            subtitle: retreatPlayer
-              ? `${retreatPlayer.name} объявил отступление. Удалось ли уйти?`
-              : 'Удалось ли отступить?',
+            subtitle: iDeclaredRetreat
+              ? 'Раунд завершён. Удалось ли вам отступить?'
+              : `${retreatPlayer?.name || 'Противник'} решает, удалось ли отступить…`,
             children: (
               <>
-                {duel(attacker, defender, 'Атака', 'Защита')}
-                <p className="pcbat-retreat-ask">
-                  Раунд завершён. Получилось отступить?
-                </p>
-                <div className="pcbat-btn-row">
-                  <CombatBtn
-                    className="is-primary"
-                    onClick={() => onResolveRetreat?.(true)}
-                    icon={<RetreatIcon />}
-                  >
-                    Да
-                  </CombatBtn>
-                  <CombatBtn
-                    className="is-danger"
-                    onClick={() => onResolveRetreat?.(false)}
-                    icon={<DefeatXIcon />}
-                  >
-                    Нет
-                  </CombatBtn>
-                </div>
+                {duelBlock()}
+                {iDeclaredRetreat ? (
+                  <>
+                    <p className="pcbat-retreat-ask">
+                      Получилось отступить?
+                      <span className="pcbat-retreat-ask-note">
+                        Да = ушли с системы, бой проигран
+                      </span>
+                    </p>
+                    <div className="pcbat-btn-row">
+                      <CombatBtn
+                        className="is-primary"
+                        onClick={() => onResolveRetreat?.(true)}
+                        icon={<RetreatIcon />}
+                      >
+                        Да
+                      </CombatBtn>
+                      <CombatBtn
+                        className="is-danger"
+                        onClick={() => onResolveRetreat?.(false)}
+                        icon={<DefeatXIcon />}
+                      >
+                        Нет
+                      </CombatBtn>
+                    </div>
+                  </>
+                ) : (
+                  <p className="pcbat-wait">
+                    Ожидаем ответ: {retreatPlayer?.name || 'противник'}…
+                  </p>
+                )}
               </>
             ),
           })}
@@ -363,27 +542,37 @@ export function PlayerCombatSheet({
         document.body,
       )}
 
-      {inFight && !isResult && !isRetreatCheck && createPortal(
+      {inFight && !isResult && !isRetreatCheck && !isSetup && createPortal(
         <div className="pcbat-overlay">
           {panel({
             titleId: 'pcbat-fight-title',
-            title: phase === 'reveal' ? 'Полученный урон' : 'Нанесённый урон',
-            subtitle: retreatPending
-              ? (iDeclaredRetreat
-                ? 'Вы объявили отступление — сыграйте этот раунд'
-                : `${retreatPlayer?.name || 'Противник'} объявил отступление — сыграйте раунд`)
-              : (phase === 'reveal'
-                ? 'Отметьте количество полученных попаданий'
-                : 'Выберите количество попаданий'),
+            title: isHostRolling
+              ? 'Бросок нейтралов'
+              : (isReveal ? 'Полученный урон' : 'Нанесённый урон'),
+            subtitle: isHostRolling
+              ? 'Хост бросает кубики — ожидайте результат'
+              : retreatPending
+                ? (iDeclaredRetreat
+                  ? 'Вы объявили об отступлении, последний раунд боя'
+                  : `${retreatPlayer?.name || 'Противник'} объявил об отступлении, последний раунд боя`)
+                : (isReveal
+                  ? (isNeutral
+                    ? 'Нейтралы уже бросили — подтвердите потери'
+                    : 'Отметьте количество полученных попаданий')
+                  : (isNeutral
+                    ? 'Введите попадания — хост бросит за нейтралов'
+                    : 'Выберите количество попаданий')),
             children: (
               <>
-                {duel(attacker, defender, 'Атака', 'Защита')}
+                {duelBlock()}
 
-                {retreatPending && (
+                {retreatPending && !isHostRolling && (
                   <p className="pcbat-retreat-banner">
                     <RetreatIcon />
                     <span>
-                      После присвоения попаданий спросим, удалось ли отступить
+                      {iDeclaredRetreat
+                        ? 'Вы объявили об отступлении, последний раунд боя'
+                        : `${retreatPlayer?.name || 'Противник'} объявил об отступлении, последний раунд боя`}
                     </span>
                   </p>
                 )}
@@ -407,7 +596,7 @@ export function PlayerCombatSheet({
                     {myHits == null ? (
                       <CombatBtn
                         className="is-primary"
-                        onClick={() => onSetHits?.(me.id, draftHits)}
+                        onClick={submitHits}
                         icon={<CrossedSwordsIcon />}
                       >
                         Отправить
@@ -422,8 +611,21 @@ export function PlayerCombatSheet({
                   </>
                 )}
 
-                {phase === 'reveal' && (
+                {isHostRolling && (
+                  <p className="pcbat-wait">
+                    <i className="fa-solid fa-dice fa-fade" aria-hidden="true" />
+                    {' '}
+                    Ожидаем бросок на хосте…
+                  </p>
+                )}
+
+                {isReveal && (
                   <>
+                    {isNeutral && combat.neutralRoll && (
+                      <p className="pcbat-neutral-roll">
+                        {summarizeNeutralRoll(combat.neutralRoll)}
+                      </p>
+                    )}
                     {dmgBlock({
                       label: 'Получено попаданий',
                       value: receivedNow == null ? '—' : receivedNow,
@@ -445,16 +647,23 @@ export function PlayerCombatSheet({
                         Присвоил
                       </CombatBtn>
                     ) : (
-                      <p className="pcbat-wait">Ожидаем подтверждение противника…</p>
+                      <p className="pcbat-wait">
+                        {isNeutral
+                          ? 'Ожидаем: хост присваивает потери нейтралам…'
+                          : 'Ожидаем подтверждение противника…'}
+                      </p>
                     )}
                   </>
                 )}
 
-                <div className="pcbat-btn-row">
+                <div className={`pcbat-btn-row ${isHostRolling ? 'is-locked' : ''}`}>
                   {!retreatPending ? (
                     <CombatBtn
                       className="is-retreat"
-                      onClick={() => onDeclareRetreat?.(me.id)}
+                      onClick={() => {
+                        if (isHostRolling) return;
+                        onDeclareRetreat?.(me.id);
+                      }}
                       icon={<RetreatIcon />}
                     >
                       Отступить
@@ -466,7 +675,10 @@ export function PlayerCombatSheet({
                   )}
                   <CombatBtn
                     className="is-danger"
-                    onClick={() => onDefeat?.(me.id)}
+                    onClick={() => {
+                      if (isHostRolling) return;
+                      onDefeat?.(me.id);
+                    }}
                     icon={<DefeatXIcon />}
                   >
                     Поражение

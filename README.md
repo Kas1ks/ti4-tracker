@@ -46,8 +46,11 @@ Vite serves `/api/*` via a local middleware that keeps secrets on the Node side.
 ## Cloudflare Worker deploy
 
 - Build: `npm ci && npm run build`
-- Deploy: `npx wrangler deploy` (or `npm run deploy`)
-- Worker secrets (runtime — via `wrangler secret put` or Worker Bindings / Variables that the Worker can read):
+- **Production** (`ti4-tracker` → `https://ti4-tracker.<account>.workers.dev`): `npm run deploy` (from `main`)
+- **Staging / previous build** (`ti4-tracker-dev` → `https://ti4-tracker-dev.<account>.workers.dev`): `npm run deploy:dev`
+- First-time split: deploy the *current* prod branch with `deploy:dev` **before** overwriting prod with `main`
+- Worker secrets (runtime — via `wrangler secret put` or Worker Bindings / Variables that the Worker can read).  
+  For staging use `--env dev`, e.g. `npx wrangler secret put ROOM_CREATE_SECRET --env dev`:
   - `JSONBIN_BIN_ID`
   - `JSONBIN_MASTER_KEY`
   - `ADMIN_PIN`

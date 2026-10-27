@@ -559,11 +559,20 @@ describe('authorizeAction', () => {
       seatPlayerId: attackerId,
       action: { type: 'COMBAT_RESOLVE_RETREAT', success: true },
       state,
+    }).error).toBe('not-your-retreat');
+
+    expect(authorizeAction({
+      role: ROLES.PLAYER,
+      seatPlayerId: defenderId,
+      action: { type: 'COMBAT_RESOLVE_RETREAT', success: true },
+      state,
     }).ok).toBe(true);
 
     state = gameReducer(state, { type: 'COMBAT_RESOLVE_RETREAT', success: true });
     expect(state.round.combat.phase).toBe('result');
     expect(state.round.combat.resultKind).toBe('retreat');
+    expect(state.round.combat.loserId).toBe(defenderId);
+    expect(state.round.combat.winnerId).toBe(attackerId);
 
     expect(authorizeAction({
       role: ROLES.PLAYER,
@@ -576,6 +585,69 @@ describe('authorizeAction', () => {
       role: ROLES.PLAYER,
       seatPlayerId: attackerId,
       action: { type: 'END_COMBAT' },
+      state,
+    }).ok).toBe(true);
+  });
+
+  it('authorizes synced neutral combat for the attacker seat', () => {
+    let state = normalizeGameState({
+      isGameActive: true,
+      players: [player(1, 'A'), player(2, 'B')],
+      meta: { speakerId: 1 },
+      round: {
+        active: true,
+        turnOrderIds: [1, 2],
+        activeTurnIdx: 0,
+        passed: {},
+      },
+    });
+    state = gameReducer(state, { type: 'START_ROUND', at: 1000 });
+    const attackerId = state.round.turnOrderIds[state.round.activeTurnIdx];
+    const otherId = state.players.find((p) => p.id !== attackerId).id;
+
+    expect(authorizeAction({
+      role: ROLES.PLAYER,
+      seatPlayerId: attackerId,
+      action: { type: 'START_COMBAT', mode: 'neutral', attackerId },
+      state,
+    }).ok).toBe(true);
+
+    state = gameReducer(state, {
+      type: 'START_COMBAT',
+      mode: 'neutral',
+      attackerId,
+      at: 2000,
+    });
+
+    expect(authorizeAction({
+      role: ROLES.PLAYER,
+      seatPlayerId: otherId,
+      action: { type: 'COMBAT_SET_NEUTRAL_COUNTS', counts: { infantry: 1 } },
+      state,
+    }).error).toBe('not-in-combat');
+
+    expect(authorizeAction({
+      role: ROLES.PLAYER,
+      seatPlayerId: attackerId,
+      action: { type: 'COMBAT_SET_NEUTRAL_COUNTS', counts: { infantry: 1 } },
+      state,
+    }).ok).toBe(true);
+
+    state = gameReducer(state, {
+      type: 'COMBAT_BEGIN_NEUTRAL',
+      counts: { infantry: 1 },
+    });
+
+    expect(authorizeAction({
+      role: ROLES.PLAYER,
+      seatPlayerId: attackerId,
+      action: {
+        type: 'COMBAT_SET_HITS',
+        playerId: attackerId,
+        hits: 1,
+        neutralHits: 0,
+        neutralRoll: { hits: 0, diceTotal: 1, details: [] },
+      },
       state,
     }).ok).toBe(true);
   });

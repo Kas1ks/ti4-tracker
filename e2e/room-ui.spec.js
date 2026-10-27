@@ -30,20 +30,20 @@ test.describe('live room UI smoke', () => {
     const roomId = match[1].toUpperCase();
     await success.getByRole('button', { name: 'OK' }).click();
 
-    // Host lands on setup
-    await expect(host.getByRole('main').getByText(roomId)).toBeVisible();
+    // Host lands on setup (exact: room code also appears in footer note)
+    await expect(host.getByRole('main').getByText(roomId, { exact: true })).toBeVisible();
 
     const guest = await browser.newPage();
     await guest.goto('/');
-    await guest.getByRole('button', { name: 'Войти по коду' }).click();
+    await guest.locator('button.hub-cta-secondary', { hasText: 'Войти по коду' }).click();
     await guest.getByPlaceholder('КОД').fill(roomId);
     await expect(guest.getByRole('button', { name: 'Войти зрителем' })).toBeEnabled({ timeout: 10_000 });
     await guest.getByRole('button', { name: 'Войти зрителем' }).click();
 
     await expect(guest.getByText('Ожидайте, пока хост')).toBeVisible();
-    await expect(guest.getByRole('main').getByText(roomId)).toBeVisible();
+    await expect(guest.getByRole('main').getByText(roomId, { exact: true })).toBeVisible();
 
-    await guest.getByRole('button', { name: 'Выйти' }).click();
+    await guest.locator('button.guest-lobby-leave').click();
     await expect(guest.getByRole('button', { name: 'Создать партию' })).toBeVisible();
 
     await guest.close();

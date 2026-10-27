@@ -243,10 +243,17 @@ export function playersNotPassed(state) {
   return turnOrder(state).filter(p => !state.round.passed[p.id]);
 }
 
+/**
+ * Табло игроков: в начале (все 0 ПО) — порядок посадки;
+ * после набора очков — по убыванию ПО, при равенстве — исходный порядок мест.
+ */
 export function playersForBoard(state) {
-  return [...state.players].sort((a, b) => {
+  const seats = state.players || [];
+  const seatIndex = new Map(seats.map((p, i) => [p.id, i]));
+  return [...seats].sort((a, b) => {
     const diff = playerScore(state, b.id) - playerScore(state, a.id);
-    return diff !== 0 ? diff : a.id - b.id;
+    if (diff !== 0) return diff;
+    return (seatIndex.get(a.id) ?? 0) - (seatIndex.get(b.id) ?? 0);
   });
 }
 

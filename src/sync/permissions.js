@@ -6,6 +6,7 @@ import {
   isStrategyCardPlayed,
 } from '../game/selectors.js';
 import { isVictoryActionAllowed, isVictoryReached } from '../game/victory.js';
+import { NEUTRAL_OPPONENT_ID } from '../data/neutralUnits.js';
 
 export const ROLES = Object.freeze({
   ADMIN: 'admin',
@@ -315,8 +316,7 @@ export function authorizeAction({ role, seatPlayerId, action, state }) {
       if (state.round?.imperialClaim?.active) {
         return { ok: false, error: 'imperial-claim' };
       }
-      // Players start PvP only (neutral stays host-only).
-      if (action.mode === 'neutral') return { ok: false, error: 'forbidden' };
+      if (action.mode === 'neutral') return { ok: true };
       if (action.defenderId == null) return { ok: false, error: 'opponent-required' };
       if (String(action.defenderId) === String(seatPlayerId)) {
         return { ok: false, error: 'invalid-opponent' };
@@ -330,45 +330,109 @@ export function authorizeAction({ role, seatPlayerId, action, state }) {
       if (activePlayer(state)?.id !== seatPlayerId) {
         return { ok: false, error: 'not-your-turn' };
       }
+      if (action.neutral) return { ok: true };
       if (action.defenderId == null) return { ok: false, error: 'opponent-required' };
+      return { ok: true };
+    }
+
+    case 'COMBAT_SET_NEUTRAL_COUNTS':
+    case 'COMBAT_BEGIN_NEUTRAL': {
+      const combat = state.round?.combat;
+      if (!combat?.active || combat.mode !== 'neutral') return { ok: false, error: 'no-combat' };
+      // Reveal casualty edits are host-only (admin bypasses above).
+      if (action.type === 'COMBAT_SET_NEUTRAL_COUNTS' && combat.phase === 'reveal') {
+        return { ok: false, error: 'host-only' };
+      }
+      if (String(combat.attackerId) !== String(seatPlayerId)) {
+        return { ok: false, error: 'not-in-combat' };
+      }
+      if (action.type === 'COMBAT_SET_NEUTRAL_COUNTS') {
+        if (combat.phase !== 'setup' && combat.phase !== 'input') {
+          return { ok: false, error: 'wrong-phase' };
+        }
+      } else if (combat.phase !== 'setup') {
+        return { ok: false, error: 'wrong-phase' };
+      }
       return { ok: true };
     }
 
     case 'COMBAT_SET_HITS': {
       const combat = state.round?.combat;
-      if (!combat?.active || combat.mode !== 'pvp') return { ok: false, error: 'no-combat' };
-      if (combat.phase !== 'input') return { ok: false, error: 'wrong-phase' };
-      if (String(action.playerId) !== String(seatPlayerId)) {
-        return { ok: false, error: 'not-your-hits' };
+      if (!combat?.active) return { ok: false, error: 'no-combat' };
+      if (combat.mode === 'pvp') {
+        if (combat.phase !== 'input') return { ok: false, error: 'wrong-phase' };
+        if (String(action.playerId) !== String(seatPlayerId)) {
+          return { ok: false, error: 'not-your-hits' };
+        }
+        const inFight = String(combat.attackerId) === String(seatPlayerId)
+          || String(combat.defenderId) === String(seatPlayerId);
+        if (!inFight) return { ok: false, error: 'not-in-combat' };
+        return { ok: true };
       }
-      const inFight = String(combat.attackerId) === String(seatPlayerId)
-        || String(combat.defenderId) === String(seatPlayerId);
-      if (!inFight) return { ok: false, error: 'not-in-combat' };
-      return { ok: true };
+      if (combat.mode === 'neutral') {
+        // Phone: input → rolling (hits only). Host/admin finishes roll while phase=rolling.
+        if (combat.phase === 'rolling') {
+          return { ok: false, error: 'wait-host-roll' };
+        }
+        if (combat.phase !== 'input') return { ok: false, error: 'wrong-phase' };
+        if (String(action.playerId) !== String(seatPlayerId)) {
+          return { ok: false, error: 'not-your-hits' };
+        }
+        if (String(combat.attackerId) !== String(seatPlayerId)) {
+          return { ok: false, error: 'not-in-combat' };
+        }
+        return { ok: true };
+      }
+      return { ok: false, error: 'no-combat' };
     }
 
     case 'COMBAT_ASSIGN': {
       const combat = state.round?.combat;
-      if (!combat?.active || combat.mode !== 'pvp') return { ok: false, error: 'no-combat' };
+      if (!combat?.active) return { ok: false, error: 'no-combat' };
       if (combat.phase !== 'reveal') return { ok: false, error: 'wrong-phase' };
-      if (String(action.playerId) !== String(seatPlayerId)) {
-        return { ok: false, error: 'not-your-assign' };
+      if (combat.mode === 'pvp') {
+        if (String(action.playerId) !== String(seatPlayerId)) {
+          return { ok: false, error: 'not-your-assign' };
+        }
+        const inFight = String(combat.attackerId) === String(seatPlayerId)
+          || String(combat.defenderId) === String(seatPlayerId);
+        if (!inFight) return { ok: false, error: 'not-in-combat' };
+        return { ok: true };
       }
-      const inFight = String(combat.attackerId) === String(seatPlayerId)
-        || String(combat.defenderId) === String(seatPlayerId);
-      if (!inFight) return { ok: false, error: 'not-in-combat' };
-      return { ok: true };
+      if (combat.mode === 'neutral') {
+        // Host assigns casualties for neutrals (admin bypasses).
+        if (String(action.playerId) === NEUTRAL_OPPONENT_ID) {
+          return { ok: false, error: 'host-assign' };
+        }
+        // Player assigns only for themselves.
+        if (String(action.playerId) !== String(seatPlayerId)) {
+          return { ok: false, error: 'not-your-assign' };
+        }
+        if (String(combat.attackerId) !== String(seatPlayerId)) {
+          return { ok: false, error: 'not-in-combat' };
+        }
+        return { ok: true };
+      }
+      return { ok: false, error: 'no-combat' };
     }
 
     case 'COMBAT_DECLARE_RETREAT': {
       const combat = state.round?.combat;
-      if (!combat?.active || combat.mode !== 'pvp') return { ok: false, error: 'no-combat' };
+      if (!combat?.active || (combat.mode !== 'pvp' && combat.mode !== 'neutral')) {
+        return { ok: false, error: 'no-combat' };
+      }
       if (combat.phase !== 'input' && combat.phase !== 'reveal') {
         return { ok: false, error: 'wrong-phase' };
       }
       if (combat.retreatPlayerId != null) return { ok: false, error: 'retreat-pending' };
       if (String(action.playerId) !== String(seatPlayerId)) {
         return { ok: false, error: 'not-your-retreat' };
+      }
+      if (combat.mode === 'neutral') {
+        if (String(combat.attackerId) !== String(seatPlayerId)) {
+          return { ok: false, error: 'not-in-combat' };
+        }
+        return { ok: true };
       }
       const inFight = String(combat.attackerId) === String(seatPlayerId)
         || String(combat.defenderId) === String(seatPlayerId);
@@ -378,11 +442,15 @@ export function authorizeAction({ role, seatPlayerId, action, state }) {
 
     case 'COMBAT_RESOLVE_RETREAT': {
       const combat = state.round?.combat;
-      if (!combat?.active || combat.mode !== 'pvp') return { ok: false, error: 'no-combat' };
+      if (!combat?.active || (combat.mode !== 'pvp' && combat.mode !== 'neutral')) {
+        return { ok: false, error: 'no-combat' };
+      }
       if (combat.phase !== 'retreat_check') return { ok: false, error: 'wrong-phase' };
-      const inFight = String(combat.attackerId) === String(seatPlayerId)
-        || String(combat.defenderId) === String(seatPlayerId);
-      if (!inFight) return { ok: false, error: 'not-in-combat' };
+      // Only the seat that declared retreat answers «удалось ли отступить?».
+      if (combat.retreatPlayerId == null
+        || String(combat.retreatPlayerId) !== String(seatPlayerId)) {
+        return { ok: false, error: 'not-your-retreat' };
+      }
       return { ok: true };
     }
 
@@ -399,10 +467,18 @@ export function authorizeAction({ role, seatPlayerId, action, state }) {
         if (action.playerId != null && String(action.playerId) !== String(seatPlayerId)) {
           return { ok: false, error: 'not-your-defeat' };
         }
-      } else {
-        return { ok: false, error: 'forbidden' };
+        return { ok: true };
       }
-      return { ok: true };
+      if (combat.mode === 'neutral') {
+        if (String(combat.attackerId) !== String(seatPlayerId)) {
+          return { ok: false, error: 'not-in-combat' };
+        }
+        if (action.playerId != null && String(action.playerId) !== String(seatPlayerId)) {
+          return { ok: false, error: 'not-your-defeat' };
+        }
+        return { ok: true };
+      }
+      return { ok: false, error: 'forbidden' };
     }
 
     case 'END_COMBAT': {
@@ -410,6 +486,12 @@ export function authorizeAction({ role, seatPlayerId, action, state }) {
       const combat = state.round?.combat;
       if (!combat?.active) return { ok: false, error: 'no-combat' };
       if (combat.phase !== 'result') return { ok: false, error: 'forbidden' };
+      if (combat.mode === 'neutral') {
+        if (String(combat.attackerId) !== String(seatPlayerId)) {
+          return { ok: false, error: 'not-in-combat' };
+        }
+        return { ok: true };
+      }
       const inFight = String(combat.attackerId) === String(seatPlayerId)
         || String(combat.defenderId) === String(seatPlayerId);
       if (!inFight) return { ok: false, error: 'not-in-combat' };

@@ -56,18 +56,22 @@ export const EMPTY_IMPERIAL_CLAIM = Object.freeze({
 });
 
 /** Combat window: pauses the active turn clock; duration is tracked separately.
- * PvP rounds sync hits/assign between seats; neutral stays host-local for dice UI. */
+ * PvP and neutral (TE) rounds sync through room state; neutral auto-rolls after player hits. */
 export const EMPTY_COMBAT = Object.freeze({
   active: false,
   startedAt: null,
   mode: null, // 'pvp' | 'neutral' | null (picking)
   round: 1,
-  phase: 'pick', // 'pick' | 'input' | 'reveal' | 'retreat_check' | 'result'
+  phase: 'pick', // 'pick' | 'setup' | 'input' | 'rolling' | 'reveal' | 'retreat_check' | 'result'
   attackerId: null,
   defenderId: null,
   hits: Object.freeze({}),
   assigned: Object.freeze({}),
   totals: Object.freeze({}),
+  /** TE neutral unit composition (id → count). */
+  neutralCounts: Object.freeze({}),
+  /** Last auto-roll details for UI (from rollNeutralCombat). */
+  neutralRoll: null,
   /** Seat that declared retreat; after the current round → retreat_check. */
   retreatPlayerId: null,
   winnerId: null,
@@ -243,6 +247,10 @@ export function createEmptyGameState() {
       show: false,
       checks: { ...EMPTY_STATUS_CHECKS },
       scoring: { active: false, responses: {}, orderIds: [], currentIdx: 0 },
+      /** True after the host checks «Раскрытие новой цели» this status phase. */
+      objectiveRevealed: false,
+      /** Synced cue: minimize status UI and spotlight the new card for ~7s. */
+      revealShow: null,
     },
     expedition: {
       slices: emptyExpeditionSlices(),
@@ -327,6 +335,8 @@ function toFlat(raw) {
     showStatusPhase: statusPhase.show,
     statusPhaseChecks: statusPhase.checks,
     objectiveScoring: statusPhase.scoring,
+    statusPhaseObjectiveRevealed: !!statusPhase.objectiveRevealed,
+    statusPhaseRevealShow: statusPhase.revealShow ?? null,
     expedition: raw.expedition,
     startingTechDraft: raw.startingTechDraft,
     gameEvents: asRecord(raw.log).events ?? raw.gameEvents,
@@ -377,6 +387,14 @@ function normalizeObjectiveScoring(value) {
     orderIds,
     currentIdx: orderIds.length ? Math.min(currentIdx, orderIds.length - 1) : 0,
   };
+}
+
+function normalizeStatusRevealShow(value) {
+  if (!value || typeof value !== 'object') return null;
+  const at = Number(value.at);
+  if (!Number.isFinite(at)) return null;
+  const objectiveId = value.objectiveId == null ? null : String(value.objectiveId);
+  return { objectiveId, at };
 }
 
 function normalizeStrategyResolution(value) {
@@ -443,7 +461,29 @@ function normalizeCombatTotalsMap(value) {
 
 function normalizeCombatPlayerId(value) {
   if (value == null || value === '') return null;
+  if (value === 'neutral') return 'neutral';
   return Number.isFinite(Number(value)) ? Number(value) : value;
+}
+
+function normalizeNeutralCounts(value) {
+  const raw = asRecord(value);
+  const out = {};
+  for (const [k, v] of Object.entries(raw)) {
+    const n = Math.max(0, Math.floor(Number(v) || 0));
+    if (n > 0) out[k] = n;
+  }
+  return out;
+}
+
+function normalizeNeutralRoll(value) {
+  if (!value || typeof value !== 'object') return null;
+  const hits = Math.max(0, Math.floor(Number(value.hits) || 0));
+  const diceTotal = Math.max(0, Math.floor(Number(value.diceTotal) || 0));
+  return {
+    hits,
+    diceTotal,
+    details: Array.isArray(value.details) ? value.details : [],
+  };
 }
 
 function normalizeCombat(value) {
@@ -452,12 +492,14 @@ function normalizeCombat(value) {
   const startedAt = Number(raw.startedAt);
   const mode = raw.mode === 'pvp' || raw.mode === 'neutral' ? raw.mode : null;
   const phase = raw.phase === 'input'
+    || raw.phase === 'rolling'
     || raw.phase === 'reveal'
     || raw.phase === 'pick'
+    || raw.phase === 'setup'
     || raw.phase === 'retreat_check'
     || raw.phase === 'result'
     ? raw.phase
-    : (mode === 'pvp' ? 'input' : 'pick');
+    : (mode === 'pvp' ? 'input' : (mode === 'neutral' ? 'setup' : 'pick'));
   const round = Math.max(1, Math.floor(asNumber(raw.round, 1)));
   const attackerId = normalizeCombatPlayerId(raw.attackerId);
   const defenderId = normalizeCombatPlayerId(raw.defenderId);
@@ -478,6 +520,8 @@ function normalizeCombat(value) {
     hits: normalizeCombatHitsMap(raw.hits),
     assigned: normalizeCombatBoolMap(raw.assigned),
     totals: normalizeCombatTotalsMap(raw.totals),
+    neutralCounts: normalizeNeutralCounts(raw.neutralCounts),
+    neutralRoll: normalizeNeutralRoll(raw.neutralRoll),
     retreatPlayerId,
     winnerId,
     loserId,
@@ -752,6 +796,8 @@ export function normalizeGameState(raw) {
       show: !!flat.showStatusPhase,
       checks: { ...EMPTY_STATUS_CHECKS, ...asRecord(flat.statusPhaseChecks) },
       scoring: normalizeObjectiveScoring(flat.objectiveScoring),
+      objectiveRevealed: !!flat.statusPhaseObjectiveRevealed,
+      revealShow: normalizeStatusRevealShow(flat.statusPhaseRevealShow),
     },
     expedition: normalizeExpedition(flat.expedition),
     startingTechDraft: normalizeStartingTechDraft(flat.startingTechDraft),

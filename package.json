@@ -13,6 +13,7 @@
     "test": "vitest run",
     "test:e2e": "playwright test",
     "deploy": "npm run build && wrangler deploy",
+    "deploy:dev": "npm run build && wrangler deploy --env dev",
     "cf:dev": "npm run build && wrangler dev"
   },
   "dependencies": {

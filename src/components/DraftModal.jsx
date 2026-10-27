@@ -236,6 +236,12 @@ export function DraftModal({
   const canConfirm = !perms || perms.can('confirmDraft');
   const canReassign = !perms || perms.can('reassignCard');
   const showHostSidebars = draftStep === 'DRAFT' && canAdmin && typeof getPlayerScore === 'function';
+  const seatHasCard = seatId != null && playerHasCard(draftAssignments, seatId);
+  const mobileDraftCue = seatId != null && currentPickerId === seatId
+    ? { key: 'yours', text: 'Ваш выбор' }
+    : seatHasCard
+      ? { key: 'done', text: 'Ожидание конца драфта...' }
+      : { key: 'wait', text: 'Ожидание выбора...' };
 
   const openForClient = !!showDraftModal && (draftStep !== 'CONFIRM' || canConfirm);
   const wantOpen = openForClient && !minimizedModals.draft;
@@ -434,7 +440,7 @@ export function DraftModal({
             role="dialog"
             aria-modal="true"
             aria-labelledby="draft-modal-title"
-            className={`game-hud-chassis draft-shell w-full min-h-0 flex flex-col overflow-hidden ${entered ? 'is-open' : ''} ${
+            className={`draft-shell w-full min-h-0 flex flex-col overflow-hidden ${entered ? 'is-open' : ''} ${
               draftStep === 'CONFIRM'
                 ? 'draft-shell-confirm max-h-[min(92vh,100dvh)] h-[min(88vh,720px)] max-md:h-[100dvh] max-md:max-h-[100dvh] max-w-[min(42rem,96vw)]'
                 : draftLayoutFixed
@@ -511,36 +517,46 @@ export function DraftModal({
               <div className="draft-main min-w-0 min-h-0 flex flex-col overflow-hidden">
                 {draftStep === 'DRAFT' && (
                   <div className="draft-main-col flex flex-col min-h-0 min-w-0 flex-1 overflow-hidden">
-                    <section className="draft-queue" aria-label="Очередь выбора">
-                      <div className="draft-queue-track">
-                        {draftQueue.map((pId, idx) => {
-                          const player = players.find((p) => p.id === pId);
-                          const isCurrent = idx === currentQueueIndex;
-                          const isDone = idx < currentQueueIndex;
-                          return (
-                            <div key={`${pId}-${idx}`} className="contents">
-                              {idx > 0 && (
-                                <i className="fa-solid fa-chevron-right draft-queue-arrow" aria-hidden="true" />
-                              )}
-                              <div className="draft-queue-item-wrap">
-                                <div
-                                  className={`draft-queue-chip ${
-                                    isCurrent ? 'is-current' : isDone ? 'is-done' : 'is-next'
-                                  }`}
-                                >
-                                  <span
-                                    className="draft-queue-dot"
-                                    style={{ backgroundColor: player?.color || '#64748b' }}
-                                    aria-hidden="true"
-                                  />
-                                  <span className="draft-queue-name truncate">{player?.name || '—'}</span>
+                    {isMobileViewport ? (
+                      <div
+                        className={`draft-mobile-cue is-${mobileDraftCue.key}`}
+                        role="status"
+                        aria-live="polite"
+                      >
+                        {mobileDraftCue.text}
+                      </div>
+                    ) : (
+                      <section className="draft-queue" aria-label="Очередь выбора">
+                        <div className="draft-queue-track">
+                          {draftQueue.map((pId, idx) => {
+                            const player = players.find((p) => p.id === pId);
+                            const isCurrent = idx === currentQueueIndex;
+                            const isDone = idx < currentQueueIndex;
+                            return (
+                              <div key={`${pId}-${idx}`} className="contents">
+                                {idx > 0 && (
+                                  <i className="fa-solid fa-chevron-right draft-queue-arrow" aria-hidden="true" />
+                                )}
+                                <div className="draft-queue-item-wrap">
+                                  <div
+                                    className={`draft-queue-chip ${
+                                      isCurrent ? 'is-current' : isDone ? 'is-done' : 'is-next'
+                                    }`}
+                                  >
+                                    <span
+                                      className="draft-queue-dot"
+                                      style={{ backgroundColor: player?.color || '#64748b' }}
+                                      aria-hidden="true"
+                                    />
+                                    <span className="draft-queue-name truncate">{player?.name || '—'}</span>
+                                  </div>
                                 </div>
                               </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </section>
+                            );
+                          })}
+                        </div>
+                      </section>
+                    )}
 
                     {showDraftCardGrid && (
                       <section className="draft-cards-panel">

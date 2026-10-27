@@ -176,6 +176,18 @@ export function deriveGameEvents(prev, action, next) {
     case 'CONFIRM_DRAFT':
       return [baseEvent('DRAFT_CONFIRMED', action, { at })];
 
+    case 'DEV_SKIP_STRATEGY_DRAFT':
+      return [baseEvent('DEV_SKIP_STRATEGY_DRAFT', action, {
+        at,
+        roundNumber: next.meta?.roundNumber,
+      })];
+
+    case 'DEV_PASS_ALL':
+      return [baseEvent('DEV_PASS_ALL', action, {
+        at,
+        roundNumber: prev.meta?.roundNumber,
+      })];
+
     case 'CONFIRM_OBJECTIVE_SCORING':
       return [baseEvent('OBJECTIVE_SCORING_DONE', action, {
         at,
@@ -517,6 +529,10 @@ export function formatGameEvent(event, players = []) {
       return 'Открыт драфт стратегий';
     case 'DRAFT_CONFIRMED':
       return 'Драфт подтверждён';
+    case 'DEV_SKIP_STRATEGY_DRAFT':
+      return 'DEV: пропуск драфта КС';
+    case 'DEV_PASS_ALL':
+      return 'DEV: общий пас';
     case 'OBJECTIVE_SCORING_STARTED':
       return 'Начат скоринг целей';
     case 'OBJECTIVE_SCORING_DONE':
@@ -528,6 +544,9 @@ export function formatGameEvent(event, players = []) {
     case 'AGENDA_PHASE_FINISHED':
       return 'Фаза политики завершена';
     case 'COMBAT_RESOLVED': {
+      const sideName = (id) => (
+        id === 'neutral' || id === 'NEUTRAL' ? 'Нейтралы' : name(id)
+      );
       if (event.winnerId != null && event.loserId != null) {
         const wDealt = Number(event.totals?.[event.winnerId]) || 0;
         const lDealt = Number(event.totals?.[event.loserId]) || 0;
@@ -535,14 +554,14 @@ export function formatGameEvent(event, players = []) {
           ? ` · урон ${wDealt}:${lDealt}`
           : '';
         if (event.resultKind === 'retreat') {
-          return `${name(event.loserId)} отступил от ${name(event.winnerId)}${dmg}`;
+          return `${sideName(event.loserId)} отступил от ${sideName(event.winnerId)}${dmg}`;
         }
-        return `${name(event.winnerId)} победил ${name(event.loserId)}${dmg}`;
+        return `${sideName(event.winnerId)} победил ${sideName(event.loserId)}${dmg}`;
       }
       if (event.loserId != null) {
         return event.resultKind === 'retreat'
-          ? `Бой: отступление ${name(event.loserId)}`
-          : `Бой: поражение ${name(event.loserId)}`;
+          ? `Бой: отступление ${sideName(event.loserId)}`
+          : `Бой: поражение ${sideName(event.loserId)}`;
       }
       return 'Зафиксирован бой';
     }

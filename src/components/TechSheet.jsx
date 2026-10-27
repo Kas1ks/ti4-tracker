@@ -1,17 +1,13 @@
+import { useState } from 'react';
 import {
+  TECH_COLOR_META,
   TECH_COLORS,
   availableTechs,
+  techArtUrl,
   techById,
 } from '../data/technologies';
 import { TechPrereqIcons, TechTypeIcon } from './TechTypeIcon';
 import { BreakthroughPanel } from './BreakthroughPanel';
-
-const COLOR_OWNED = {
-  green: 'bg-emerald-500/25 border-emerald-400 text-emerald-100',
-  blue: 'bg-sky-500/25 border-sky-400 text-sky-100',
-  yellow: 'bg-amber-500/25 border-amber-400 text-amber-100',
-  red: 'bg-rose-500/25 border-rose-400 text-rose-100',
-};
 
 /** Compact owned tech-type icons for a player's board / table. */
 export function TechPips({ techIds = [] }) {
@@ -43,8 +39,44 @@ export function TechPips({ techIds = [] }) {
   );
 }
 
-/** Read-only list for mobile table → player sheet. */
+function TechCardArt({ tech }) {
+  const [broken, setBroken] = useState(false);
+  const src = techArtUrl(tech.id);
+  const showImg = src && !broken;
+
+  return (
+    <div className={`tech-card-art color-${tech.color || 'neutral'}`} aria-hidden="true">
+      {showImg ? (
+        <img
+          src={src}
+          alt=""
+          className="tech-card-art-img"
+          loading="lazy"
+          onError={() => setBroken(true)}
+        />
+      ) : (
+        <div className="tech-card-art-fallback">
+          {tech.color ? (
+            <TechTypeIcon color={tech.color} size={28} />
+          ) : (
+            <i className={`fa-solid ${tech.kind === 'unit' ? 'fa-rocket' : 'fa-flag'}`} />
+          )}
+        </div>
+      )}
+      <span className="tech-card-art-badge">
+        {tech.color ? (
+          <TechTypeIcon color={tech.color} size={16} />
+        ) : (
+          <i className={`fa-solid ${tech.kind === 'unit' ? 'fa-rocket' : 'fa-flag'}`} />
+        )}
+      </span>
+    </div>
+  );
+}
+
+/** Read-only list for mobile table → player sheet (same card chrome as TechModal). */
 export function PlayerTechSheet({ player, usePok, useTe, onClose }) {
+  const [expandedId, setExpandedId] = useState(null);
   const owned = player?.techIds || [];
   const catalog = availableTechs({
     usePok,
@@ -56,52 +88,107 @@ export function PlayerTechSheet({ player, usePok, useTe, onClose }) {
     .filter(Boolean);
 
   return (
-    <div className="fixed inset-0 z-[55] bg-black/85 flex flex-col">
-      <header className="flex-shrink-0 px-4 pt-[max(0.75rem,env(safe-area-inset-top))] pb-3 border-b border-slate-800 flex items-center justify-between gap-3">
-        <div className="min-w-0">
-          <div className="text-[11px] font-bold uppercase text-sky-400">Технологии</div>
-          <h2 className="font-orbitron font-black text-xl text-white truncate">{player?.name}</h2>
-        </div>
-        <button
-          type="button"
-          onClick={onClose}
-          className="text-slate-400 hover:text-white p-2"
-          aria-label="Закрыть"
-        >
-          <i className="fa-solid fa-xmark text-lg" />
-        </button>
-      </header>
-      <div className="flex-1 overflow-y-auto px-4 py-3 space-y-2">
-        {useTe && player?.factionId && (
-          <BreakthroughPanel
-            factionId={player.factionId}
-            unlocked={!!player.breakthrough}
-            defaultOpen={!!player.breakthrough}
-          />
-        )}
-        {!list.length && (
-          <p className="text-sm text-slate-500 text-center py-10">Пока нет технологий</p>
-        )}
-        {list.map(tech => (
-          <div
-            key={tech.id}
-            className={`px-3 py-2.5 rounded-xl border text-sm ${
-              COLOR_OWNED[tech.color] || 'border-slate-700 bg-slate-900 text-slate-200'
-            }`}
-          >
-            <div className="flex items-center gap-2 font-bold">
-              {tech.color && <TechTypeIcon color={tech.color} size={18} />}
-              <span>{tech.name}</span>
-            </div>
-            {tech.text && <p className="text-[11px] opacity-70 mt-0.5">{tech.text}</p>}
-            {tech.prereqs?.length > 0 && (
-              <div className="mt-1.5 flex items-center gap-1.5 text-[11px] opacity-80">
-                <span>Пререк</span>
-                <TechPrereqIcons prereqs={tech.prereqs} size={14} />
-              </div>
-            )}
+    <div className="fixed inset-0 z-[55] bg-black/85 backdrop-blur-md flex flex-col tech-overlay is-open">
+      <div className="tech-shell is-open flex flex-col w-full h-full max-h-[100dvh] overflow-hidden">
+        <header className="tech-shell-head flex-shrink-0">
+          <div className="tech-shell-head-main min-w-0">
+            <div className="tech-shell-eyebrow">Технологии</div>
+            <h2 className="tech-shell-title truncate">{player?.name || '…'}</h2>
           </div>
-        ))}
+          <button
+            type="button"
+            onClick={onClose}
+            className="tech-icon-btn"
+            aria-label="Закрыть"
+          >
+            <i className="fa-solid fa-xmark" aria-hidden="true" />
+          </button>
+        </header>
+
+        <div className="tech-shell-body min-h-0 flex-1 overflow-y-auto overscroll-y-contain modal-scroll">
+          {useTe && player?.factionId && (
+            <div className="mb-3">
+              <BreakthroughPanel
+                factionId={player.factionId}
+                unlocked={!!player.breakthrough}
+                defaultOpen={!!player.breakthrough}
+              />
+            </div>
+          )}
+          {!list.length && (
+            <p className="tech-empty">Пока нет технологий</p>
+          )}
+          <ul className="tech-card-list">
+            {list.map(tech => {
+              const expanded = expandedId === tech.id;
+              return (
+                <li key={tech.id}>
+                  <div
+                    className={[
+                      'tech-card',
+                      `color-${tech.color || 'neutral'}`,
+                      'is-owned',
+                      expanded ? 'is-expanded' : '',
+                    ].filter(Boolean).join(' ')}
+                  >
+                    <div className="tech-card-main">
+                      <TechCardArt tech={tech} />
+                      <div className="tech-card-body min-w-0">
+                        <div className="tech-card-name">{tech.name}</div>
+                        {tech.text && (
+                          <p className={`tech-card-text ${expanded ? 'is-open' : ''}`}>
+                            {tech.text}
+                          </p>
+                        )}
+                        <div className="tech-card-meta">
+                          {tech.color ? (
+                            <span className="tech-card-tag">
+                              <TechTypeIcon color={tech.color} size={14} />
+                              {TECH_COLOR_META[tech.color]?.label}
+                            </span>
+                          ) : tech.factionId ? (
+                            <span className="tech-card-tag">
+                              {tech.kind === 'unit' ? 'Фракция · Unit' : 'Фракция'}
+                            </span>
+                          ) : (
+                            <span className="tech-card-tag">
+                              {tech.kind === 'unit' ? 'Unit' : tech.kind}
+                            </span>
+                          )}
+                          {tech.omega && <span className="tech-card-tag">Ω</span>}
+                          {tech.prereqs?.length > 0 && (
+                            <span className="tech-card-tag tech-card-prereq">
+                              <span className="opacity-60">Пререк</span>
+                              <TechPrereqIcons prereqs={tech.prereqs} size={14} />
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <span className="tech-card-action">Исследована ✓</span>
+                    </div>
+                    {tech.text && (
+                      <button
+                        type="button"
+                        className="tech-card-expand"
+                        aria-expanded={expanded}
+                        aria-label={expanded ? 'Свернуть описание' : 'Развернуть описание'}
+                        onClick={() => setExpandedId(expanded ? null : tech.id)}
+                      >
+                        <i className={`fa-solid fa-chevron-${expanded ? 'up' : 'down'}`} aria-hidden="true" />
+                      </button>
+                    )}
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+
+        <footer className="tech-shell-foot flex-shrink-0">
+          <button type="button" onClick={onClose} className="tech-foot-btn tech-foot-btn-primary">
+            Закрыть
+          </button>
+        </footer>
       </div>
     </div>
   );

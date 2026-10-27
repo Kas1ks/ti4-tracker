@@ -1,5 +1,5 @@
 /** Official expedition face (claim wells). */
-export const EXPEDITION_TOKEN_SRC = '/expedition/thunders-edge-expedition.png?v=27';
+export const EXPEDITION_TOKEN_SRC = '/expedition/thunders-edge-expedition.png?v=40';
 /** Planet face after expedition completes. */
 export const EXPEDITION_PLANET_SRC = '/expedition/thunders-edge-planet.png';
 

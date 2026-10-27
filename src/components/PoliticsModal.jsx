@@ -1,3 +1,5 @@
+import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { ALL_FACTIONS } from '../data/gameData';
 import { isAgendaFullyVoted } from '../utils/game';
 import { useEscapeKey } from '../hooks/useEscapeKey';
@@ -9,6 +11,486 @@ import {
   isArgentFlightPlayer,
   isXxchaPlayer,
 } from '../game/selectors';
+
+function pluralVotes(n) {
+  const abs = Math.abs(n) % 100;
+  const d = abs % 10;
+  if (abs > 10 && abs < 20) return 'голосов';
+  if (d === 1) return 'голос';
+  if (d >= 2 && d <= 4) return 'голоса';
+  return 'голосов';
+}
+
+/** Итог За/Против: счётчик «набегает», вспышка и +N при получении голосов. */
+function PolFaSideResult({ label, total, tone, iconClass, weight }) {
+  const [shown, setShown] = useState(total);
+  const [receiving, setReceiving] = useState(false);
+  const [delta, setDelta] = useState(null);
+  const prevRef = useRef(total);
+  const rafRef = useRef(0);
+  const clearRef = useRef(0);
+
+  useEffect(() => {
+    const from = prevRef.current;
+    if (from === total) return undefined;
+    prevRef.current = total;
+    const gained = total - from;
+    window.clearTimeout(clearRef.current);
+    cancelAnimationFrame(rafRef.current);
+
+    if (gained > 0) {
+      setDelta(gained);
+      setReceiving(true);
+    }
+
+    const reduceMotion = typeof window !== 'undefined'
+      && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+    if (reduceMotion || gained <= 0) {
+      setShown(total);
+      if (gained > 0) {
+        clearRef.current = window.setTimeout(() => {
+          setReceiving(false);
+          setDelta(null);
+        }, 700);
+      } else {
+        setReceiving(false);
+        setDelta(null);
+      }
+      return () => window.clearTimeout(clearRef.current);
+    }
+
+    const start = performance.now();
+    const dur = Math.min(720, 260 + Math.abs(gained) * 45);
+    const tick = (now) => {
+      const t = Math.min(1, (now - start) / dur);
+      const eased = 1 - (1 - t) ** 3;
+      setShown(Math.round(from + (total - from) * eased));
+      if (t < 1) {
+        rafRef.current = requestAnimationFrame(tick);
+        return;
+      }
+      setShown(total);
+      clearRef.current = window.setTimeout(() => {
+        setReceiving(false);
+        setDelta(null);
+      }, 580);
+    };
+    rafRef.current = requestAnimationFrame(tick);
+    return () => {
+      cancelAnimationFrame(rafRef.current);
+      window.clearTimeout(clearRef.current);
+    };
+  }, [total]);
+
+  const pct = weight > 0 ? (total / weight) * 100 : 0;
+
+  return (
+    <div
+      className={`pol-pc-variant-block tone-${tone}${total > 0 ? ' has-votes' : ''}${receiving ? ' is-receiving' : ''}`}
+    >
+      <div className="pol-pc-variant-head">
+        <span className={`pol-pc-choice-badge is-fa tone-${tone}`} aria-hidden="true">
+          <i className={iconClass} />
+        </span>
+        <div className="pol-pc-variant-text">
+          <span className="pol-pc-variant-title">{label}</span>
+          <span className="pol-pc-variant-sub">
+            {total > 0
+              ? `Получает ${total} ${pluralVotes(total)}`
+              : 'Не выбран'}
+          </span>
+        </div>
+        <strong className={`pol-pc-variant-count${receiving ? ' is-bump' : ''}`}>
+          <span className="pol-pc-variant-count-num">{shown}</span>
+          {delta != null && (
+            <span className="pol-pc-variant-delta" aria-hidden="true">+{delta}</span>
+          )}
+        </strong>
+      </div>
+      <div className="pol-pc-results-bar">
+        <span className={`tone-${tone}`} style={{ width: `${pct}%` }} />
+      </div>
+    </div>
+  );
+}
+
+/** Счётчик голосов + OK (колонка «Потрачено» / mobile spent). */
+function PolPcSpentControls({
+  vote,
+  availableInfluence,
+  availablePlanets = 0,
+  isXxcha = false,
+  oneVoteLaw = false,
+  disabled = false,
+  onAmount,
+  onPlanets,
+  onConfirm,
+}) {
+  return (
+    <div className={`pol-pc-spent-controls${isXxcha && !oneVoteLaw ? ' has-planets' : ''}`}>
+      {!oneVoteLaw ? (
+        <label className="pol-pc-amt">
+          <span className="pol-pc-amt-label">Голоса</span>
+          <input
+            type="number"
+            min="0"
+            max={availableInfluence}
+            inputMode="numeric"
+            value={vote.amount ? vote.amount : ''}
+            placeholder="0"
+            disabled={disabled || vote.choice === 'abstain'}
+            onChange={(e) => {
+              const raw = e.target.value;
+              if (raw === '') {
+                onAmount(0);
+                return;
+              }
+              onAmount(Math.max(0, Math.min(availableInfluence, parseInt(raw, 10) || 0)));
+            }}
+            onFocus={(e) => e.target.select()}
+            className="pol-pc-ctrl pol-pc-amt-input"
+          />
+        </label>
+      ) : (
+        <div className="pol-pc-amt">
+          <span className="pol-pc-amt-label">Голоса</span>
+          <span className="pol-pc-ctrl pol-pc-amt-input is-readonly">
+            {vote.choice === 'abstain' ? 0 : 1}
+          </span>
+        </div>
+      )}
+      {isXxcha && !oneVoteLaw && (
+        <label className="pol-pc-amt tone-planet">
+          <span className="pol-pc-amt-label">Планеты</span>
+          <input
+            type="number"
+            min="0"
+            max={availablePlanets}
+            inputMode="numeric"
+            value={vote.planets ? vote.planets : ''}
+            placeholder="0"
+            disabled={disabled || vote.choice === 'abstain'}
+            onChange={(e) => {
+              const raw = e.target.value;
+              if (raw === '') {
+                onPlanets(0);
+                return;
+              }
+              onPlanets(Math.max(0, Math.min(availablePlanets, parseInt(raw, 10) || 0)));
+            }}
+            onFocus={(e) => e.target.select()}
+            className="pol-pc-ctrl pol-pc-amt-input"
+          />
+        </label>
+      )}
+      <button
+        type="button"
+        className="pol-pc-ctrl pol-pc-confirm"
+        disabled={disabled}
+        onClick={onConfirm}
+      >
+        OK
+      </button>
+    </div>
+  );
+}
+
+/**
+ * Универсальный picker: игроки или варианты OTHER.
+ * options: [{ id, label, iconUrl? }]
+ */
+function PolPcOptionPicker({
+  value,
+  options = [],
+  onChange,
+  disabled = false,
+  title = 'Выберите вариант',
+}) {
+  const [open, setOpen] = useState(false);
+  const selected = value !== 'abstain'
+    ? options.find(o => String(o.id) === String(value))
+    : null;
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const onKey = (e) => {
+      if (e.key === 'Escape') setOpen(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [open]);
+
+  const pick = (choice) => {
+    onChange(choice);
+    setOpen(false);
+  };
+
+  const panel = open
+    ? createPortal(
+      <>
+        <button
+          type="button"
+          className="pol-pc-picker-backdrop"
+          aria-label="Закрыть"
+          onClick={() => setOpen(false)}
+        />
+        <div className="pol-pc-picker-panel" role="listbox">
+          <div className="pol-pc-picker-panel-title">{title}</div>
+          <button
+            type="button"
+            role="option"
+            aria-selected={value === 'abstain'}
+            className={`pol-pc-picker-option tone-abstain${value === 'abstain' ? ' is-selected' : ''}`}
+            onClick={() => pick('abstain')}
+          >
+            <span className="pol-pc-picker-option-icon is-ban">
+              <i className="fa-solid fa-ban" aria-hidden="true" />
+            </span>
+            <span className="pol-pc-picker-option-text">Воздержаться</span>
+          </button>
+          <div className="pol-pc-picker-list">
+            {options.map((opt) => {
+              const isOn = String(value) === String(opt.id);
+              return (
+                <button
+                  key={opt.id}
+                  type="button"
+                  role="option"
+                  aria-selected={isOn}
+                  className={`pol-pc-picker-option${opt.tone ? ` tone-${opt.tone}` : ''}${isOn ? ' is-selected' : ''}`}
+                  onClick={() => pick(opt.id)}
+                >
+                  {opt.iconUrl ? (
+                    <img src={opt.iconUrl} alt="" className="pol-pc-picker-option-icon" />
+                  ) : opt.iconClass ? (
+                    <span className={`pol-pc-picker-option-icon is-fa${opt.tone ? ` tone-${opt.tone}` : ''}`} aria-hidden="true">
+                      <i className={opt.iconClass} />
+                    </span>
+                  ) : (
+                    <span className="pol-pc-picker-option-icon is-num" aria-hidden="true">
+                      {opt.badge || '#'}
+                    </span>
+                  )}
+                  <span className="pol-pc-picker-option-text">{opt.label}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </>,
+      document.body,
+    )
+    : null;
+
+  return (
+    <>
+      <button
+        type="button"
+        className={`pol-pc-ctrl pol-pc-picker-btn${open ? ' is-open' : ''}`}
+        disabled={disabled}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        onClick={() => setOpen(v => !v)}
+      >
+        {selected ? (
+          <>
+            {selected.iconUrl ? (
+              <img src={selected.iconUrl} alt="" className="pol-pc-picker-btn-icon" />
+            ) : selected.iconClass ? (
+              <span className={`pol-pc-picker-btn-ban is-fa${selected.tone ? ` tone-${selected.tone}` : ''}`} aria-hidden="true">
+                <i className={selected.iconClass} />
+              </span>
+            ) : (
+              <span className="pol-pc-picker-btn-ban is-num" aria-hidden="true">{selected.badge || '#'}</span>
+            )}
+            <span className="pol-pc-picker-btn-label">{selected.label}</span>
+          </>
+        ) : (
+          <>
+            <i className="fa-solid fa-ban pol-pc-picker-btn-ban" aria-hidden="true" />
+            <span className="pol-pc-picker-btn-label">Воздержаться</span>
+          </>
+        )}
+        <i className="fa-solid fa-chevron-down pol-pc-picker-chevron" aria-hidden="true" />
+      </button>
+      {panel}
+    </>
+  );
+}
+
+function PolPcTargetPicker({ value, players, onChange, disabled = false }) {
+  const options = players.map(p => {
+    const faction = ALL_FACTIONS.find(f => f.id === p.factionId);
+    return { id: p.id, label: p.name, iconUrl: faction?.iconUrl };
+  });
+  return (
+    <PolPcOptionPicker
+      value={value}
+      options={options}
+      onChange={onChange}
+      disabled={disabled}
+      title="Выберите игрока"
+    />
+  );
+}
+
+function PolPcVariantPicker({ value, choices = [], onChange, disabled = false }) {
+  const options = choices
+    .map((label, index) => (label
+      ? { id: String(index), label, badge: String(index + 1) }
+      : null))
+    .filter(Boolean);
+  return (
+    <PolPcOptionPicker
+      value={value === 'abstain' ? 'abstain' : String(value)}
+      options={options}
+      onChange={onChange}
+      disabled={disabled}
+      title="Выберите вариант"
+    />
+  );
+}
+
+const FA_SIDE_OPTIONS = [
+  { id: 'for', label: 'За', iconClass: 'fa-solid fa-thumbs-up', tone: 'for' },
+  { id: 'against', label: 'Против', iconClass: 'fa-solid fa-thumbs-down', tone: 'against' },
+];
+
+/** Сразу кнопки За / Против (без выпадающего списка). Повторный клик → воздержание. */
+function PolPcFaButtons({ value, onChange, disabled = false }) {
+  const pick = (side) => {
+    if (disabled) return;
+    onChange(value === side ? 'abstain' : side);
+  };
+  return (
+    <div className="pol-pc-fa-btns" role="group" aria-label="За или против">
+      {FA_SIDE_OPTIONS.map((side) => (
+        <button
+          key={side.id}
+          type="button"
+          className={`pol-pc-fa-btn tone-${side.tone}${value === side.id ? ' is-on' : ''}`}
+          disabled={disabled}
+          aria-pressed={value === side.id}
+          onClick={() => pick(side.id)}
+        >
+          <i className={side.iconClass} aria-hidden="true" />
+          <span>{side.label}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** Mobile/seat: выбор + счётчик + OK в одном блоке. */
+function PolPcVoteRow({
+  vote,
+  players,
+  variantChoices,
+  faMode = false,
+  availableInfluence,
+  availablePlanets = 0,
+  isXxcha = false,
+  oneVoteLaw = false,
+  disabled = false,
+  onChoice,
+  onAmount,
+  onPlanets,
+  onConfirm,
+}) {
+  const useVariants = Array.isArray(variantChoices);
+  return (
+    <div className={`pol-pc-vote-controls${isXxcha && !oneVoteLaw ? ' has-planets' : ''}`}>
+      {faMode ? (
+        <PolPcFaButtons
+          value={vote.choice}
+          disabled={disabled}
+          onChange={onChoice}
+        />
+      ) : useVariants ? (
+        <PolPcVariantPicker
+          value={vote.choice}
+          choices={variantChoices}
+          disabled={disabled}
+          onChange={onChoice}
+        />
+      ) : (
+        <PolPcTargetPicker
+          value={vote.choice}
+          players={players}
+          disabled={disabled}
+          onChange={onChoice}
+        />
+      )}
+      <PolPcSpentControls
+        vote={vote}
+        availableInfluence={availableInfluence}
+        availablePlanets={availablePlanets}
+        isXxcha={isXxcha}
+        oneVoteLaw={oneVoteLaw}
+        disabled={disabled}
+        onAmount={onAmount}
+        onPlanets={onPlanets}
+        onConfirm={onConfirm}
+      />
+    </div>
+  );
+}
+
+function PolStepper({
+  label,
+  value,
+  onChange,
+  disabled = false,
+  tone = 'purple',
+}) {
+  const n = Math.max(0, Number(value) || 0);
+  return (
+    <div className={`pol-stepper tone-${tone}`}>
+      <div className="pol-stepper-label">{label}</div>
+      <div className="pol-stepper-ctrl">
+        <button
+          type="button"
+          className="pol-stepper-btn"
+          disabled={disabled || n <= 0}
+          onClick={() => onChange(Math.max(0, n - 1))}
+          aria-label={`${label}: меньше`}
+        >
+          −
+        </button>
+        <input
+          type="number"
+          min="0"
+          inputMode="numeric"
+          className="pol-stepper-val"
+          value={n ? n : ''}
+          placeholder="0"
+          disabled={disabled}
+          onChange={(e) => {
+            const raw = e.target.value;
+            if (raw === '') {
+              onChange(0);
+              return;
+            }
+            const next = parseInt(raw, 10);
+            onChange(Number.isFinite(next) ? Math.max(0, next) : 0);
+          }}
+          onFocus={(e) => e.target.select()}
+          aria-label={label}
+        />
+        <button
+          type="button"
+          className="pol-stepper-btn"
+          disabled={disabled}
+          onClick={() => onChange(n + 1)}
+          aria-label={`${label}: больше`}
+        >
+          +
+        </button>
+      </div>
+    </div>
+  );
+}
 
 export function PoliticsModal({
   show,
@@ -52,11 +534,35 @@ export function PoliticsModal({
   const isSeatPlayer = !isAdmin && seatId != null;
   /** Speaker handoff after voting is host-only. */
   const openForClient = politicsStep !== 'SPEAKER' || isAdmin;
-  const visible = show && !minimized && openForClient;
-  useEscapeKey(onClose, visible);
-  useBodyScrollLock(visible);
+  const wantOpen = show && !minimized && openForClient;
 
-  if (!show || !openForClient) return null;
+  const EXIT_MS = 320;
+  const [entered, setEntered] = useState(false);
+  const [mounted, setMounted] = useState(false);
+
+  useEscapeKey(onClose, wantOpen);
+  useBodyScrollLock(wantOpen);
+
+  useEffect(() => {
+    if (!show || !openForClient) {
+      setEntered(false);
+      setMounted(false);
+      return undefined;
+    }
+    if (wantOpen) {
+      setMounted(true);
+      setEntered(false);
+      const frame = requestAnimationFrame(() => {
+        requestAnimationFrame(() => setEntered(true));
+      });
+      return () => cancelAnimationFrame(frame);
+    }
+    setEntered(false);
+    const timer = window.setTimeout(() => setMounted(false), EXIT_MS);
+    return () => window.clearTimeout(timer);
+  }, [wantOpen, show, openForClient]);
+
+  if (!show || !openForClient || !mounted) return null;
 
   // Solo / admin can edit any; player only own seat.
   const canEditPlayer = (playerId) => {
@@ -96,15 +602,6 @@ export function PoliticsModal({
     ? argentFlightVoteBonus(game)
     : activePlayers.filter(p => !p.eliminated).length;
 
-  const winningChoice = (() => {
-    if (Object.keys(voteTotals).length === 0) return null;
-    const sortedVotes = Object.entries(voteTotals).sort((a, b) => b[1] - a[1]);
-    if (sortedVotes.length > 1 && sortedVotes[0][1] === sortedVotes[1][1] && sortedVotes[0][1] > 0) {
-      return null;
-    }
-    return sortedVotes[0][0];
-  })();
-
   const allVotedOnCurrentAgenda = isAgendaFullyVoted(currentAgenda, activePlayers);
   const completedAgendasCount = agendas.filter((agenda) =>
     isAgendaFullyVoted(agenda, activePlayers)
@@ -112,592 +609,917 @@ export function PoliticsModal({
 
   const currentSpeaker = activePlayers.find(p => p.id === speakerId);
   const orderedForVote = voteOrder.length ? voteOrder : activePlayers;
+  const hasXxcha = activePlayers.some(isXxchaPlayer);
+  const forVotes = Number(voteTotals.for) || 0;
+  const againstVotes = Number(voteTotals.against) || 0;
+  const faCastWeight = forVotes + againstVotes;
+  const lockedCount = activePlayers.filter((p) => !!influenceLocked[p.id]).length;
+
+  const subtitle = politicsStep === 'SETUP'
+    ? (oneVoteLaw
+      ? 'Активен закон «1 голос»: влияние не вводится — каждый отдаёт ровно один голос.'
+      : 'Каждый игрок указывает своё влияние (голоса) на фазу и подтверждает.')
+    : politicsStep === 'VOTE'
+      ? (currentAgenda?.type === 'PLAYER_CHOICE'
+        ? 'Выберите игрока, на которого будет применён эффект закона'
+        : currentAgenda?.type === 'OTHER'
+          ? 'Выберите вариант и отдайте голоса'
+          : 'Голосование по законам повестки.')
+      : 'Передача жетона Спикера.';
+
+  const pcDistributed = Object.values(voteTotals).reduce((sum, n) => sum + (Number(n) || 0), 0);
+  const playerPcPool = (p) => {
+    if (oneVoteLaw) return 1;
+    const spentPrev = agendas.slice(0, currentAgendaIndex).reduce((acc, agenda) => {
+      const playerVote = agenda.votes[p.id];
+      if (playerVote && agenda.locked[p.id]) return acc + (playerVote.amount || 0);
+      return acc;
+    }, 0);
+    const planetsPrev = agendas.slice(0, currentAgendaIndex).reduce((acc, agenda) => {
+      const playerVote = agenda.votes[p.id];
+      if (playerVote && agenda.locked[p.id]) return acc + (Number(playerVote.planets) || 0);
+      return acc;
+    }, 0);
+    const availInf = Math.max(0, (p.influence || 0) - spentPrev);
+    const availPlanets = isXxchaPlayer(p)
+      ? Math.max(0, (p.votePlanets || 0) - planetsPrev)
+      : 0;
+    return availInf + availPlanets;
+  };
+  /** Полный пул (для полоски). */
+  const pcTotalPool = orderedForVote.reduce((sum, p) => sum + playerPcPool(p), 0);
+  /**
+   * Осталось отдать: сумма пулов только тех, кто ещё не зафиксировал голос.
+   * Проголосовавший игрок в эту сумму не входит целиком.
+   */
+  const pcRemaining = orderedForVote.reduce((sum, p) => {
+    if (currentAgenda?.locked?.[p.id]) return sum;
+    return sum + playerPcPool(p);
+  }, 0);
+  const pcRemainPct = pcTotalPool > 0 ? Math.min(100, (pcRemaining / pcTotalPool) * 100) : 0;
 
   return (
-    <div className={`fixed inset-0 game-modal-overlay z-50 flex items-center justify-center p-4 max-md:items-end max-md:p-2 modal-overlay ${minimized ? 'hidden' : ''}`} role="presentation">
+    <div
+      className={`pol-overlay fixed inset-0 z-50 game-modal-overlay flex items-stretch md:items-center justify-center md:p-4 modal-overlay ${entered ? 'is-open' : 'is-tucking'}`}
+      role="presentation"
+      onClick={wantOpen ? (onMinimize || onClose) : undefined}
+      style={entered ? undefined : { pointerEvents: 'none' }}
+    >
       <div
         role="dialog"
         aria-modal="true"
         aria-labelledby="politics-modal-title"
-        className="game-modal-panel max-w-4xl w-full p-6 max-h-[90vh] overflow-y-auto max-md:p-4 max-md:max-h-[min(92vh,100dvh)] modal-scroll"
+        className={`pol-shell relative w-full max-md:h-full md:w-full flex flex-col overflow-hidden ${entered ? 'is-open' : 'is-tucking'} ${
+          politicsStep === 'VOTE' && (
+            currentAgenda?.type === 'FOR_AGAINST'
+            || currentAgenda?.type === 'PLAYER_CHOICE'
+            || currentAgenda?.type === 'OTHER'
+          )
+            ? 'pol-shell--pc'
+            : 'md:max-w-5xl md:h-auto md:max-h-[min(94vh,960px)]'
+        }`}
+        onClick={(event) => event.stopPropagation()}
       >
-        <div className="flex justify-between items-center mb-4 pb-3 border-b border-slate-800 gap-3 flex-wrap">
-          <h2 id="politics-modal-title" className="font-orbitron text-lg font-bold text-purple-400 uppercase flex items-center gap-2">
-            <i className="fa-solid fa-gavel" /> Фаза Политики
-          </h2>
-          <div className="flex items-center gap-3 flex-wrap justify-end">
-            {canAdmin && (
-              <button
-                type="button"
-                onClick={onToggleOneVoteLaw}
-                className={`text-[11px] font-bold px-3 py-1.5 rounded-lg border transition ${
-                  oneVoteLaw
-                    ? 'bg-amber-950 border-amber-500 text-amber-300'
-                    : 'bg-slate-950 border-slate-700 text-slate-400 hover:border-amber-600 hover:text-amber-200'
-                }`}
-                title="Закон: каждый игрок голосует ровно 1 голосом без доп. голосов и без ввода влияния"
-              >
-                {oneVoteLaw ? '① Закон: 1 голос' : '① Закон: 1 голос — выкл'}
-              </button>
-            )}
-            {!canAdmin && oneVoteLaw && (
-              <span className="text-[11px] font-bold px-2.5 py-1 rounded-lg border border-amber-700/60 text-amber-300 bg-amber-950/40">
-                ① 1 голос
-              </span>
-            )}
-            <button type="button" onClick={onMinimize} aria-label="Свернуть" className="text-slate-500 hover:text-white transition">
-              <i className="fa-solid fa-window-minimize text-base" />
-            </button>
-            <button type="button" onClick={onClose} aria-label="Закрыть" className="text-slate-500 hover:text-white transition">
-              <i className="fa-solid fa-xmark text-lg" />
-            </button>
-          </div>
-        </div>
-
-        {politicsStep === 'SETUP' && oneVoteLaw && (
-          <div className="space-y-4">
-            <p className="text-sm text-amber-200/90 bg-amber-950/30 border border-amber-700/50 rounded-xl px-4 py-3">
-              Активен закон «1 голос»: влияние не вводится — каждый отдаёт ровно один голос.
-            </p>
-            {canAdmin && (
-              <div className="flex justify-end">
+        <header className="pol-shell-head flex-shrink-0">
+          <div className="pol-shell-head-main min-w-0">
+            <div className="pol-shell-mark" aria-hidden="true">
+              <i className="fa-solid fa-gavel" />
+            </div>
+            <div className="min-w-0">
+              <h2 id="politics-modal-title" className="pol-shell-title">
+                Фаза политики
+              </h2>
+              <p className="pol-shell-sub">{subtitle}</p>
+              {politicsStep === 'SETUP' && !oneVoteLaw && hasXxcha && (
+                <p className="pol-shell-xxcha">
+                  Ззча также указывает число планет: при голосовании каждая перевёрнутая планета даёт +1 голос.
+                </p>
+              )}
+              {canAdmin && (
                 <button
                   type="button"
-                  onClick={() => setPoliticsStep('VOTE')}
-                  className="bg-purple-600 hover:bg-purple-500 text-white font-orbitron font-extrabold py-2 px-6 rounded-xl text-sm transition uppercase"
+                  onClick={onToggleOneVoteLaw}
+                  className={`pol-law-chip ${oneVoteLaw ? 'is-on' : ''}`}
+                  title="Закон: каждый игрок голосует ровно 1 голосом без доп. голосов и без ввода влияния"
                 >
-                  Перейти к голосованию <i className="fa-solid fa-arrow-right" />
+                  <i className="fa-solid fa-circle-info" aria-hidden="true" />
+                  {oneVoteLaw ? 'Закон: 1 голос' : 'Закон: 1 голос — выкл'}
                 </button>
-              </div>
-            )}
-          </div>
-        )}
-
-        {politicsStep === 'SETUP' && !oneVoteLaw && (
-          <div className="space-y-4">
-            <p className="text-sm text-slate-400">
-              Каждый игрок указывает своё влияние (голоса) на фазу и подтверждает.
-              {activePlayers.some(isXxchaPlayer) && (
-                <span className="block mt-1 text-emerald-400/90">
-                  Ззча также указывает число планет: при голосовании каждая перевёрнутая планета даёт +1 голос.
-                </span>
               )}
-            </p>
-            <div className="space-y-2">
-              {activePlayers.map(p => {
-                const faction = ALL_FACTIONS.find(f => f.id === p.factionId);
+              {!canAdmin && oneVoteLaw && (
+                <span className="pol-law-chip is-on is-readonly">Закон: 1 голос</span>
+              )}
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onMinimize}
+            className="pol-icon-btn pol-icon-btn--corner"
+            aria-label="Свернуть"
+            title="Свернуть"
+          >
+            <i className="fa-solid fa-window-minimize text-base" aria-hidden="true" />
+          </button>
+        </header>
+
+        <div className="pol-shell-body min-h-0 flex-1 overflow-y-auto modal-scroll">
+          {politicsStep === 'SETUP' && oneVoteLaw && (
+            <div className="pol-setup-law">
+              <p className="pol-setup-law-text">
+                Активен закон «1 голос»: влияние не вводится — каждый отдаёт ровно один голос.
+              </p>
+            </div>
+          )}
+
+          {politicsStep === 'SETUP' && !oneVoteLaw && (
+            <ol className="pol-seat-list">
+              {activePlayers.map((p, idx) => {
+                const faction = ALL_FACTIONS.find((f) => f.id === p.factionId);
                 const locked = !!influenceLocked[p.id];
                 const editable = canEditPlayer(p.id) && !locked;
                 const isXxcha = isXxchaPlayer(p);
+                const accent = p.color || '#a78bfa';
+                const isMine = seatId != null && p.id === seatId;
+                // Mobile seat client: only own influence row (host/admin still sees all).
+                const hideOnMobile = isSeatPlayer && !isMine;
                 return (
-                  <div key={p.id} className={`p-2 bg-slate-950 border rounded-lg flex items-center justify-between gap-3 max-md:flex-col max-md:items-stretch ${locked ? 'border-emerald-700/60' : 'border-slate-800'}`}>
-                    <div className="flex items-center gap-3 min-w-0">
-                      <img src={faction?.iconUrl} alt={faction?.name} className="w-8 h-8 object-contain flex-shrink-0" />
-                      <div className="min-w-0">
-                        <div className="font-bold text-white truncate">{p.name}</div>
-                        {isXxcha && (
-                          <div className="text-[10px] text-emerald-400 font-bold uppercase">Ззча · планеты +1</div>
+                  <li
+                    key={p.id}
+                    className={`pol-seat-row ${locked ? 'is-locked' : ''}${hideOnMobile ? ' is-other-mobile' : ''}${isXxcha ? ' has-planets' : ''}`}
+                    style={{ '--pol-seat-accent': accent }}
+                  >
+                    <div className="pol-seat-identity">
+                      <span className="pol-seat-idx" aria-hidden="true">{idx + 1}</span>
+                      <img
+                        src={faction?.iconUrl}
+                        alt=""
+                        className="pol-seat-icon"
+                      />
+                      <div className="pol-seat-meta min-w-0">
+                        <div className="pol-seat-name truncate">{p.name}</div>
+                        {isXxcha && !locked && (
+                          <span className="pol-seat-xxcha-tag">+1 планета</span>
+                        )}
+                        {locked && (
+                          <span className="pol-seat-ready-tag">
+                            <i className="fa-solid fa-check" aria-hidden="true" />
+                            Готово
+                          </span>
                         )}
                       </div>
-                      {locked && <span className="text-[10px] font-bold uppercase text-emerald-400 flex-shrink-0">✓ Готово</span>}
                     </div>
-                    <div className="flex items-center gap-2 flex-wrap justify-end">
-                      <div className="text-center">
-                        <div className="text-[9px] font-bold uppercase text-slate-500 tracking-wide">Влияние</div>
-                        <input
-                          type="number"
-                          min="0"
-                          value={p.influence || 0}
-                          disabled={!editable}
-                          onChange={(e) => onSetInfluence(p.id, parseInt(e.target.value, 10) || 0, isXxcha ? (p.votePlanets || 0) : undefined)}
-                          className="bg-slate-800 border border-slate-700 rounded-md w-20 text-center font-orbitron font-bold text-lg text-amber-400 focus:outline-none focus:border-amber-500 disabled:opacity-50"
-                        />
-                      </div>
+
+                    <div className="pol-seat-controls">
                       {isXxcha && (
-                        <div className="text-center">
-                          <div className="text-[9px] font-bold uppercase text-emerald-500/80 tracking-wide">Планеты</div>
-                          <input
-                            type="number"
-                            min="0"
-                            value={p.votePlanets || 0}
-                            disabled={!editable}
-                            onChange={(e) => onSetInfluence(p.id, p.influence || 0, parseInt(e.target.value, 10) || 0)}
-                            className="bg-slate-800 border border-emerald-800/60 rounded-md w-20 text-center font-orbitron font-bold text-lg text-emerald-300 focus:outline-none focus:border-emerald-500 disabled:opacity-50"
-                            title="Сколько планет можно перевернуть в этой фазе повестки"
-                          />
-                        </div>
+                        <PolStepper
+                          label="Планеты"
+                          tone="green"
+                          value={p.votePlanets || 0}
+                          disabled={!editable}
+                          onChange={(next) => onSetInfluence(p.id, p.influence || 0, next)}
+                        />
                       )}
+                      <PolStepper
+                        label="Влияние"
+                        tone="purple"
+                        value={p.influence || 0}
+                        disabled={!editable}
+                        onChange={(next) => onSetInfluence(
+                          p.id,
+                          next,
+                          isXxcha ? (p.votePlanets || 0) : undefined,
+                        )}
+                      />
                       {canEditPlayer(p.id) && !locked && (
                         <button
                           type="button"
                           onClick={() => onLockInfluence(p.id)}
-                          className="px-3 py-2 bg-purple-800 hover:bg-purple-700 text-xs font-bold rounded-md self-end"
+                          className="pol-ok-btn"
                         >
                           OK
                         </button>
                       )}
-                      {canAdmin && locked && (
-                        <button
-                          type="button"
-                          onClick={() => onUnlockInfluence(p.id)}
-                          className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-xs font-bold rounded-md text-slate-300 self-end"
-                        >
-                          Изменить
-                        </button>
+                      {locked && (
+                        canAdmin ? (
+                          <button
+                            type="button"
+                            onClick={() => onUnlockInfluence(p.id)}
+                            className="pol-ok-btn is-confirmed"
+                            title="Игрок подтвердил — нажмите, чтобы изменить"
+                          >
+                            Изменить
+                          </button>
+                        ) : (
+                          <span className="pol-ok-btn is-confirmed" aria-hidden="true">
+                            <i className="fa-solid fa-check" />
+                          </span>
+                        )
                       )}
                     </div>
-                  </div>
+                  </li>
                 );
               })}
-            </div>
-            <div className="pt-4 border-t border-slate-800 flex justify-end">
-              {canAdmin && (
-                <button
-                  type="button"
-                  disabled={!allInfluenceLocked}
-                  onClick={() => setPoliticsStep('VOTE')}
-                  className="bg-purple-600 hover:bg-purple-500 text-white font-orbitron font-extrabold py-2 px-6 rounded-xl text-sm transition uppercase disabled:bg-slate-800 disabled:text-slate-600 disabled:cursor-not-allowed"
-                >
-                  Перейти к голосованию <i className="fa-solid fa-arrow-right" />
-                </button>
-              )}
-              {!canAdmin && (
-                <p className="text-xs text-slate-500">
-                  {allInfluenceLocked
-                    ? 'Ожидание админа — открытие законов…'
-                    : 'Подтвердите своё влияние и дождитесь остальных.'}
-                </p>
-              )}
-            </div>
-          </div>
-        )}
+            </ol>
+          )}
 
-        {politicsStep === 'VOTE' && (
-          <div className="space-y-4">
-            <div className="flex flex-wrap justify-between items-center gap-2">
-              {canAdmin && !oneVoteLaw ? (
-                <button type="button" onClick={() => setPoliticsStep('SETUP')} className="text-xs text-slate-400 hover:text-white font-bold flex items-center gap-1">
-                  <i className="fa-solid fa-arrow-left" /> Назад к голосам
-                </button>
-              ) : <span />}
-              <div className="font-orbitron font-bold text-lg text-amber-400">ЗАКОН №{currentAgendaIndex + 1}</div>
-              {canAdmin && (
-                <button
-                  type="button"
-                  onClick={onToggleVoteReversed}
-                  className={`text-xs font-bold px-3 py-1.5 rounded-lg border transition ${
-                    voteReversed
-                      ? 'bg-amber-950 border-amber-600 text-amber-300'
-                      : 'bg-slate-950 border-slate-700 text-slate-300 hover:border-amber-600'
-                  }`}
-                  title="Обратный порядок от спикера. Серебряная Стая всё равно голосует первой."
-                >
-                  {voteReversed ? '↺ Обратный порядок' : '↻ Обычный порядок'}
-                </button>
-              )}
-            </div>
-
-            {oneVoteLaw && (
-              <div className="text-xs text-amber-200/90 bg-amber-950/25 border border-amber-700/40 rounded-xl px-3 py-2">
-                Закон «1 голос»: каждый игрок отдаёт ровно 1 голос (без влияния, Zeal, планет Ззча и других надбавок).
-              </div>
-            )}
-
-            <div className={`text-xs text-slate-400 bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 ${
-              isSeatPlayer ? 'max-md:hidden' : ''
+          {politicsStep === 'VOTE' && (
+            <div className={`pol-vote ${
+              currentAgenda?.type === 'FOR_AGAINST'
+              || currentAgenda?.type === 'PLAYER_CHOICE'
+              || currentAgenda?.type === 'OTHER'
+                ? 'pol-vote--pc space-y-3'
+                : 'space-y-4'
             }`}>
-              Порядок голосования{voteReversed ? ' (обратный)' : ''}:{' '}
-              {orderedForVote.map((p, i) => (
-                <span key={p.id} className={p.id === currentVoterId ? 'text-amber-300 font-bold' : ''}>
-                  {i > 0 ? ' → ' : ''}
-                  {p.name}
-                  {p.factionId === 'argent' ? ' ★' : ''}
-                  {p.factionId === 'xxcha' ? ' ◆' : ''}
-                  {p.id === speakerId ? ' (спикер)' : ''}
-                </span>
-              ))}
-            </div>
-
-            {isSeatPlayer && (
-              <div className="md:hidden text-xs text-slate-400 bg-slate-950 border border-slate-800 rounded-xl px-3 py-2">
-                Сейчас голосует:{' '}
-                <span className="text-amber-300 font-bold">
-                  {orderedForVote.find(p => p.id === currentVoterId)?.name || '—'}
-                </span>
-              </div>
-            )}
-
-            {!currentAgenda?.type && (
-              canAdmin ? (
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-2">
-                  <button type="button" onClick={() => setAgendaType('FOR_AGAINST')} className="p-6 bg-slate-950 hover:bg-slate-800 border border-slate-800 rounded-xl text-center space-y-2 transition hover:border-cyan-500">
-                    <div className="text-3xl">👍 / 👎</div>
-                    <div className="font-bold text-cyan-400">За / Против</div>
+              <div className="pol-vote-toolbar">
+                {canAdmin && !oneVoteLaw ? (
+                  <button type="button" onClick={() => setPoliticsStep('SETUP')} className="pol-vote-back">
+                    <i className="fa-solid fa-arrow-left" aria-hidden="true" />
+                    Назад к голосам
                   </button>
-                  <button type="button" onClick={() => setAgendaType('PLAYER_CHOICE')} className="p-6 bg-slate-950 hover:bg-slate-800 border border-slate-800 rounded-xl text-center space-y-2 transition hover:border-amber-500">
-                    <div className="text-3xl">👥</div>
-                    <div className="font-bold text-amber-400">Выбор игрока</div>
+                ) : <span />}
+                <div className="pol-vote-law-title">Закон №{currentAgendaIndex + 1}</div>
+                {canAdmin && (
+                  <button
+                    type="button"
+                    onClick={onToggleVoteReversed}
+                    className={`pol-vote-order-btn ${voteReversed ? 'is-on' : ''}`}
+                    title="Обратный порядок от спикера. Серебряная Стая всё равно голосует первой."
+                  >
+                    <i className={`fa-solid ${voteReversed ? 'fa-arrow-rotate-left' : 'fa-arrows-rotate'}`} aria-hidden="true" />
+                    {voteReversed ? 'Обратный порядок' : 'Обычный порядок'}
                   </button>
-                  <button type="button" onClick={() => setAgendaType('OTHER')} className="p-6 bg-slate-950 hover:bg-slate-800 border border-slate-800 rounded-xl text-center space-y-2 transition hover:border-rose-500">
-                    <div className="text-3xl">📝</div>
-                    <div className="font-bold text-rose-400">Другой выбор</div>
-                  </button>
-                </div>
-              ) : (
-                <p className="text-center text-sm text-slate-500 py-8">Админ выбирает тип закона…</p>
-              )
-            )}
-
-            {currentAgenda?.type && (
-              <>
-                <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800">
-                  <h4 className="font-orbitron font-bold text-sm text-amber-400 uppercase mb-3">Итоги голосования</h4>
-                  {Object.keys(voteTotals).length > 0 ? (
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                      {Object.entries(voteTotals).sort((a, b) => b[1] - a[1]).map(([choice, total]) => {
-                        let choiceName = choice;
-                        const isWinner = choice === winningChoice;
-                        if (currentAgenda.type === 'FOR_AGAINST') {
-                          choiceName = choice === 'for' ? 'ЗА' : 'ПРОТИВ';
-                        } else if (currentAgenda.type === 'PLAYER_CHOICE') {
-                          choiceName = activePlayers.find(pl => String(pl.id) === choice)?.name || 'Неизвестно';
-                        } else if (currentAgenda.type === 'OTHER') {
-                          choiceName = currentAgenda.customChoices?.[choice] || `Вариант ${parseInt(choice, 10) + 1}`;
-                        }
-                        return (
-                          <div key={choice} className={`bg-slate-900 p-3 rounded-xl border text-center transition-all ${isWinner ? 'border-amber-400 shadow-lg shadow-amber-500/20' : 'border-slate-800/70'}`}>
-                            <div className="font-bold text-xs uppercase text-slate-400 truncate">{choiceName}</div>
-                            <div className="font-orbitron font-black text-3xl text-white mt-1">{total}</div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  ) : (
-                    <div className="text-center text-sm text-slate-500 py-4">Голоса еще не отданы.</div>
-                  )}
-                </div>
-
-                {currentAgenda.type === 'OTHER' && canAdmin && (
-                  <div className="space-y-2 pt-4 border-t border-slate-800">
-                    <h4 className="font-orbitron font-bold text-sm text-rose-400 uppercase mb-2">Варианты для голосования</h4>
-                    {currentAgenda.customChoices?.map((choice, index) => (
-                      <div key={index} className="flex items-center gap-2">
-                        <span className="text-xs font-bold text-slate-500 w-10 text-right">#{index + 1}</span>
-                        <input
-                          type="text"
-                          value={choice}
-                          onChange={(e) => {
-                            const newChoices = [...currentAgenda.customChoices];
-                            newChoices[index] = e.target.value;
-                            setCustomChoices(newChoices);
-                          }}
-                          placeholder={`Введите вариант ${index + 1}`}
-                          className="bg-slate-900 border border-slate-700 px-3 py-1.5 rounded-md font-bold text-sm text-white focus:outline-none focus:border-rose-400 flex-grow"
-                        />
-                      </div>
-                    ))}
-                    <button
-                      type="button"
-                      onClick={() => setCustomChoices([...(currentAgenda.customChoices || []), ''])}
-                      className="w-full mt-2 py-2 bg-slate-800/50 hover:bg-slate-800 border border-dashed border-slate-700 rounded-lg text-slate-400 text-xs font-bold transition"
-                    >
-                      + Добавить вариант
-                    </button>
-                  </div>
                 )}
+              </div>
 
-                <div className="space-y-3 pt-4 border-t border-slate-800">
-                  {orderedForVote.map(p => {
-                    const vote = currentAgenda.votes[p.id] || { choice: 'abstain', amount: 0, planets: 0 };
-                    const isLocked = !!currentAgenda.locked[p.id];
-                    const isCurrent = currentVoterId === p.id;
-                    const isMine = seatId != null && p.id === seatId;
-                    const votesSpentOnPrevAgendas = oneVoteLaw
-                      ? 0
-                      : agendas.slice(0, currentAgendaIndex).reduce((acc, agenda) => {
-                        const playerVote = agenda.votes[p.id];
-                        if (playerVote && agenda.locked[p.id]) {
-                          return acc + (playerVote.amount || 0);
-                        }
-                        return acc;
-                      }, 0);
-                    const planetsSpentOnPrevAgendas = oneVoteLaw
-                      ? 0
-                      : agendas.slice(0, currentAgendaIndex).reduce((acc, agenda) => {
-                        const playerVote = agenda.votes[p.id];
-                        if (playerVote && agenda.locked[p.id]) {
-                          return acc + (Number(playerVote.planets) || 0);
-                        }
-                        return acc;
-                      }, 0);
-                    const availableInfluence = oneVoteLaw
-                      ? 1
-                      : (p.influence || 0) - votesSpentOnPrevAgendas;
-                    const availablePlanets = oneVoteLaw
-                      ? 0
-                      : Math.max(0, (p.votePlanets || 0) - planetsSpentOnPrevAgendas);
-                    const faction = ALL_FACTIONS.find(f => f.id === p.factionId);
-                    const canVoteNow = canEditPlayer(p.id) && isCurrent && !isLocked;
-                    const isArgent = !oneVoteLaw && isArgentFlightPlayer(p);
-                    const isXxcha = !oneVoteLaw && isXxchaPlayer(p);
-                    const spent = oneVoteLaw
-                      ? (vote.choice === 'abstain' ? 0 : 1)
-                      : (Number(vote.amount) || 0);
-                    const planetsSpent = oneVoteLaw ? 0 : Math.max(0, Number(vote.planets) || 0);
-                    const liveBallot = {
-                      ...vote,
-                      amount: spent,
-                      planets: isXxcha ? planetsSpent : 0,
-                    };
-                    const countsToward = vote.choice === 'abstain'
-                      ? 0
-                      : effectiveVoteAmount(
-                        game || { players: activePlayers, politics: { oneVoteLaw } },
-                        p,
-                        liveBallot,
-                      );
+              {oneVoteLaw && (
+                <div className="text-xs text-amber-200/90 bg-amber-950/25 border border-amber-700/40 rounded-xl px-3 py-2">
+                  Закон «1 голос»: каждый игрок отдаёт ровно 1 голос (без влияния, Zeal, планет Ззча и других надбавок).
+                </div>
+              )}
 
-                    return (
+              <div className={`pol-vote-order-bar ${isSeatPlayer ? 'max-md:hidden' : ''}`}>
+                <span className="pol-vote-order-label">
+                  Порядок голосования{voteReversed ? ' (обратный)' : ''}:
+                </span>
+                <ol className="pol-vote-order-list">
+                  {orderedForVote.map((p, i) => (
+                    <li key={p.id} className="pol-vote-order-slot">
                       <div
-                        key={p.id}
-                        className={`p-4 bg-slate-950 border rounded-xl flex items-center justify-between gap-4 transition max-md:flex-col max-md:items-stretch max-md:gap-3 ${
-                          isSeatPlayer && !isMine ? 'hidden md:flex' : ''
-                        } ${
-                          isLocked
-                            ? 'border-purple-700/50 opacity-60'
-                            : isCurrent
-                              ? 'border-amber-500 shadow-lg shadow-amber-500/10'
-                              : 'border-slate-800 opacity-70'
-                        }`}
+                        className={`pol-vote-order-chip ${p.id === currentVoterId ? 'is-current' : ''} ${currentAgenda?.locked?.[p.id] ? 'is-done' : ''} ${p.id === speakerId ? 'is-speaker' : ''}`}
+                        style={{ '--chip-color': p.color || '#a78bfa' }}
                       >
-                        <div className="flex items-center gap-3 flex-shrink-0 max-md:min-w-0">
-                          <img src={faction?.iconUrl} alt={faction?.name} className="w-9 h-9 object-contain" />
-                          <div>
-                            <div className="font-bold text-lg text-white flex items-center gap-2">
-                              {p.name}
-                              {isCurrent && !isLocked && (
-                                <span className="text-[10px] uppercase font-bold text-amber-400">Сейчас</span>
-                              )}
-                            </div>
-                            {p.id === speakerId && (
-                              <div className="text-[10px] text-purple-400 font-bold uppercase">Спикер</div>
-                            )}
-                            {isArgent && (
-                              <div className="text-[10px] text-yellow-400/90 font-bold">
-                                Zeal: +{argentBonus} при ≥1 голосе
-                                {spent > 0 && vote.choice !== 'abstain' ? ` → итог ${countsToward}` : ''}
-                              </div>
-                            )}
-                            {isXxcha && (
-                              <div className="text-[10px] text-emerald-400/90 font-bold">
-                                Планеты: +1 голос за каждую
-                                {vote.choice !== 'abstain' && (spent > 0 || planetsSpent > 0)
-                                  ? ` → итог ${countsToward}`
-                                  : ''}
-                              </div>
-                            )}
+                        <span className="pol-vote-order-chip-accent" aria-hidden="true" />
+                        <span className="pol-vote-order-name">
+                          {p.name}
+                          {p.factionId === 'argent' ? ' ★' : ''}
+                          {p.factionId === 'xxcha' ? ' ◆' : ''}
+                        </span>
+                        {p.id === speakerId && (
+                          <span className="pol-vote-order-chip-tag">спикер</span>
+                        )}
+                      </div>
+                      {i < orderedForVote.length - 1 && (
+                        <span className="pol-vote-order-sep" aria-hidden="true">→</span>
+                      )}
+                    </li>
+                  ))}
+                </ol>
+              </div>
+
+              {isSeatPlayer && (
+                <div className="md:hidden text-xs text-slate-400 bg-slate-950/70 border border-violet-800/40 rounded-xl px-3 py-2">
+                  Сейчас голосует:{' '}
+                  <span className="text-amber-300 font-bold">
+                    {orderedForVote.find(p => p.id === currentVoterId)?.name || '—'}
+                  </span>
+                </div>
+              )}
+
+              {!currentAgenda?.type && (
+                canAdmin ? (
+                  <div className="pol-type-pick">
+                    <h3 className="pol-type-pick-title">Выберите тип голосования</h3>
+                    <div className="pol-type-grid">
+                      <button
+                        type="button"
+                        onClick={() => setAgendaType('FOR_AGAINST')}
+                        className="pol-type-card tone-for"
+                      >
+                        <span className="pol-type-radio" aria-hidden="true" />
+                        <span className="pol-type-art" aria-hidden="true">
+                          <i className="fa-solid fa-thumbs-up" />
+                          <i className="fa-solid fa-thumbs-down" />
+                        </span>
+                        <span className="pol-type-name">За / Против</span>
+                        <span className="pol-type-desc">
+                          Простое голосование: каждый выбирает «За» или «Против» закона.
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setAgendaType('PLAYER_CHOICE')}
+                        className="pol-type-card tone-player"
+                      >
+                        <span className="pol-type-radio" aria-hidden="true" />
+                        <span className="pol-type-art" aria-hidden="true">
+                          <i className="fa-solid fa-users" />
+                        </span>
+                        <span className="pol-type-name">Выбор игрока</span>
+                        <span className="pol-type-desc">
+                          Голосование за конкретного игрока (например, за должность или эффект закона).
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setAgendaType('OTHER')}
+                        className="pol-type-card tone-other"
+                      >
+                        <span className="pol-type-radio" aria-hidden="true" />
+                        <span className="pol-type-art" aria-hidden="true">
+                          <i className="fa-solid fa-file-pen" />
+                        </span>
+                        <span className="pol-type-name">Другой выбор</span>
+                        <span className="pol-type-desc">
+                          Несколько вариантов ответа (A / B / C / …), которые вы задаёте вручную.
+                        </span>
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-center text-sm text-slate-500 py-8">Админ выбирает тип закона…</p>
+                )
+              )}
+
+              {currentAgenda?.type && (
+                <>
+                  {(currentAgenda.type === 'FOR_AGAINST' || currentAgenda.type === 'PLAYER_CHOICE' || currentAgenda.type === 'OTHER') && !isSeatPlayer && (
+                    <div className="pol-pc">
+                      {currentAgenda.type === 'OTHER' && canAdmin && (
+                        <div className="pol-pc-choices-editor">
+                          <h4 className="pol-pc-summary-title">Настройка вариантов</h4>
+                          <div className="pol-pc-choices-grid">
+                            {(currentAgenda.customChoices || []).map((choice, index) => {
+                              const letter = String.fromCharCode(65 + (index % 26));
+                              const canRemove = (currentAgenda.customChoices || []).length > 1;
+                              return (
+                                <div key={index} className={`pol-pc-choice-block tone-${index % 4}`}>
+                                  <span className="pol-pc-choice-badge" aria-hidden="true">{letter}</span>
+                                  <div className="pol-pc-choice-body">
+                                    <input
+                                      type="text"
+                                      value={choice}
+                                      onChange={(e) => {
+                                        const newChoices = [...currentAgenda.customChoices];
+                                        newChoices[index] = e.target.value;
+                                        setCustomChoices(newChoices);
+                                      }}
+                                      placeholder={`Вариант ${letter}`}
+                                      className="pol-pc-choice-input"
+                                      aria-label={`Вариант ${letter}`}
+                                    />
+                                    <span className="pol-pc-choice-hint">
+                                      {choice.trim() ? 'Готов к голосованию' : 'Введите текст варианта'}
+                                    </span>
+                                  </div>
+                                  {canRemove && (
+                                    <button
+                                      type="button"
+                                      className="pol-pc-choice-remove"
+                                      aria-label={`Удалить вариант ${letter}`}
+                                      onClick={() => {
+                                        const next = currentAgenda.customChoices.filter((_, i) => i !== index);
+                                        setCustomChoices(next.length ? next : ['']);
+                                      }}
+                                    >
+                                      <i className="fa-solid fa-xmark" aria-hidden="true" />
+                                    </button>
+                                  )}
+                                </div>
+                              );
+                            })}
+                            <button
+                              type="button"
+                              className="pol-pc-choice-add"
+                              onClick={() => setCustomChoices([...(currentAgenda.customChoices || []), ''])}
+                            >
+                              <i className="fa-solid fa-plus" aria-hidden="true" />
+                              <span>Добавить вариант</span>
+                            </button>
                           </div>
-                          <div className="text-center w-20 max-md:ml-auto">
-                            <div className="text-xs text-slate-400">{oneVoteLaw ? 'Голосов' : 'Влияние'}</div>
-                            <div className="font-orbitron font-black text-3xl text-amber-400 max-md:text-2xl">{availableInfluence}</div>
-                          </div>
-                          {isXxcha && (
-                            <div className="text-center w-20">
-                              <div className="text-xs text-emerald-500/80">Планеты</div>
-                              <div className="font-orbitron font-black text-3xl text-emerald-300 max-md:text-2xl">{availablePlanets}</div>
+                        </div>
+                      )}
+
+                      <div className="pol-pc-summary">
+                        <div className="pol-pc-results">
+                          <h4 className="pol-pc-summary-title">
+                            {currentAgenda.type === 'OTHER'
+                              ? 'Варианты ответов'
+                              : currentAgenda.type === 'FOR_AGAINST'
+                                ? 'Итоги голосования'
+                                : 'Текущие результаты'}
+                          </h4>
+                          {currentAgenda.type === 'FOR_AGAINST' ? (
+                            <div className="pol-pc-variant-grid pol-pc-variant-grid--fa">
+                              <PolFaSideResult
+                                label="За"
+                                total={forVotes}
+                                tone="for"
+                                iconClass="fa-solid fa-thumbs-up"
+                                weight={faCastWeight}
+                              />
+                              <PolFaSideResult
+                                label="Против"
+                                total={againstVotes}
+                                tone="against"
+                                iconClass="fa-solid fa-thumbs-down"
+                                weight={faCastWeight}
+                              />
                             </div>
+                          ) : currentAgenda.type === 'OTHER' ? (
+                            (currentAgenda.customChoices || []).some((c) => String(c || '').trim()) ? (
+                              <div className="pol-pc-variant-grid">
+                                {(currentAgenda.customChoices || []).map((label, index) => {
+                                  if (!String(label || '').trim()) return null;
+                                  const total = voteTotals[String(index)] || voteTotals[index] || 0;
+                                  const pct = pcDistributed > 0 ? (total / pcDistributed) * 100 : 0;
+                                  const letter = String.fromCharCode(65 + (index % 26));
+                                  return (
+                                    <div
+                                      key={index}
+                                      className={`pol-pc-variant-block tone-${index % 4}${total > 0 ? ' has-votes' : ''}`}
+                                    >
+                                      <div className="pol-pc-variant-head">
+                                        <span className="pol-pc-choice-badge" aria-hidden="true">{letter}</span>
+                                        <div className="pol-pc-variant-text">
+                                          <span className="pol-pc-variant-title">{label}</span>
+                                          <span className="pol-pc-variant-sub">
+                                            {total > 0 ? `Получает ${total} ${pluralVotes(total)}` : 'Не выбран'}
+                                          </span>
+                                        </div>
+                                        <strong className="pol-pc-variant-count">{total}</strong>
+                                      </div>
+                                      <div className="pol-pc-results-bar">
+                                        <span style={{ width: `${pct}%` }} />
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            ) : (
+                              <p className="pol-pc-empty">Добавьте варианты ответов выше.</p>
+                            )
+                          ) : Object.keys(voteTotals).length > 0 ? (
+                            <ul className="pol-pc-results-list">
+                              {Object.entries(voteTotals).sort((a, b) => b[1] - a[1]).map(([choice, total]) => {
+                                const pct = pcDistributed > 0 ? (total / pcDistributed) * 100 : 0;
+                                const target = activePlayers.find(pl => String(pl.id) === String(choice));
+                                const tf = target ? ALL_FACTIONS.find(f => f.id === target.factionId) : null;
+                                return (
+                                  <li key={choice} className="pol-pc-results-item">
+                                    <div className="pol-pc-results-head">
+                                      {target ? (
+                                        <>
+                                          <img src={tf?.iconUrl} alt="" className="pol-pc-icon sm" />
+                                          <span>{target.name}</span>
+                                        </>
+                                      ) : (
+                                        <span>Вариант {choice}</span>
+                                      )}
+                                      <strong>{total}</strong>
+                                    </div>
+                                    <div className="pol-pc-results-bar">
+                                      <span style={{ width: `${pct}%` }} />
+                                    </div>
+                                  </li>
+                                );
+                              })}
+                            </ul>
+                          ) : (
+                            <p className="pol-pc-empty">Голоса ещё не отданы.</p>
                           )}
                         </div>
+                        <div className="pol-pc-total">
+                          <h4 className="pol-pc-summary-title">Всего голосов</h4>
+                          <div className="pol-pc-total-num">{pcRemaining}</div>
+                          <div className="pol-pc-total-caption">осталось</div>
+                          <div className="pol-pc-total-bar">
+                            <span style={{ width: `${pcRemainPct}%` }} />
+                          </div>
+                        </div>
+                      </div>
 
-                        <div className={`flex items-center gap-2 max-md:w-full ${
-                          isXxcha ? 'max-md:flex-col max-md:items-stretch max-md:gap-2.5' : 'max-md:flex-wrap'
-                        }`}>
-                          <select
-                            value={vote.choice}
-                            onChange={e => {
-                              const choice = e.target.value;
+                      <div className="pol-pc-table-wrap">
+                        <table className="pol-pc-table">
+                          <thead>
+                            <tr>
+                              <th className="pol-pc-col-num">#</th>
+                              <th className="pol-pc-col-player">Игрок</th>
+                              <th className="pol-pc-col-inf">{oneVoteLaw ? 'Голосов' : 'Влияние'}</th>
+                              <th className="pol-pc-col-for">
+                                {currentAgenda.type === 'FOR_AGAINST'
+                                  ? 'Выбор'
+                                  : currentAgenda.type === 'OTHER'
+                                    ? 'Вариант'
+                                    : 'За кого'}
+                              </th>
+                              <th className="pol-pc-col-spent">Потрачено</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {orderedForVote.map((p, idx) => {
+                              const vote = currentAgenda.votes[p.id] || { choice: 'abstain', amount: 0, planets: 0 };
+                              const isLocked = !!currentAgenda.locked[p.id];
+                              const isCurrent = currentVoterId === p.id;
+                              const canVoteNow = canEditPlayer(p.id) && isCurrent && !isLocked;
+                              const votesSpentOnPrevAgendas = oneVoteLaw
+                                ? 0
+                                : agendas.slice(0, currentAgendaIndex).reduce((acc, agenda) => {
+                                  const playerVote = agenda.votes[p.id];
+                                  if (playerVote && agenda.locked[p.id]) return acc + (playerVote.amount || 0);
+                                  return acc;
+                                }, 0);
+                              const planetsSpentOnPrevAgendas = oneVoteLaw
+                                ? 0
+                                : agendas.slice(0, currentAgendaIndex).reduce((acc, agenda) => {
+                                  const playerVote = agenda.votes[p.id];
+                                  if (playerVote && agenda.locked[p.id]) return acc + (Number(playerVote.planets) || 0);
+                                  return acc;
+                                }, 0);
+                              const availableInfluence = oneVoteLaw
+                                ? 1
+                                : (p.influence || 0) - votesSpentOnPrevAgendas;
+                              const availablePlanets = oneVoteLaw
+                                ? 0
+                                : Math.max(0, (p.votePlanets || 0) - planetsSpentOnPrevAgendas);
+                              const isXxcha = !oneVoteLaw && isXxchaPlayer(p);
+                              const faction = ALL_FACTIONS.find(f => f.id === p.factionId);
+                              const spent = oneVoteLaw
+                                ? (vote.choice === 'abstain' ? 0 : 1)
+                                : (Number(vote.amount) || 0);
+                              const planetsSpent = oneVoteLaw ? 0 : Math.max(0, Number(vote.planets) || 0);
+                              const liveBallot = { ...vote, amount: spent, planets: isXxcha ? planetsSpent : 0 };
+                              const countsToward = vote.choice === 'abstain'
+                                ? 0
+                                : effectiveVoteAmount(
+                                  game || { players: activePlayers, politics: { oneVoteLaw } },
+                                  p,
+                                  liveBallot,
+                                );
+                              const isFa = currentAgenda.type === 'FOR_AGAINST';
+                              const isOther = currentAgenda.type === 'OTHER';
+                              const target = !isFa && !isOther && vote.choice !== 'abstain'
+                                ? activePlayers.find(pl => String(pl.id) === String(vote.choice))
+                                : null;
+                              const targetFaction = target
+                                ? ALL_FACTIONS.find(f => f.id === target.factionId)
+                                : null;
+                              const choiceIdx = isOther && vote.choice !== 'abstain'
+                                ? parseInt(vote.choice, 10)
+                                : NaN;
+                              const choiceLabel = Number.isFinite(choiceIdx)
+                                ? (currentAgenda.customChoices?.[choiceIdx] || `Вариант ${choiceIdx + 1}`)
+                                : null;
+                              const faSide = isFa && (vote.choice === 'for' || vote.choice === 'against')
+                                ? FA_SIDE_OPTIONS.find(o => o.id === vote.choice)
+                                : null;
+                              const rowState = isLocked ? 'is-done' : isCurrent ? 'is-current' : 'is-waiting';
+                              const onPickChoice = (choice) => {
+                                setAgendaVotes(p.id, {
+                                  choice,
+                                  amount: choice === 'abstain' ? 0 : (oneVoteLaw ? 1 : vote.amount),
+                                  planets: choice === 'abstain' ? 0 : (vote.planets || 0),
+                                });
+                              };
+
+                              return (
+                                <tr key={p.id} className={`pol-pc-row ${rowState}`}>
+                                  <td className="pol-pc-col-num">{idx + 1}</td>
+                                  <td className="pol-pc-col-player">
+                                    <div className="pol-pc-player">
+                                      <img src={faction?.iconUrl} alt="" className="pol-pc-icon" />
+                                      <div className="pol-pc-player-text">
+                                        <span className="pol-pc-name">{p.name}</span>
+                                        {p.id === speakerId && <span className="pol-pc-tag">Спикер</span>}
+                                      </div>
+                                    </div>
+                                  </td>
+                                  <td className="pol-pc-col-inf">
+                                    <span className="pol-pc-inf-box">{availableInfluence}</span>
+                                    {isXxcha && (
+                                      <span className="pol-pc-inf-box tone-planet" title="Планеты">{availablePlanets}</span>
+                                    )}
+                                  </td>
+                                  <td className="pol-pc-col-for">
+                                    {canVoteNow ? (
+                                      isFa ? (
+                                        <PolPcFaButtons
+                                          value={vote.choice}
+                                          onChange={onPickChoice}
+                                        />
+                                      ) : isOther ? (
+                                        <PolPcVariantPicker
+                                          value={vote.choice}
+                                          choices={currentAgenda.customChoices || []}
+                                          onChange={onPickChoice}
+                                        />
+                                      ) : (
+                                        <PolPcTargetPicker
+                                          value={vote.choice}
+                                          players={activePlayers}
+                                          onChange={onPickChoice}
+                                        />
+                                      )
+                                    ) : isLocked && faSide ? (
+                                      <div className={`pol-pc-for tone-${faSide.tone}`}>
+                                        <span className={`pol-pc-icon sm is-fa tone-${faSide.tone}`} aria-hidden="true">
+                                          <i className={faSide.iconClass} />
+                                        </span>
+                                        <span>{faSide.label}</span>
+                                      </div>
+                                    ) : isLocked && target ? (
+                                      <div className="pol-pc-for">
+                                        <img src={targetFaction?.iconUrl} alt="" className="pol-pc-icon sm" />
+                                        <span>{target.name}</span>
+                                      </div>
+                                    ) : isLocked && choiceLabel ? (
+                                      <div className="pol-pc-for">
+                                        <span className="pol-pc-icon sm is-num" aria-hidden="true">
+                                          {choiceIdx + 1}
+                                        </span>
+                                        <span>{choiceLabel}</span>
+                                      </div>
+                                    ) : isLocked && vote.choice === 'abstain' ? (
+                                      <span className="pol-pc-abstain">
+                                        <i className="fa-solid fa-ban" aria-hidden="true" />
+                                        Воздержался
+                                      </span>
+                                    ) : (
+                                      <span className="pol-pc-muted">—</span>
+                                    )}
+                                  </td>
+                                  <td className="pol-pc-col-spent">
+                                    {canVoteNow ? (
+                                      <PolPcSpentControls
+                                        vote={vote}
+                                        availableInfluence={availableInfluence}
+                                        availablePlanets={availablePlanets}
+                                        isXxcha={isXxcha}
+                                        oneVoteLaw={oneVoteLaw}
+                                        onAmount={(amount) => setAgendaVotes(p.id, { ...vote, amount })}
+                                        onPlanets={(planets) => setAgendaVotes(p.id, { ...vote, planets })}
+                                        onConfirm={() => lockVote(p.id)}
+                                      />
+                                    ) : (
+                                      <span className="pol-pc-spent">
+                                        {isLocked ? countsToward : 0}
+                                        <span className="pol-pc-spent-sep"> / </span>
+                                        {availableInfluence + (isXxcha ? availablePlanets : 0)}
+                                      </span>
+                                    )}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+
+                  {isSeatPlayer && (
+                  <div className="space-y-3 pt-4 border-t border-violet-800/30">
+                    {orderedForVote.map(p => {
+                      const vote = currentAgenda.votes[p.id] || { choice: 'abstain', amount: 0, planets: 0 };
+                      const isLocked = !!currentAgenda.locked[p.id];
+                      const isCurrent = currentVoterId === p.id;
+                      const isMine = seatId != null && p.id === seatId;
+                      const votesSpentOnPrevAgendas = oneVoteLaw
+                        ? 0
+                        : agendas.slice(0, currentAgendaIndex).reduce((acc, agenda) => {
+                          const playerVote = agenda.votes[p.id];
+                          if (playerVote && agenda.locked[p.id]) {
+                            return acc + (playerVote.amount || 0);
+                          }
+                          return acc;
+                        }, 0);
+                      const planetsSpentOnPrevAgendas = oneVoteLaw
+                        ? 0
+                        : agendas.slice(0, currentAgendaIndex).reduce((acc, agenda) => {
+                          const playerVote = agenda.votes[p.id];
+                          if (playerVote && agenda.locked[p.id]) {
+                            return acc + (Number(playerVote.planets) || 0);
+                          }
+                          return acc;
+                        }, 0);
+                      const availableInfluence = oneVoteLaw
+                        ? 1
+                        : (p.influence || 0) - votesSpentOnPrevAgendas;
+                      const availablePlanets = oneVoteLaw
+                        ? 0
+                        : Math.max(0, (p.votePlanets || 0) - planetsSpentOnPrevAgendas);
+                      const faction = ALL_FACTIONS.find(f => f.id === p.factionId);
+                      const canVoteNow = canEditPlayer(p.id) && isCurrent && !isLocked;
+                      const isArgent = !oneVoteLaw && isArgentFlightPlayer(p);
+                      const isXxcha = !oneVoteLaw && isXxchaPlayer(p);
+                      const spent = oneVoteLaw
+                        ? (vote.choice === 'abstain' ? 0 : 1)
+                        : (Number(vote.amount) || 0);
+                      const planetsSpent = oneVoteLaw ? 0 : Math.max(0, Number(vote.planets) || 0);
+                      const liveBallot = {
+                        ...vote,
+                        amount: spent,
+                        planets: isXxcha ? planetsSpent : 0,
+                      };
+                      const countsToward = vote.choice === 'abstain'
+                        ? 0
+                        : effectiveVoteAmount(
+                          game || { players: activePlayers, politics: { oneVoteLaw } },
+                          p,
+                          liveBallot,
+                        );
+
+                      return (
+                        <div
+                          key={p.id}
+                          className={`p-4 bg-slate-950/70 border rounded-xl flex items-center justify-between gap-4 transition max-md:flex-col max-md:items-stretch max-md:gap-3 ${
+                            !isMine ? 'hidden md:flex' : ''
+                          } ${
+                            isLocked
+                              ? 'border-purple-700/50 opacity-60'
+                              : isCurrent
+                                ? 'border-amber-500 shadow-lg shadow-amber-500/10'
+                                : 'border-violet-800/40 opacity-70'
+                          }`}
+                        >
+                          <div className="flex items-center gap-3 flex-shrink-0 max-md:min-w-0">
+                            <img src={faction?.iconUrl} alt={faction?.name} className="w-9 h-9 object-contain" />
+                            <div>
+                              <div className="font-bold text-lg text-white flex items-center gap-2">
+                                {p.name}
+                              </div>
+                              {p.id === speakerId && (
+                                <div className="text-[10px] text-purple-400 font-bold uppercase">Спикер</div>
+                              )}
+                              {isArgent && (
+                                <div className="text-[10px] text-yellow-400/90 font-bold">
+                                  Zeal: +{argentBonus} при ≥1 голосе
+                                  {spent > 0 && vote.choice !== 'abstain' ? ` → итог ${countsToward}` : ''}
+                                </div>
+                              )}
+                              {isXxcha && (
+                                <div className="text-[10px] text-emerald-400/90 font-bold">
+                                  Планеты: +1 голос за каждую
+                                  {vote.choice !== 'abstain' && (spent > 0 || planetsSpent > 0)
+                                    ? ` → итог ${countsToward}`
+                                    : ''}
+                                </div>
+                              )}
+                            </div>
+                            <div className="text-center w-20 max-md:ml-auto">
+                              <div className="text-xs text-slate-400">{oneVoteLaw ? 'Голосов' : 'Влияние'}</div>
+                              <div className="font-orbitron font-black text-3xl text-amber-400 max-md:text-2xl">{availableInfluence}</div>
+                            </div>
+                            {isXxcha && (
+                              <div className="text-center w-20">
+                                <div className="text-xs text-emerald-500/80">Планеты</div>
+                                <div className="font-orbitron font-black text-3xl text-emerald-300 max-md:text-2xl">{availablePlanets}</div>
+                              </div>
+                            )}
+                          </div>
+
+                          <PolPcVoteRow
+                            vote={vote}
+                            players={currentAgenda.type === 'PLAYER_CHOICE' ? activePlayers : undefined}
+                            variantChoices={currentAgenda.type === 'OTHER' ? (currentAgenda.customChoices || []) : undefined}
+                            faMode={currentAgenda.type === 'FOR_AGAINST'}
+                            availableInfluence={availableInfluence}
+                            availablePlanets={availablePlanets}
+                            isXxcha={isXxcha}
+                            oneVoteLaw={oneVoteLaw}
+                            disabled={!canVoteNow}
+                            onChoice={(choice) => {
                               setAgendaVotes(p.id, {
                                 choice,
                                 amount: choice === 'abstain' ? 0 : (oneVoteLaw ? 1 : vote.amount),
                                 planets: choice === 'abstain' ? 0 : (vote.planets || 0),
                               });
                             }}
-                            disabled={!canVoteNow}
-                            className={`bg-slate-800 border border-slate-700 rounded-md px-2 py-2 text-xs text-white focus:outline-none focus:border-purple-400 disabled:opacity-50 ${
-                              isXxcha
-                                ? 'w-32 max-md:w-full max-md:min-h-[44px] max-md:text-sm'
-                                : 'w-32 max-md:flex-1 max-md:min-h-[44px]'
-                            }`}
-                          >
-                            <option value="abstain">Воздержаться</option>
-                            {currentAgenda.type === 'FOR_AGAINST' && (
-                              <>
-                                <option value="for">За</option>
-                                <option value="against">Против</option>
-                              </>
-                            )}
-                            {currentAgenda.type === 'PLAYER_CHOICE' && activePlayers.map(target => (
-                              <option key={target.id} value={target.id}>{target.name}</option>
-                            ))}
-                            {currentAgenda.type === 'OTHER' && currentAgenda.customChoices?.map((opt, idx) => (
-                              opt && <option key={idx} value={idx}>{opt}</option>
-                            ))}
-                          </select>
-                          {oneVoteLaw ? (
-                            <div className="flex items-center gap-2 max-md:w-full">
-                              <div
-                                className="bg-slate-800 border border-slate-700 rounded-md w-28 max-md:flex-1 text-center font-orbitron font-black text-4xl text-cyan-400 opacity-90"
-                                title="По закону — ровно 1 голос"
-                              >
-                                {vote.choice === 'abstain' ? 0 : 1}
-                              </div>
-                              <button
-                                type="button"
-                                onClick={() => lockVote(p.id)}
-                                disabled={!canVoteNow}
-                                className="px-4 py-2 bg-purple-800 hover:bg-purple-700 text-sm font-bold rounded-md disabled:bg-slate-800 disabled:text-slate-500 disabled:cursor-not-allowed self-end max-md:min-h-[44px]"
-                              >
-                                {isLocked ? '✓' : 'OK'}
-                              </button>
-                            </div>
-                          ) : isXxcha ? (
-                            <div className="flex items-end gap-2 max-md:w-full">
-                              <div className="flex items-end gap-2 flex-1 min-w-0">
-                                <div className="text-center flex-1 min-w-0">
-                                  <div className="text-[9px] font-bold uppercase text-slate-500 mb-0.5">Голоса</div>
-                                  <input
-                                    type="number"
-                                    min="0"
-                                    max={availableInfluence}
-                                    value={vote.amount}
-                                    onChange={(e) => {
-                                      const newAmount = Math.max(0, Math.min(availableInfluence, parseInt(e.target.value, 10) || 0));
-                                      setAgendaVotes(p.id, { ...vote, amount: newAmount });
-                                    }}
-                                    disabled={!canVoteNow || vote.choice === 'abstain'}
-                                    className="bg-slate-800 border border-slate-700 rounded-md w-full max-w-[6rem] mx-auto block text-center font-orbitron font-black text-2xl md:text-3xl text-cyan-400 focus:outline-none focus:border-cyan-500 disabled:opacity-50 max-md:min-h-[44px]"
-                                    title="Голоса с влияния"
-                                  />
-                                </div>
-                                <div className="text-center flex-1 min-w-0">
-                                  <div className="text-[9px] font-bold uppercase text-emerald-500/80 mb-0.5">Планеты</div>
-                                  <input
-                                    type="number"
-                                    min="0"
-                                    max={availablePlanets}
-                                    value={vote.planets || 0}
-                                    onChange={(e) => {
-                                      const newPlanets = Math.max(0, Math.min(availablePlanets, parseInt(e.target.value, 10) || 0));
-                                      setAgendaVotes(p.id, { ...vote, planets: newPlanets });
-                                    }}
-                                    disabled={!canVoteNow || vote.choice === 'abstain'}
-                                    className="bg-slate-800 border border-emerald-800/60 rounded-md w-full max-w-[6rem] mx-auto block text-center font-orbitron font-black text-2xl md:text-3xl text-emerald-300 focus:outline-none focus:border-emerald-500 disabled:opacity-50 max-md:min-h-[44px]"
-                                    title="Сколько планет перевернуть (+1 голос каждая)"
-                                  />
-                                </div>
-                              </div>
-                              <button
-                                type="button"
-                                onClick={() => lockVote(p.id)}
-                                disabled={!canVoteNow}
-                                className="px-4 py-2 bg-purple-800 hover:bg-purple-700 text-sm font-bold rounded-md disabled:bg-slate-800 disabled:text-slate-500 disabled:cursor-not-allowed flex-shrink-0 max-md:min-h-[44px] max-md:px-5"
-                              >
-                                {isLocked ? '✓' : 'OK'}
-                              </button>
-                            </div>
-                          ) : (
-                            <>
-                              <div className="text-center">
-                                <div className="text-[9px] font-bold uppercase text-slate-500">Голоса</div>
-                                <input
-                                  type="number"
-                                  min="0"
-                                  max={availableInfluence}
-                                  value={vote.amount}
-                                  onChange={(e) => {
-                                    const newAmount = Math.max(0, Math.min(availableInfluence, parseInt(e.target.value, 10) || 0));
-                                    setAgendaVotes(p.id, { ...vote, amount: newAmount });
-                                  }}
-                                  disabled={!canVoteNow || vote.choice === 'abstain'}
-                                  className="bg-slate-800 border border-slate-700 rounded-md w-24 text-center font-orbitron font-black text-3xl text-cyan-400 focus:outline-none focus:border-cyan-500 disabled:opacity-50"
-                                  title="Голоса с влияния"
-                                />
-                              </div>
-                              <button
-                                type="button"
-                                onClick={() => lockVote(p.id)}
-                                disabled={!canVoteNow}
-                                className="px-4 py-2 bg-purple-800 hover:bg-purple-700 text-sm font-bold rounded-md disabled:bg-slate-800 disabled:text-slate-500 disabled:cursor-not-allowed self-end"
-                              >
-                                {isLocked ? '✓' : 'OK'}
-                              </button>
-                            </>
-                          )}
+                            onAmount={(amount) => setAgendaVotes(p.id, { ...vote, amount })}
+                            onPlanets={(planets) => setAgendaVotes(p.id, { ...vote, planets })}
+                            onConfirm={() => lockVote(p.id)}
+                          />
                         </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </>
-            )}
+                      );
+                    })}
+                  </div>
+                  )}
+                </>
+              )}
 
-            {canAdmin && (
-              <div className="pt-4 border-t border-slate-800 grid grid-cols-3 gap-3 max-md:grid-cols-1">
-                <button
-                  type="button"
-                  onClick={() => setPoliticsStep('SPEAKER')}
-                  disabled={completedAgendasCount < 2}
-                  className="col-span-1 bg-emerald-600 hover:bg-emerald-500 text-white font-orbitron font-extrabold py-3 rounded-xl text-sm transition uppercase disabled:bg-slate-800 disabled:text-slate-600 disabled:cursor-not-allowed"
-                  title={completedAgendasCount < 2 ? 'Нужно проголосовать минимум по 2 законам' : 'Перейти к выбору Спикера'}
-                >
-                  Завершить голосование
-                </button>
-                <button type="button" onClick={handleSkipAgenda} className="col-span-1 bg-slate-700 hover:bg-slate-600 text-white font-orbitron font-bold py-3 rounded-xl text-sm transition uppercase">
-                  Пропустить закон
-                </button>
-                <button
-                  type="button"
-                  onClick={handleNextAgenda}
-                  disabled={!allVotedOnCurrentAgenda}
-                  className="col-span-1 bg-purple-600 hover:bg-purple-500 text-white font-orbitron font-extrabold py-3 rounded-xl text-sm transition uppercase disabled:bg-slate-800 disabled:text-slate-600 disabled:cursor-not-allowed"
-                >
-                  Следующий закон <i className="fa-solid fa-arrow-right" />
-                </button>
-              </div>
-            )}
-          </div>
-        )}
-
-        {politicsStep === 'SPEAKER' && (
-          <div className="space-y-4">
-            <h3 className="font-orbitron font-bold text-lg text-amber-400 text-center">Передача жетона Спикера</h3>
-            <p className="text-sm text-slate-400 text-center">
-              Хост выбирает следующего Спикера
-              {currentSpeaker ? <> (сейчас: <span className="font-bold text-white">{currentSpeaker.name}</span>)</> : null}.
-            </p>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 pt-2">
-              {activePlayers.map(player => {
-                const faction = ALL_FACTIONS.find(f => f.id === player.factionId);
-                return (
+              {canAdmin && (
+                <div className="pol-vote-footer pt-4 border-t border-violet-800/30 grid grid-cols-3 gap-3 max-md:grid-cols-1">
                   <button
-                    key={player.id}
                     type="button"
-                    disabled={!canAdmin}
-                    onClick={() => {
-                      if (!canAdmin) return;
-                      onFinish(player.id);
-                    }}
-                    className={`p-4 bg-slate-950 border border-slate-800 rounded-xl text-center space-y-2 transition ${
-                      canAdmin ? 'hover:bg-slate-800 hover:border-purple-500' : 'opacity-50 cursor-not-allowed'
-                    }`}
+                    onClick={() => setPoliticsStep('SPEAKER')}
+                    disabled={completedAgendasCount < 2}
+                    className="col-span-1 bg-emerald-600 hover:bg-emerald-500 text-white font-orbitron font-extrabold py-3 rounded-xl text-sm transition uppercase disabled:bg-slate-800 disabled:text-slate-600 disabled:cursor-not-allowed"
+                    title={completedAgendasCount < 2 ? 'Нужно проголосовать минимум по 2 законам' : 'Перейти к выбору Спикера'}
                   >
-                    <img src={faction?.iconUrl} alt={faction?.name} className="w-16 h-16 mx-auto object-contain" />
-                    <div className="font-bold text-purple-400">{player.name}</div>
+                    Завершить голосование
                   </button>
-                );
-              })}
+                  <button type="button" onClick={handleSkipAgenda} className="col-span-1 bg-slate-700 hover:bg-slate-600 text-white font-orbitron font-bold py-3 rounded-xl text-sm transition uppercase">
+                    Пропустить закон
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleNextAgenda}
+                    disabled={!allVotedOnCurrentAgenda}
+                    className="col-span-1 bg-purple-600 hover:bg-purple-500 text-white font-orbitron font-extrabold py-3 rounded-xl text-sm transition uppercase disabled:bg-slate-800 disabled:text-slate-600 disabled:cursor-not-allowed"
+                  >
+                    Следующий закон <i className="fa-solid fa-arrow-right" />
+                  </button>
+                </div>
+              )}
             </div>
-          </div>
+          )}
+
+          {politicsStep === 'SPEAKER' && (
+            <div className="space-y-4">
+              <h3 className="font-orbitron font-bold text-lg text-amber-400 text-center">Передача жетона Спикера</h3>
+              <p className="text-sm text-slate-400 text-center">
+                Хост выбирает следующего Спикера
+                {currentSpeaker ? <> (сейчас: <span className="font-bold text-white">{currentSpeaker.name}</span>)</> : null}.
+              </p>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 pt-2">
+                {activePlayers.map(player => {
+                  const faction = ALL_FACTIONS.find(f => f.id === player.factionId);
+                  return (
+                    <button
+                      key={player.id}
+                      type="button"
+                      disabled={!canAdmin}
+                      onClick={() => {
+                        if (!canAdmin) return;
+                        onFinish(player.id);
+                      }}
+                      className={`p-4 bg-slate-950/70 border border-violet-800/40 rounded-xl text-center space-y-2 transition ${
+                        canAdmin ? 'hover:bg-slate-800 hover:border-purple-500' : 'opacity-50 cursor-not-allowed'
+                      }`}
+                    >
+                      <img src={faction?.iconUrl} alt={faction?.name} className="w-16 h-16 mx-auto object-contain" />
+                      <div className="font-bold text-purple-400">{player.name}</div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {politicsStep === 'SETUP' && (
+          <footer className="pol-shell-foot flex-shrink-0">
+            <div
+              className={`pol-foot-progress ${
+                oneVoteLaw
+                  ? ''
+                  : allInfluenceLocked
+                    ? 'is-complete'
+                    : lockedCount > 0
+                      ? 'is-partial'
+                      : ''
+              }`}
+            >
+              {oneVoteLaw ? (
+                'Закон «1 голос»'
+              ) : (
+                <>
+                  <span className="pol-foot-progress-count">
+                    {lockedCount}/{activePlayers.length}
+                  </span>
+                  <span className="pol-foot-progress-label">
+                    {allInfluenceLocked ? 'все подтвердили' : 'подтвердили'}
+                  </span>
+                </>
+              )}
+            </div>
+            {canAdmin ? (
+              <button
+                type="button"
+                disabled={!oneVoteLaw && !allInfluenceLocked}
+                onClick={() => setPoliticsStep('VOTE')}
+                className="pol-cta-btn"
+              >
+                Перейти к голосованию
+                <i className="fa-solid fa-arrow-right" aria-hidden="true" />
+              </button>
+            ) : (
+              <p className="pol-foot-hint">
+                {oneVoteLaw || allInfluenceLocked
+                  ? 'Ожидание админа — открытие законов…'
+                  : 'Подтвердите своё влияние и дождитесь остальных.'}
+              </p>
+            )}
+          </footer>
         )}
       </div>
     </div>

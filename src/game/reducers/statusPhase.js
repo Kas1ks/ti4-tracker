@@ -13,8 +13,46 @@ import { activePlayers } from '../selectors';
 import { startNewRound } from './roundLifecycle';
 import { emptyAgenda } from './politicsPhase';
 
+const STAGE_PUBLIC_MAX = 5;
+
+/** Stage I fills to 5 first, then Stage II (TI4 public objective cadence). */
+function nextRevealStage(state) {
+  const active = state.objectives?.active || [];
+  const stage1 = active.filter((o) => Number(o.stage) !== 2).length;
+  const stage2 = active.filter((o) => Number(o.stage) === 2).length;
+  if (stage1 < STAGE_PUBLIC_MAX) return 1;
+  if (stage2 < STAGE_PUBLIC_MAX) return 2;
+  return null;
+}
+
+/** Draw the next undrawn card from the stage deck onto the board. */
+function revealNextPublicObjective(state) {
+  const stage = nextRevealStage(state);
+  if (!stage) return { state, objective: null };
+
+  const deckKey = stage === 2 ? 'stage2Deck' : 'stage1Deck';
+  const active = state.objectives.active;
+  const nextCard = (state.objectives[deckKey] || []).find(
+    (o) => !active.some((a) => a.id === o.id),
+  );
+  if (!nextCard) return { state, objective: null };
+
+  return {
+    state: withObjectives(state, { active: [...active, { ...nextCard }] }),
+    objective: nextCard,
+  };
+}
+
+function clearStatusReveal(state, patch = {}) {
+  return withStatusPhase(state, {
+    objectiveRevealed: false,
+    revealShow: null,
+    ...patch,
+  });
+}
+
 function confirmStatusPhase(state) {
-  const next = withStatusPhase(state, {
+  const next = clearStatusReveal(state, {
     show: false,
     checks: { ...EMPTY_STATUS_CHECKS },
     scoring: { active: false, responses: {}, orderIds: [], currentIdx: 0 },
@@ -263,9 +301,26 @@ export function reduceStatusPhase(state, action) {
       // scoreObjectives is controlled by the scoring window, not the checklist click.
       if (action.key === 'scoreObjectives') return state;
       if (!Object.prototype.hasOwnProperty.call(EMPTY_STATUS_CHECKS, action.key)) return state;
-      return withStatusPhase(state, {
-        checks: { ...state.statusPhase.checks, [action.key]: !state.statusPhase.checks[action.key] },
+
+      const turningOn = !state.statusPhase.checks[action.key];
+      let next = withStatusPhase(state, {
+        checks: { ...state.statusPhase.checks, [action.key]: turningOn },
       });
+
+      // Checking «Раскрытие новой цели» draws Stage I (to 5), then Stage II.
+      // Only once per status phase — uncheck/recheck must not draw again.
+      if (action.key === 'revealObjective' && turningOn && !state.statusPhase.objectiveRevealed) {
+        const revealed = revealNextPublicObjective(next);
+        next = withStatusPhase(revealed.state, {
+          objectiveRevealed: true,
+          revealShow: {
+            objectiveId: revealed.objective?.id ?? null,
+            at: Number.isFinite(action.at) ? action.at : Date.now(),
+          },
+        });
+      }
+
+      return next;
     }
 
     case 'START_OBJECTIVE_SCORING':

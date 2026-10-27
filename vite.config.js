@@ -188,7 +188,7 @@ export default defineConfig(({ mode }) => ({
       manifest: {
         name: 'TI4 Tracker',
         short_name: 'TI4 Tracker',
-        description: 'Companion Ð´Ð»Ñ Ð¶Ð¸Ð²Ñ‹Ñ… Ð¿Ð°Ñ€Ñ‚Ð¸Ð¹ Twilight Imperium 4',
+        description: 'Companion äëÿ æèâûõ ïàðòèé Twilight Imperium 4',
         theme_color: '#0f172a',
         background_color: '#020617',
         display: 'standalone',
@@ -246,10 +246,9 @@ export default defineConfig(({ mode }) => ({
         ],
         globPatterns: ['**/*.{js,css,html,ico,png,svg,webp,woff2}'],
       },
-      // Lets you smoke-test SW on phone over LAN; install prompt still prefers HTTPS.
+      // Keep SW off in dev — phone LAN clients otherwise keep stale CSS/JS and UI fixes look "broken".
       devOptions: {
-        enabled: true,
-        navigateFallback: 'index.html',
+        enabled: false,
       },
     }),
   ],
@@ -276,6 +275,8 @@ export default defineConfig(({ mode }) => ({
       // Binary / locked image drops on Windows throw EBUSY and kill the server.
       ignored: [
         '**/ti4_figurines_8_colors/**',
+        '**/tools/**',
+        '**/*.zip',
         '**/public/expedition/**',
         '**/public/factions/**',
         '**/public/strategy-cards/**',

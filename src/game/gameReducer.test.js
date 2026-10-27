@@ -180,10 +180,16 @@ describe('scoring', () => {
     }
   });
 
-  it('sorts the board by score, then by seat', () => {
-    let state = gameWith([player(1, 'A'), player(2, 'B'), player(3, 'C')]);
+  it('keeps seat order at 0 VP, then sorts by score with seat tie-break', () => {
+    let state = gameWith([player(10, 'A'), player(3, 'B'), player(7, 'C')]);
+    expect(playersForBoard(state).map(p => p.id)).toEqual([10, 3, 7]);
+
+    state = dispatch(state, { type: 'ADJUST_MECATOL', playerId: 7, delta: 5 });
+    expect(playersForBoard(state).map(p => p.id)).toEqual([7, 10, 3]);
+
     state = dispatch(state, { type: 'ADJUST_MECATOL', playerId: 3, delta: 5 });
-    expect(playersForBoard(state).map(p => p.id)).toEqual([3, 1, 2]);
+    // Оба по 5 ПО — между ними исходный порядок посадки (3 перед 7).
+    expect(playersForBoard(state).map(p => p.id)).toEqual([3, 7, 10]);
   });
 });
 
@@ -369,6 +375,67 @@ describe('strategy card draft', () => {
     expect(state.draft.queue).toEqual([1, 2, 3, 4, 2, 1, 4, 3]);
     expect(state.draft.currentQueueIndex).toBe(2);
     expect(currentDraftPlayerId(state)).toBe(3);
+  });
+});
+
+describe('DEV tools', () => {
+  it('skips strategy draft for six players: one card each and starts the round', () => {
+    const six = [1, 2, 3, 4, 5, 6].map((id) => player(id, `P${id}`));
+    const state = dispatch(gameWith(six), { type: 'DEV_SKIP_STRATEGY_DRAFT' });
+    expect(state.round.active).toBe(true);
+    expect(state.draft.queue).toEqual([]);
+    state.players.forEach((p) => {
+      expect(p.cards).toHaveLength(1);
+    });
+    expect(state.players.map((p) => p.cards[0].id)).toEqual([1, 2, 3, 4, 5, 6]);
+  });
+
+  it('skips strategy draft for four players: two cards each and starts the round', () => {
+    const four = [1, 2, 3, 4].map((id) => player(id, `P${id}`));
+    const state = dispatch(gameWith(four), { type: 'DEV_SKIP_STRATEGY_DRAFT' });
+    expect(state.round.active).toBe(true);
+    state.players.forEach((p) => {
+      expect(p.cards).toHaveLength(2);
+    });
+    // Snake from speaker 1: 1,2,3,4 then 4,3,2,1 → cards 1..8
+    expect(state.players.find((p) => p.id === 1).cards.map((c) => c.id)).toEqual([1, 8]);
+    expect(state.players.find((p) => p.id === 2).cards.map((c) => c.id)).toEqual([2, 7]);
+    expect(state.players.find((p) => p.id === 3).cards.map((c) => c.id)).toEqual([3, 6]);
+    expect(state.players.find((p) => p.id === 4).cards.map((c) => c.id)).toEqual([4, 5]);
+  });
+
+  it('pass-all ends the action phase without playing strategies', () => {
+    let state = dispatch(gameWith([
+      player(1, 'A', { cards: [STRATEGY_CARDS[0]], lastMinInitiative: 1 }),
+      player(2, 'B', { cards: [STRATEGY_CARDS[1]], lastMinInitiative: 2 }),
+    ]), { type: 'START_ROUND' });
+    expect(state.round.active).toBe(true);
+
+    state = dispatch(state, { type: 'DEV_PASS_ALL' });
+    expect(state.statusPhase.show).toBe(true);
+    expect(state.round.passed[1]).toBe(true);
+    expect(state.round.passed[2]).toBe(true);
+    // Same as last PASS_TURN: status opens; round.active stays until status confirms.
+    expect(dispatch(state, { type: 'DEV_PASS_ALL' })).toBe(state);
+  });
+
+  it('ignores pass-all when the action phase is not running', () => {
+    const state = gameWith([player(1, 'A'), player(2, 'B')]);
+    expect(dispatch(state, { type: 'DEV_PASS_ALL' })).toBe(state);
+  });
+
+  it('skips the status phase checklist', () => {
+    let state = dispatch(gameWith([
+      player(1, 'A', { cards: [STRATEGY_CARDS[0]], lastMinInitiative: 1 }),
+      player(2, 'B', { cards: [STRATEGY_CARDS[1]], lastMinInitiative: 2 }),
+    ]), { type: 'START_ROUND' });
+    state = dispatch(state, { type: 'DEV_PASS_ALL' });
+    expect(state.statusPhase.show).toBe(true);
+
+    state = dispatch(state, { type: 'DEV_SKIP_STATUS_PHASE' });
+    expect(state.statusPhase.show).toBe(false);
+    expect(state.statusPhase.scoring.active).toBe(false);
+    expect(dispatch(state, { type: 'DEV_SKIP_STATUS_PHASE' })).toBe(state);
   });
 });
 
@@ -930,6 +997,43 @@ describe('status phase', () => {
     expect(state.statusPhase.checks.drawActionCards).toBe(false);
   });
 
+  it('revealObjective draws Stage I until 5 are open, then Stage II — once per status phase', () => {
+    let state = atStatusPhase();
+    const before = state.objectives.active.length;
+
+    state = dispatch(state, { type: 'TOGGLE_STATUS_CHECK', key: 'revealObjective', at: 1_700_000_000_000 });
+    expect(state.statusPhase.checks.revealObjective).toBe(true);
+    expect(state.statusPhase.objectiveRevealed).toBe(true);
+    expect(state.objectives.active.length).toBe(before + 1);
+    const first = state.objectives.active[state.objectives.active.length - 1];
+    expect(Number(first.stage)).toBe(1);
+    expect(state.statusPhase.revealShow).toMatchObject({
+      objectiveId: first.id,
+      at: 1_700_000_000_000,
+    });
+
+    // Uncheck / recheck must not draw a second card in the same status phase.
+    state = dispatch(state, { type: 'TOGGLE_STATUS_CHECK', key: 'revealObjective' });
+    expect(state.statusPhase.checks.revealObjective).toBe(false);
+    state = dispatch(state, { type: 'TOGGLE_STATUS_CHECK', key: 'revealObjective', at: 1_700_000_000_100 });
+    expect(state.objectives.active.length).toBe(before + 1);
+
+    // Fill Stage I to 5, then next status phase opens Stage II.
+    while (state.objectives.active.filter((o) => Number(o.stage) !== 2).length < 5) {
+      state = dispatch(state, { type: 'CONFIRM_STATUS_PHASE' });
+      state = dispatch(withAllPassed(state), { type: 'END_ROUND' });
+      state = dispatch(state, { type: 'TOGGLE_STATUS_CHECK', key: 'revealObjective', at: Date.now() });
+    }
+    expect(state.objectives.active.filter((o) => Number(o.stage) !== 2).length).toBe(5);
+
+    state = dispatch(state, { type: 'CONFIRM_STATUS_PHASE' });
+    state = dispatch(withAllPassed(state), { type: 'END_ROUND' });
+    const stage2Before = state.objectives.active.filter((o) => Number(o.stage) === 2).length;
+    state = dispatch(state, { type: 'TOGGLE_STATUS_CHECK', key: 'revealObjective', at: Date.now() });
+    const stage2After = state.objectives.active.filter((o) => Number(o.stage) === 2).length;
+    expect(stage2After).toBe(stage2Before + 1);
+  });
+
   it('opens an objective scoring window and completes when everyone responds', () => {
     const objective = BASE_OBJECTIVES[0];
     let state = dispatch(atStatusPhase(), { type: 'ADD_OBJECTIVE', objective });
@@ -1062,6 +1166,18 @@ describe('agenda phase', () => {
     expect(currentAgenda(state).locked).toEqual({ 2: true });
   });
 
+  it('locks for/against with 0 votes as abstain', () => {
+    let state = dispatch(voting(), { type: 'SET_AGENDA_TYPE', agendaType: 'FOR_AGAINST' });
+    state = dispatch(state, {
+      type: 'SET_VOTE',
+      playerId: 1,
+      vote: { choice: 'for', amount: 0, planets: 0 },
+    });
+    state = dispatch(state, { type: 'LOCK_VOTE', playerId: 1 });
+    expect(currentAgenda(state).locked[1]).toBe(true);
+    expect(currentAgenda(state).votes[1]).toEqual({ choice: 'abstain', amount: 0, planets: 0 });
+  });
+
   it('seeds custom choices only for a custom agenda', () => {
     let state = dispatch(voting(), { type: 'SET_AGENDA_TYPE', agendaType: 'OTHER' });
     expect(currentAgenda(state)).toMatchObject({ type: 'OTHER', customChoices: [''] });
@@ -1169,6 +1285,40 @@ describe('combat', () => {
     state = dispatch(state, { type: 'NEXT_TURN', at: t0 + 30_000 });
     // Pre-combat 10s + post-combat 5s = 15s; combat 15s is not billed to the seat.
     expect(state.players.find(p => p.id === seatId).totalTime).toBe(15);
+  });
+
+  it('host adjust hits does not auto-reveal; phones still do', () => {
+    const t0 = 1_700_000_000_000;
+    let state = dispatch(gameWith([player(1, 'A'), player(2, 'B')]), {
+      type: 'START_ROUND',
+      at: t0,
+    });
+    const attackerId = activePlayer(state).id;
+    const defenderId = state.players.find((p) => p.id !== attackerId).id;
+
+    state = dispatch(state, {
+      type: 'START_COMBAT',
+      at: t0 + 1_000,
+      mode: 'pvp',
+      attackerId,
+      defenderId,
+    });
+
+    state = dispatch(state, { type: 'COMBAT_SET_HITS', playerId: attackerId, hits: 2, adjust: true });
+    expect(state.round.combat.phase).toBe('input');
+    state = dispatch(state, { type: 'COMBAT_SET_HITS', playerId: defenderId, hits: 3, adjust: true });
+    expect(state.round.combat.phase).toBe('input');
+    expect(state.round.combat.hits[attackerId]).toBe(2);
+    expect(state.round.combat.hits[defenderId]).toBe(3);
+
+    state = dispatch(state, { type: 'COMBAT_ASSIGN', playerId: attackerId, hostAdvance: true });
+    expect(state.round.combat.phase).toBe('reveal');
+    expect(state.round.combat.assigned[attackerId]).toBe(true);
+
+    state = dispatch(state, { type: 'COMBAT_SET_HITS', playerId: attackerId, hits: 5, adjust: true });
+    expect(state.round.combat.phase).toBe('reveal');
+    expect(state.round.combat.hits[attackerId]).toBe(5);
+    expect(state.round.combat.assigned[attackerId]).toBe(false);
   });
 
   it('runs synced PvP input → reveal → assign → next round → defeat', () => {
@@ -1284,6 +1434,85 @@ describe('combat', () => {
       loserId: attackerId,
       winnerId: defenderId,
     });
+  });
+
+  it('runs synced neutral setup → auto-roll hits → assign → defeat', () => {
+    const t0 = 1_700_000_200_000;
+    let state = dispatch(gameWith([player(1, 'A'), player(2, 'B')]), {
+      type: 'START_ROUND',
+      at: t0,
+    });
+    const attackerId = activePlayer(state).id;
+
+    state = dispatch(state, {
+      type: 'START_COMBAT',
+      at: t0 + 1_000,
+      mode: 'neutral',
+      attackerId,
+    });
+    expect(state.round.combat.mode).toBe('neutral');
+    expect(state.round.combat.phase).toBe('setup');
+
+    state = dispatch(state, {
+      type: 'COMBAT_SET_NEUTRAL_COUNTS',
+      counts: { infantry: 2, fighter: 1 },
+    });
+    expect(state.round.combat.neutralCounts.infantry).toBe(2);
+
+    state = dispatch(state, {
+      type: 'COMBAT_BEGIN_NEUTRAL',
+      counts: { infantry: 2, fighter: 1 },
+    });
+    expect(state.round.combat.phase).toBe('input');
+
+    // Phone locks hits → host dice window
+    state = dispatch(state, {
+      type: 'COMBAT_SET_HITS',
+      playerId: attackerId,
+      hits: 3,
+    });
+    expect(state.round.combat.phase).toBe('rolling');
+    expect(state.round.combat.hits[attackerId]).toBe(3);
+    expect(state.round.combat.hits.neutral).toBe(null);
+
+    // Host publishes roll after spectacle
+    state = dispatch(state, {
+      type: 'COMBAT_SET_HITS',
+      playerId: attackerId,
+      hits: 3,
+      neutralHits: 2,
+      neutralRoll: { hits: 2, diceTotal: 3, details: [] },
+    });
+    expect(state.round.combat.phase).toBe('reveal');
+    expect(state.round.combat.hits[attackerId]).toBe(3);
+    expect(state.round.combat.hits.neutral).toBe(2);
+    expect(state.round.combat.neutralRoll.hits).toBe(2);
+
+    state = dispatch(state, { type: 'COMBAT_ASSIGN', playerId: attackerId });
+    expect(state.round.combat.phase).toBe('reveal');
+    expect(state.round.combat.assigned[attackerId]).toBe(true);
+
+    state = dispatch(state, {
+      type: 'COMBAT_ASSIGN',
+      playerId: 'neutral',
+      counts: { infantry: 1, fighter: 0 },
+    });
+    expect(state.round.combat.phase).toBe('input');
+    expect(state.round.combat.round).toBe(2);
+    expect(state.round.combat.totals[attackerId]).toBe(3);
+    expect(state.round.combat.totals.neutral).toBe(2);
+    expect(state.round.combat.neutralCounts.infantry).toBe(1);
+    expect(state.round.combat.neutralCounts.fighter).toBe(0);
+
+    state = reduceGame(state, {
+      type: 'COMBAT_DEFEAT',
+      playerId: attackerId,
+      at: t0 + 20_000,
+    });
+    expect(state.round.combat.phase).toBe('result');
+    expect(state.round.combat.loserId).toBe(attackerId);
+    expect(state.round.combat.winnerId).toBe('neutral');
+    expect(state.players.find((p) => p.id === attackerId).damageDealt).toBe(3);
   });
 });
 

@@ -21,6 +21,8 @@ export function GameBoard({
   completions,
   toggleCompletion,
   scoring,
+  spotlightObjectiveId = null,
+  spotlightReady = false,
   expandedObjectives,
   toggleExpand,
   removeObjective,
@@ -636,6 +638,8 @@ export function GameBoard({
                                         canAdminBoard={canAdminBoard}
                                         canToggleFor={canToggleFor}
                                         onObjectiveClick={onObjectiveClick}
+                                        spotlightObjectiveId={spotlightObjectiveId}
+                                        spotlightReady={spotlightReady}
                                     />
 
                                 </div>

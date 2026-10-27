@@ -12,6 +12,20 @@ function coerceAgendaVote(state, vote) {
   return { ...vote, amount: 1, planets: 0 };
 }
 
+/** 0 голосов (и 0 планет) → воздержание, даже если выбраны За/Против или другой вариант. */
+function finalizeLockedVote(state, vote) {
+  const coerced = coerceAgendaVote(state, vote);
+  if (!coerced || typeof coerced !== 'object') return coerced;
+  if (coerced.choice === 'abstain') return { ...coerced, amount: 0, planets: 0 };
+  if (state.politics?.oneVoteLaw) return coerced;
+  const amount = Math.max(0, Number(coerced.amount) || 0);
+  const planets = Math.max(0, Number(coerced.planets) || 0);
+  if (amount === 0 && planets === 0) {
+    return { ...coerced, choice: 'abstain', amount: 0, planets: 0 };
+  }
+  return coerced;
+}
+
 function mapCurrentAgenda(state, fn) {
   return withPolitics(state, {
     agendas: state.politics.agendas.map((agenda, index) => (
@@ -103,8 +117,11 @@ export function reducePoliticsPhase(state, action) {
     case 'LOCK_VOTE': {
       const agenda = currentAgenda(state);
       if (!agenda || agenda.locked?.[action.playerId]) return state;
-      const prev = agenda.votes?.[action.playerId] || { choice: 'abstain', amount: 0 };
-      const vote = coerceAgendaVote(state, prev);
+      // Optional action.vote: confirm choice+amount in one step (For/Against buttons).
+      const prev = action.vote != null
+        ? action.vote
+        : (agenda.votes?.[action.playerId] || { choice: 'abstain', amount: 0 });
+      const vote = finalizeLockedVote(state, prev);
       return mapCurrentAgenda(state, a => ({
         ...a,
         votes: { ...a.votes, [action.playerId]: vote },

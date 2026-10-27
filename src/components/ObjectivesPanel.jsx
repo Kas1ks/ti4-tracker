@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react';
 import objStage1Bg from '../assets/objectives/stage1-bg.jpg';
 import objStage2Bg from '../assets/objectives/stage2-bg.jpg';
 
@@ -19,7 +20,16 @@ export function ObjectivesPanel({
   canAdminBoard,
   canToggleFor,
   onObjectiveClick,
+  spotlightObjectiveId = null,
+  spotlightReady = false,
 }) {
+  const spotlightRef = useRef(null);
+
+  useEffect(() => {
+    if (!spotlightObjectiveId || !spotlightReady || !spotlightRef.current) return;
+    spotlightRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }, [spotlightObjectiveId, spotlightReady]);
+
   const renderSeats = (obj) => (
     <div className="grid grid-cols-3 max-md:grid-cols-2 gap-2">
       {players.map((p) => {
@@ -76,13 +86,19 @@ export function ObjectivesPanel({
                 players.every((p) => !!completions[`${p.id}_${obj.id}`]);
               const isExpanded = expandedObjectives[obj.id] ?? !isCompletedByAll;
 
+              const isRevealTarget = spotlightObjectiveId != null && obj.id === spotlightObjectiveId;
+              const revealClass = isRevealTarget
+                ? (spotlightReady ? ' is-spotlight' : ' is-reveal-pending')
+                : '';
+
               return (
                 <div
+                  ref={isRevealTarget && spotlightReady ? spotlightRef : undefined}
                   title={obj.desc}
                   key={obj.id}
                   className={`game-obj-card is-stage${stage} transition-all duration-300 ease-in-out ${
                     isCompletedByAll ? 'is-done p-3' : 'p-4 space-y-3'
-                  }`}
+                  }${revealClass}`}
                   style={{ '--game-obj-bg': `url(${OBJ_STAGE_BG[stage]})` }}
                 >
                   <div className="flex justify-between items-center gap-2">

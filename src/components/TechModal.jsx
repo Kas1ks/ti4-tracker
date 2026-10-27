@@ -9,30 +9,52 @@ import {
   maxResearchSlots,
   prereqGapMessage,
   synergyForPlayer,
+  techArtUrl,
   techById,
 } from '../data/technologies';
 import { BreakthroughPanel } from './BreakthroughPanel';
 import { TechPrereqIcons, TechTypeIcon } from './TechTypeIcon';
-
-const COLOR_BTN = {
-  green: 'border-emerald-500/50 bg-emerald-950/40 text-emerald-200',
-  blue: 'border-sky-500/50 bg-sky-950/40 text-sky-200',
-  yellow: 'border-amber-500/50 bg-amber-950/40 text-amber-200',
-  red: 'border-rose-500/50 bg-rose-950/40 text-rose-200',
-};
-
-const COLOR_OWNED = {
-  green: 'bg-emerald-500/25 border-emerald-400 text-emerald-100',
-  blue: 'bg-sky-500/25 border-sky-400 text-sky-100',
-  yellow: 'bg-amber-500/25 border-amber-400 text-amber-100',
-  red: 'bg-rose-500/25 border-rose-400 text-rose-100',
-};
 
 /** Tab bucket: faction tech (incl. faction unit upgrades) → color → generic unit. */
 function sectionKey(tech) {
   if (tech.factionId || tech.kind === 'faction') return 'faction';
   if (tech.kind === 'unit') return 'unit';
   return tech.color || 'other';
+}
+
+function TechCardArt({ tech }) {
+  const [broken, setBroken] = useState(false);
+  const src = techArtUrl(tech.id);
+  const showImg = src && !broken;
+
+  return (
+    <div className={`tech-card-art color-${tech.color || 'neutral'}`} aria-hidden="true">
+      {showImg ? (
+        <img
+          src={src}
+          alt=""
+          className="tech-card-art-img"
+          loading="lazy"
+          onError={() => setBroken(true)}
+        />
+      ) : (
+        <div className="tech-card-art-fallback">
+          {tech.color ? (
+            <TechTypeIcon color={tech.color} size={28} />
+          ) : (
+            <i className={`fa-solid ${tech.kind === 'unit' ? 'fa-rocket' : 'fa-flag'}`} />
+          )}
+        </div>
+      )}
+      <span className="tech-card-art-badge">
+        {tech.color ? (
+          <TechTypeIcon color={tech.color} size={16} />
+        ) : (
+          <i className={`fa-solid ${tech.kind === 'unit' ? 'fa-rocket' : 'fa-flag'}`} />
+        )}
+      </span>
+    </div>
+  );
 }
 
 /**
@@ -66,6 +88,9 @@ export function TechModal({
   const [tab, setTab] = useState('all');
   const [browseScope, setBrowseScope] = useState('mine'); // 'mine' | 'catalog'
   const [prereqError, setPrereqError] = useState(null);
+  const [expandedId, setExpandedId] = useState(null);
+  const [entered, setEntered] = useState(false);
+
   useEscapeKey(
     prereqError ? () => setPrereqError(null) : (onMinimize || onClose),
     show && !minimized,
@@ -77,8 +102,18 @@ export function TechModal({
       setBrowseScope('mine');
       setTab('all');
       setPrereqError(null);
+      setExpandedId(null);
     }
   }, [show, session?.active]);
+
+  useEffect(() => {
+    if (!show || minimized) {
+      setEntered(false);
+      return undefined;
+    }
+    const id = requestAnimationFrame(() => setEntered(true));
+    return () => cancelAnimationFrame(id);
+  }, [show, minimized]);
 
   const focusPlayerId = researching
     ? session.playerId
@@ -105,14 +140,15 @@ export function TechModal({
   );
 
   const colorTabs = [
-    { id: 'all', label: 'Все', icon: null },
+    { id: 'all', label: 'Все', short: 'Все', icon: null },
     ...TECH_COLORS.map(c => ({
       id: c,
       label: TECH_COLOR_META[c].label,
+      short: TECH_COLOR_META[c].short,
       icon: c,
     })),
-    { id: 'unit', label: 'Unit', icon: null },
-    { id: 'faction', label: 'Фракция', icon: null },
+    { id: 'unit', label: 'Unit', short: 'Unit', icon: null },
+    { id: 'faction', label: 'Фракция', short: 'Фрак.', icon: null },
   ];
 
   const visibleTechs = useMemo(() => {
@@ -129,7 +165,6 @@ export function TechModal({
       return catalog.filter(t => sectionKey(t) === tab);
     })();
     if (tab !== 'faction') return base;
-    // Faction tab: color/faction cards first, then faction unit upgrades.
     return [...base].sort((a, b) => {
       const au = a.kind === 'unit' ? 1 : 0;
       const bu = b.kind === 'unit' ? 1 : 0;
@@ -202,229 +237,249 @@ export function TechModal({
       : 'Secondary: 1 технология за 4 ресурса · или «Пропуск»')
     : null;
 
+  const eyebrow = researching
+    ? (session.brilliant
+      ? 'Стратегия · Технологии · Brilliant'
+      : session.mode === 'primary'
+        ? 'Стратегия · Технологии · Primary'
+        : 'Стратегия · Технологии · Secondary')
+    : 'Технологии';
+
+  const title = researching
+    ? (player?.name || '…')
+    : (browseScope === 'mine' ? 'Мои технологии' : 'Все технологии');
+
+  const showFilters = researching || browseScope === 'catalog';
+
   return (
     <div
-      className="fixed inset-0 z-[55] bg-black/85 backdrop-blur-md flex items-stretch md:items-center justify-center md:p-4 modal-overlay"
+      className={`fixed inset-0 z-[55] bg-black/85 backdrop-blur-md flex items-stretch md:items-center justify-center md:p-4 modal-overlay tech-overlay ${entered ? 'is-open' : ''}`}
       role="presentation"
     >
       <div
         role="dialog"
         aria-modal="true"
         aria-labelledby="tech-modal-title"
-        className="flex flex-col w-full h-full max-h-[100dvh] md:h-auto md:max-h-[90vh] md:max-w-2xl game-modal-panel md:!rounded-3xl"
+        className={`tech-shell flex flex-col w-full h-full max-h-[100dvh] md:h-auto md:max-h-[90vh] md:max-w-2xl overflow-hidden ${entered ? 'is-open' : ''}`}
       >
-        <header className="flex-shrink-0 px-4 md:px-6 pt-[max(0.75rem,env(safe-area-inset-top))] md:pt-5 pb-3 border-b border-slate-800">
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <div className="text-[11px] font-bold uppercase tracking-wider text-sky-400/90">
-                {researching
-                  ? (session.brilliant
-                    ? 'Стратегия · Технологии · Brilliant (Primary)'
-                    : session.mode === 'primary'
-                      ? 'Стратегия · Технологии · Primary'
-                      : 'Стратегия · Технологии · Secondary')
-                  : 'Технологии'}
-              </div>
-              <h2
-                id="tech-modal-title"
-                className="font-orbitron font-black text-xl md:text-2xl text-sky-100 leading-tight mt-0.5 truncate"
-              >
-                {researching
-                  ? (player?.name || '…')
-                  : (browseScope === 'mine' ? 'Мои технологии' : 'Все технологии')}
-              </h2>
-              {costHint && (
-                <p className="text-xs text-slate-400 mt-1 leading-snug">{costHint}</p>
-              )}
-            </div>
-            {onMinimize && (
-              <button
-                type="button"
-                onClick={onMinimize}
-                className="text-slate-500 hover:text-white transition p-2 -mr-1 flex-shrink-0"
-                aria-label="Свернуть"
-              >
-                <i className="fa-solid fa-window-minimize" aria-hidden="true" />
-              </button>
-            )}
+        <header className="tech-shell-head flex-shrink-0">
+          <div className="tech-shell-head-main min-w-0">
+            <div className="tech-shell-eyebrow">{eyebrow}</div>
+            <h2 id="tech-modal-title" className="tech-shell-title">
+              {title}
+            </h2>
+            {costHint && <p className="tech-shell-sub">{costHint}</p>}
           </div>
-
-          {useTe && player?.factionId && (
-            <div className="mt-3">
-              <BreakthroughPanel
-                factionId={player.factionId}
-                unlocked={!!player.breakthrough}
-                defaultOpen={false}
-                canToggle={!!isHost && typeof onGrantBreakthrough === 'function'}
-                onToggle={(enable) => {
-                  if (enable) onGrantBreakthrough?.(player.id);
-                  else onRevokeBreakthrough?.(player.id);
-                }}
-              />
-            </div>
-          )}
-
-          {!researching && (
-            <div className="grid grid-cols-2 gap-2 mt-3">
-              <button
-                type="button"
-                onClick={() => { setBrowseScope('mine'); setTab('all'); }}
-                className={`py-2.5 rounded-xl text-xs font-bold uppercase tracking-wide border transition ${
-                  browseScope === 'mine'
-                    ? 'border-sky-400 bg-sky-500/20 text-sky-100'
-                    : 'border-slate-700 bg-slate-900 text-slate-400'
-                }`}
-              >
-                Мои
-                <span className="ml-1 opacity-70 normal-case">{owned.length}</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => { setBrowseScope('catalog'); setTab('all'); }}
-                className={`py-2.5 rounded-xl text-xs font-bold uppercase tracking-wide border transition ${
-                  browseScope === 'catalog'
-                    ? 'border-sky-400 bg-sky-500/20 text-sky-100'
-                    : 'border-slate-700 bg-slate-900 text-slate-400'
-                }`}
-              >
-                Все технологии
-              </button>
-            </div>
-          )}
-
-          {researching && pendingSeats.length > 1 && isHost && onSelectViewPlayer && (
-            <div className="mt-3 flex gap-1.5 overflow-x-auto">
-              {pendingSeats.map(p => (
-                <button
-                  key={p.id}
-                  type="button"
-                  onClick={() => onSelectViewPlayer(p.id)}
-                  className={`flex-shrink-0 px-2.5 py-1.5 rounded-lg text-[11px] font-bold border transition ${
-                    p.id === focusPlayerId
-                      ? 'border-sky-400 bg-sky-500/20 text-sky-100'
-                      : 'border-slate-700 bg-slate-900 text-slate-400'
-                  }`}
-                >
-                  {p.name}
-                </button>
-              ))}
-            </div>
-          )}
-
-          {researching && (
-            <div className="mt-3 text-xs text-slate-400">
-              Слоты: {picksDone}/{maxSlots}
-            </div>
+          {onMinimize && (
+            <button
+              type="button"
+              onClick={onMinimize}
+              className="tech-icon-btn"
+              aria-label="Свернуть"
+            >
+              <i className="fa-solid fa-window-minimize" aria-hidden="true" />
+            </button>
           )}
         </header>
 
-        {(researching || browseScope === 'catalog') && (
-          <div className="flex-shrink-0 px-4 md:px-6 pt-3 flex gap-1.5 overflow-x-auto">
-            {colorTabs.map(t => (
+        {useTe && player?.factionId && (
+          <div className="tech-shell-breakthrough px-4 md:px-5 pt-2">
+            <BreakthroughPanel
+              factionId={player.factionId}
+              unlocked={!!player.breakthrough}
+              defaultOpen={false}
+              canToggle={!!isHost && typeof onGrantBreakthrough === 'function'}
+              onToggle={(enable) => {
+                if (enable) onGrantBreakthrough?.(player.id);
+                else onRevokeBreakthrough?.(player.id);
+              }}
+            />
+          </div>
+        )}
+
+        {!researching && (
+          <div className="tech-scope-tabs" role="tablist" aria-label="Область технологий">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={browseScope === 'mine'}
+              onClick={() => { setBrowseScope('mine'); setTab('all'); setExpandedId(null); }}
+              className={`tech-scope-tab ${browseScope === 'mine' ? 'is-active' : ''}`}
+            >
+              Мои
+              <span className="tech-scope-count">{owned.length}</span>
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={browseScope === 'catalog'}
+              onClick={() => { setBrowseScope('catalog'); setTab('all'); setExpandedId(null); }}
+              className={`tech-scope-tab ${browseScope === 'catalog' ? 'is-active' : ''}`}
+            >
+              Все технологии
+            </button>
+          </div>
+        )}
+
+        {researching && pendingSeats.length > 1 && isHost && onSelectViewPlayer && (
+          <div className="tech-pending-seats">
+            {pendingSeats.map(p => (
               <button
-                key={t.id}
+                key={p.id}
                 type="button"
-                onClick={() => setTab(t.id)}
-                title={t.label}
-                className={`flex-shrink-0 inline-flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-bold uppercase tracking-wide border transition ${
-                  tab === t.id
-                    ? 'border-cyan-400/60 bg-cyan-500/15 text-cyan-200'
-                    : 'border-slate-800 bg-slate-900/80 text-slate-500'
-                }`}
+                onClick={() => onSelectViewPlayer(p.id)}
+                className={`tech-pending-chip ${p.id === focusPlayerId ? 'is-active' : ''}`}
               >
-                {t.icon ? <TechTypeIcon color={t.icon} size={18} /> : t.label}
+                {p.name}
               </button>
             ))}
           </div>
         )}
 
-        <div className="flex-1 min-h-0 overflow-y-auto overscroll-y-contain px-4 md:px-6 py-4 space-y-2 modal-scroll">
+        {researching && (
+          <div className="tech-slots-hint">
+            Слоты: {picksDone}/{maxSlots}
+          </div>
+        )}
+
+        {showFilters && (
+          <div className="tech-filters" role="tablist" aria-label="Фильтр технологий">
+            {colorTabs.map(t => (
+              <button
+                key={t.id}
+                type="button"
+                role="tab"
+                aria-selected={tab === t.id}
+                onClick={() => { setTab(t.id); setExpandedId(null); }}
+                title={t.label}
+                className={`tech-filter-chip ${tab === t.id ? 'is-active' : ''}`}
+              >
+                {t.icon ? <TechTypeIcon color={t.icon} size={22} /> : null}
+                <span className="tech-filter-label-full">{t.label}</span>
+                <span className="tech-filter-label-short">{t.short}</span>
+              </button>
+            ))}
+          </div>
+        )}
+
+        <div className="tech-shell-body min-h-0 flex-1 overflow-y-auto overscroll-y-contain modal-scroll">
           {!visibleTechs.length && (
-            <p className="text-sm text-slate-500 text-center py-10">
+            <p className="tech-empty">
               {browseScope === 'mine' && !researching
                 ? 'Пока нет изученных технологий'
                 : 'Нет технологий в этом разделе'}
             </p>
           )}
-          {visibleTechs.map(tech => {
-            const has = ownedSet.has(tech.id);
-            const researchable = researching && canResearch(tech, owned, {
-              synergyColors: synergy,
-              ignoreCount: 0,
-            });
-            const almost = researching && !researchable && !has && canResearch(tech, owned, {
-              synergyColors: synergy,
-              ignoreCount: 1,
-            });
-            const baseCls = has
-              ? (COLOR_OWNED[tech.color] || 'bg-slate-700/40 border-slate-500 text-slate-100')
-              : (COLOR_BTN[tech.color] || 'border-slate-700 bg-slate-900/60 text-slate-300');
+          <ul className="tech-card-list">
+            {visibleTechs.map(tech => {
+              const has = ownedSet.has(tech.id);
+              const researchable = researching && canResearch(tech, owned, {
+                synergyColors: synergy,
+                ignoreCount: 0,
+              });
+              const almost = researching && !researchable && !has && canResearch(tech, owned, {
+                synergyColors: synergy,
+                ignoreCount: 1,
+              });
+              const interactive = researching
+                ? (canActResearch && !has)
+                : (canActToggle && (browseScope === 'catalog' || has));
+              const expanded = expandedId === tech.id;
+              const actionLabel = has
+                ? 'Исследована ✓'
+                : researching
+                  ? (researchable ? 'Взять' : almost ? '!' : '')
+                  : (canActToggle && browseScope === 'catalog' ? '+' : '');
 
-            const interactive = researching
-              ? (canActResearch && !has)
-              : (canActToggle && (browseScope === 'catalog' || has));
-
-            return (
-              <button
-                key={tech.id}
-                type="button"
-                disabled={researching && !interactive}
-                onClick={() => {
-                  if (!interactive) return;
-                  if (researching) tryResearch(tech.id);
-                  else if (has) onRevokeTech?.(player.id, tech.id);
-                  else onGrantTech?.(player.id, tech.id);
-                }}
-                className={`w-full text-left px-3.5 py-3 rounded-xl border transition ${baseCls} ${
-                  researching && (researchable || almost) && !has
-                    ? 'ring-1 ring-cyan-400/40'
-                    : ''
-                } ${interactive ? 'cursor-pointer hover:brightness-110' : 'cursor-default'} ${
-                  researching && !interactive ? 'opacity-50' : ''
-                }`}
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <div className="font-bold text-sm leading-snug">{tech.name}</div>
+              return (
+                <li key={tech.id}>
+                  <div
+                    className={[
+                      'tech-card',
+                      `color-${tech.color || 'neutral'}`,
+                      has ? 'is-owned' : '',
+                      researchable && !has ? 'is-researchable' : '',
+                      almost && !has ? 'is-almost' : '',
+                      interactive ? 'is-interactive' : '',
+                      researching && !interactive ? 'is-disabled' : '',
+                      expanded ? 'is-expanded' : '',
+                    ].filter(Boolean).join(' ')}
+                  >
+                    <button
+                      type="button"
+                      disabled={researching && !interactive}
+                      onClick={() => {
+                        if (!interactive) return;
+                        if (researching) tryResearch(tech.id);
+                        else if (has) onRevokeTech?.(player.id, tech.id);
+                        else onGrantTech?.(player.id, tech.id);
+                      }}
+                      className="tech-card-main"
+                    >
+                      <TechCardArt tech={tech} />
+                      <div className="tech-card-body min-w-0">
+                        <div className="tech-card-name">{tech.name}</div>
+                        {tech.text && (
+                          <p className={`tech-card-text ${expanded ? 'is-open' : ''}`}>
+                            {tech.text}
+                          </p>
+                        )}
+                        <div className="tech-card-meta">
+                          {tech.color ? (
+                            <span className="tech-card-tag">
+                              <TechTypeIcon color={tech.color} size={14} />
+                              {TECH_COLOR_META[tech.color]?.label}
+                            </span>
+                          ) : tech.factionId ? (
+                            <span className="tech-card-tag">
+                              {tech.kind === 'unit' ? 'Фракция · Unit' : 'Фракция'}
+                            </span>
+                          ) : (
+                            <span className="tech-card-tag">
+                              {tech.kind === 'unit' ? 'Unit' : tech.kind}
+                            </span>
+                          )}
+                          {tech.omega && <span className="tech-card-tag">Ω</span>}
+                          {tech.prereqs?.length > 0 && (
+                            <span className="tech-card-tag tech-card-prereq">
+                              <span className="opacity-60">Пререк</span>
+                              <TechPrereqIcons prereqs={tech.prereqs} size={14} />
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      {actionLabel && (
+                        <span className="tech-card-action">{actionLabel}</span>
+                      )}
+                    </button>
                     {tech.text && (
-                      <p className="text-[11px] opacity-70 mt-0.5 leading-snug line-clamp-2">{tech.text}</p>
+                      <button
+                        type="button"
+                        className="tech-card-expand"
+                        aria-expanded={expanded}
+                        aria-label={expanded ? 'Свернуть описание' : 'Развернуть описание'}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setExpandedId(expanded ? null : tech.id);
+                        }}
+                      >
+                        <i className={`fa-solid fa-chevron-${expanded ? 'up' : 'down'}`} aria-hidden="true" />
+                      </button>
                     )}
-                    <div className="flex flex-wrap items-center gap-2 mt-1.5 text-[10px] font-semibold uppercase tracking-wide opacity-90">
-                      {tech.color ? (
-                        <span className="inline-flex items-center gap-1 normal-case">
-                          <TechTypeIcon color={tech.color} size={16} />
-                          <span className="opacity-70">{TECH_COLOR_META[tech.color]?.label}</span>
-                        </span>
-                      ) : tech.factionId ? (
-                        <span>{tech.kind === 'unit' ? 'Фракция · Unit' : 'Фракция'}</span>
-                      ) : (
-                        <span>{tech.kind === 'unit' ? 'Unit' : tech.kind}</span>
-                      )}
-                      {tech.omega && <span>Ω</span>}
-                      {tech.prereqs?.length > 0 && (
-                        <span className="inline-flex items-center gap-1 normal-case opacity-80">
-                          <span className="opacity-60">Пререк</span>
-                          <TechPrereqIcons prereqs={tech.prereqs} size={15} />
-                        </span>
-                      )}
-                    </div>
                   </div>
-                  <div className="flex-shrink-0 text-[11px] font-bold">
-                    {has ? '✓' : researching ? (researchable ? 'Взять' : almost ? '!' : '') : (canActToggle && browseScope === 'catalog' ? '+' : '')}
-                  </div>
-                </div>
-              </button>
-            );
-          })}
+                </li>
+              );
+            })}
+          </ul>
         </div>
 
-        <footer className="flex-shrink-0 px-4 md:px-6 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] border-t border-slate-800 flex gap-2">
+        <footer className="tech-shell-foot flex-shrink-0">
           {researching ? (
             <button
               type="button"
               disabled={!canActResearch}
               onClick={() => canActResearch && onPass?.(session.playerId)}
-              className="flex-1 py-3 rounded-xl bg-sky-600 hover:bg-sky-500 disabled:bg-slate-800 disabled:text-slate-600 text-white font-bold text-sm transition"
+              className="tech-foot-btn tech-foot-btn-primary"
             >
               {session.mode === 'secondary' && picksDone === 0 ? 'Пропуск' : 'Готово'}
             </button>
@@ -432,7 +487,7 @@ export function TechModal({
             <button
               type="button"
               onClick={onClose}
-              className="flex-1 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-sm transition"
+              className="tech-foot-btn tech-foot-btn-primary"
             >
               Закрыть
             </button>
@@ -445,18 +500,18 @@ export function TechModal({
           <div
             role="alertdialog"
             aria-labelledby="prereq-error-title"
-            className="w-full max-w-md rounded-2xl border border-rose-500/50 bg-slate-950 p-5 shadow-2xl space-y-4"
+            className="tech-prereq-dialog w-full max-w-md space-y-4"
           >
             <div>
-              <h3 id="prereq-error-title" className="font-orbitron font-black text-rose-200 text-lg">
+              <h3 id="prereq-error-title" className="tech-prereq-title">
                 Нельзя изучить
               </h3>
-              <p className="text-sm text-slate-300 mt-2">
+              <p className="tech-prereq-body">
                 <span className="font-bold text-white">{prereqError.techName}</span>
                 {' — '}
                 {prereqError.message}
               </p>
-              <p className="text-xs text-slate-500 mt-2 leading-relaxed">
+              <p className="tech-prereq-hint">
                 Обход: метка tech на планете (игнор 1 пререка)
                 {prereqError.canPlastic
                   ? '; Кабала — вернуть захваченный пластик того же типа (Riftmeld: игнор всех пререков unit upgrade).'
@@ -472,7 +527,7 @@ export function TechModal({
                     onResearch?.(session.playerId, prereqError.techId, { ignorePrereq: true });
                     setPrereqError(null);
                   }}
-                  className="w-full py-3 rounded-xl bg-amber-600 hover:bg-amber-500 text-slate-950 font-bold text-sm"
+                  className="tech-prereq-btn tech-prereq-btn-amber"
                 >
                   Игнор 1 пререка (планета / метка)
                 </button>
@@ -484,7 +539,7 @@ export function TechModal({
                     onResearch?.(session.playerId, prereqError.techId, { ignoreAll: true });
                     setPrereqError(null);
                   }}
-                  className="w-full py-3 rounded-xl bg-rose-700 hover:bg-rose-600 text-white font-bold text-sm"
+                  className="tech-prereq-btn tech-prereq-btn-rose"
                 >
                   Игнор всех пререков (пластик / Riftmeld)
                 </button>
@@ -496,7 +551,7 @@ export function TechModal({
                     onResearch?.(session.playerId, prereqError.techId, { force: true });
                     setPrereqError(null);
                   }}
-                  className="w-full py-3 rounded-xl bg-slate-700 hover:bg-slate-600 text-white font-bold text-sm"
+                  className="tech-prereq-btn tech-prereq-btn-slate"
                 >
                   Хост: добавить всё равно
                 </button>
@@ -504,7 +559,7 @@ export function TechModal({
               <button
                 type="button"
                 onClick={() => setPrereqError(null)}
-                className="w-full py-3 rounded-xl border border-slate-700 text-slate-300 font-bold text-sm"
+                className="tech-prereq-btn tech-prereq-btn-ghost"
               >
                 Отмена
               </button>

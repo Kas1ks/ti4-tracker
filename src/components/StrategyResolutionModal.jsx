@@ -183,7 +183,7 @@ export function StrategyResolutionModal({
       style={entered ? undefined : { pointerEvents: 'none' }}
     >
       <div
-        className={`game-hud-chassis sr-shell relative w-full max-md:h-full md:w-fit md:max-w-[96vw] md:h-auto md:max-h-[min(90vh,920px)] flex flex-col md:overflow-hidden ${entered ? 'is-open' : ''}`}
+        className={`sr-shell relative w-full max-md:h-full md:w-fit md:max-w-[96vw] md:h-auto md:max-h-[min(90vh,920px)] flex flex-col md:overflow-hidden ${entered ? 'is-open' : ''}`}
         role="dialog"
         aria-modal="true"
         aria-labelledby="strategy-resolution-title"

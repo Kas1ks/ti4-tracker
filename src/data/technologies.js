@@ -49,6 +49,12 @@ export const TECH_COLOR_META = Object.freeze({
   },
 });
 
+/** Card art under `public/tech-art/{id}.jpg` (GenerateImage output). */
+export function techArtUrl(id) {
+  if (!id) return null;
+  return `/tech-art/${id}.jpg`;
+}
+
 /** @type {Tech[]} */
 const GENERIC = [
   // Biotic

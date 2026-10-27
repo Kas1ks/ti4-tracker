@@ -130,6 +130,8 @@ describe('formatGameEvent', () => {
 
   it('formats known events in Russian', () => {
     expect(formatGameEvent({ type: 'GAME_STARTED' }, players)).toBe('Партия начата');
+    expect(formatGameEvent({ type: 'DEV_SKIP_STRATEGY_DRAFT' }, players)).toBe('DEV: пропуск драфта КС');
+    expect(formatGameEvent({ type: 'DEV_PASS_ALL' }, players)).toBe('DEV: общий пас');
     expect(formatGameEvent({ type: 'PLAYER_PASSED', playerId: 1 }, players)).toBe('Алекс пасует');
     expect(formatGameEvent({ type: 'STRATEGY_PLAYED', playerId: 2, cardId: 6 }, players))
       .toBe('Боря сыграл «Война»');
