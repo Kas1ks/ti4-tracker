@@ -86,4 +86,4 @@ Vite serves `/api/*` via a local middleware that keeps secrets on the Node side.
 
 ## Security note
 
-Older single-file HTML copies (`legacy.html`, `indexv*.html`) were removed from the repo because they contained hardcoded JSONBin keys. If those files were ever public, **rotate** your JSONBin master key and admin PIN.
+Older single-file HTML copies (`legacy.html`, `indexv*.html`) were removed from the repo because they contained hardcoded JSONBin keys. If those files were ever public, **rotate** your JSONBin master key and admin PIN. 
