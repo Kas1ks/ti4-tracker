@@ -42,8 +42,8 @@ self.addEventListener('push', (event) => {
   const title = data.title || 'TI4 Tracker';
   const options = {
     body: data.body || 'Нужно ваше действие в партии.',
-    icon: '/pwa/icon-192.png',
-    badge: '/pwa/favicon-32.png',
+    icon: '/pwa/icon-192-a.png',
+    badge: '/pwa/favicon-32-a.png',
     data: {
       url: data.url || '/',
       roomId: data.roomId || null,

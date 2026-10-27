@@ -9,7 +9,7 @@ registerSW({ immediate: true });
 
 // Browsers cache favicons aggressively — force the tab icon once per load.
 (() => {
-  const href = `/favicon.ico?v=9`;
+  const href = `/favicon.ico?v=10`;
   let link = document.querySelector("link[rel='icon']");
   if (!link) {
     link = document.createElement('link');
