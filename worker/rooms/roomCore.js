@@ -440,16 +440,20 @@ export function publicRoomView(room) {
  * True when the party should not appear in hub «Активные партии»:
  * - host ended (RESET_GAME / partyEnded)
  * - host left / went offline (hostOnline === false)
+ * - inactive lobby without explicit hostOnline:true (legacy directory ghosts)
  * - short ended-TTL leftover card
- * Rooms stay listed while the host is present (hostOnline !== false).
+ * Rooms stay listed while hostOnline === true (or game is actively running).
  * @param {object|null} cardOrRoom
  */
 export function isHubPartyEnded(cardOrRoom) {
   if (!cardOrRoom) return false;
   if (cardOrRoom.partyEnded) return true;
-  // Explicit host-offline flag (SSE disconnect / host leave).
   if (cardOrRoom.hostOnline === false) return true;
-  if (cardOrRoom.isGameActive || cardOrRoom.state?.isGameActive) return false;
+  const active = !!(cardOrRoom.isGameActive || cardOrRoom.state?.isGameActive);
+  if (active) return false;
+  // Inactive rooms require an explicitly online host. Drops old hub cards
+  // that never had hostOnline (e.g. abandoned 6CXL2Y-style leftovers).
+  if (cardOrRoom.hostOnline !== true) return true;
   const exp = cardOrRoom.expiresAt ? Date.parse(cardOrRoom.expiresAt) : NaN;
   const act = Date.parse(cardOrRoom.lastActivityAt || cardOrRoom.updatedAt || 0);
   if (!Number.isFinite(exp) || !Number.isFinite(act)) return false;
@@ -484,7 +488,7 @@ export function hubRoomCard(room) {
     expiresAt: view.expiresAt,
     isGameActive: active,
     partyEnded: false,
-    hostOnline: room.hostOnline !== false,
+    hostOnline: room.hostOnline === true,
     roundNumber: Number.isFinite(round) && round > 0 ? round : null,
     roundStartedAt: startedAt,
     playersTotal: Math.max(players.length, 1),

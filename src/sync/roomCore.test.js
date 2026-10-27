@@ -196,7 +196,7 @@ describe('roomCore', () => {
     expect(isHubPartyEnded(ended.room)).toBe(true);
   });
 
-  it('lists rooms while host is online; hides when host offline or ended-TTL', () => {
+  it('lists rooms while host is online; hides legacy ghosts and host-offline', () => {
     const lobby = createRoomRecord();
     expect(lobby.hostOnline).toBe(true);
     expect(isHubPartyEnded(lobby)).toBe(false);
@@ -204,6 +204,17 @@ describe('roomCore', () => {
     expect(hubRoomCard(lobby)?.hostOnline).toBe(true);
 
     expect(isHubPartyEnded({ ...hubRoomCard(lobby), hostOnline: false })).toBe(true);
+
+    // Pre-hostOnline directory card (production ghost 6CXL2Y shape).
+    const legacyGhost = {
+      roomId: '6CXL2Y',
+      isGameActive: false,
+      claimedCount: 0,
+      lastActivityAt: '2026-10-27T12:30:19.242Z',
+      expiresAt: '2026-10-29T12:30:19.242Z',
+      thumbUrl: '/hub/cosmos.jpg',
+    };
+    expect(isHubPartyEnded(legacyGhost)).toBe(true);
 
     const stale = {
       roomId: 'ABCD',
