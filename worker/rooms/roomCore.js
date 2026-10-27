@@ -345,6 +345,7 @@ export function applyRoomAction(room, action, auth = {}) {
       seatClaims: {},
       seatSecrets: {},
       undoStack: [],
+      partyEnded: true,
     }, { ended: true });
     return {
       ok: true,
@@ -433,11 +434,29 @@ export function publicRoomView(room) {
 }
 
 /**
+ * True when the host ended the party (RESET_GAME) or the hub card looks like
+ * an ended leftover (short ended-TTL window, inactive). Lobby create rooms use
+ * the long idle TTL and must stay listed.
+ * @param {object|null} cardOrRoom
+ */
+export function isHubPartyEnded(cardOrRoom) {
+  if (!cardOrRoom) return false;
+  if (cardOrRoom.partyEnded) return true;
+  if (cardOrRoom.isGameActive || cardOrRoom.state?.isGameActive) return false;
+  const exp = cardOrRoom.expiresAt ? Date.parse(cardOrRoom.expiresAt) : NaN;
+  const act = Date.parse(cardOrRoom.lastActivityAt || cardOrRoom.updatedAt || 0);
+  if (!Number.isFinite(exp) || !Number.isFinite(act)) return false;
+  const ttl = exp - act;
+  return ttl > 0 && ttl <= ROOM_ENDED_TTL_MS + 60_000;
+}
+
+/**
  * Compact public card for hub "Активные партии" (no secrets / full undo stack).
  * @param {object} room
  */
 export function hubRoomCard(room) {
   if (!room?.roomId) return null;
+  if (isHubPartyEnded(room)) return null;
   const view = publicRoomView(room);
   const state = view.state;
   const players = (state?.players || []).filter((p) => !p?.eliminated);
@@ -457,6 +476,7 @@ export function hubRoomCard(room) {
     updatedAt: view.updatedAt,
     expiresAt: view.expiresAt,
     isGameActive: active,
+    partyEnded: false,
     roundNumber: Number.isFinite(round) && round > 0 ? round : null,
     roundStartedAt: startedAt,
     playersTotal: Math.max(players.length, 1),

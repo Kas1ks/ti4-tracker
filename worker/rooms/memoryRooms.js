@@ -211,7 +211,7 @@ export function memoryPublicView(roomId) {
   return room ? publicRoomView(room) : null;
 }
 
-/** All non-expired rooms as hub cards (Vite / memory backend). */
+/** All non-expired live rooms as hub cards (Vite / memory backend). */
 export function memoryListHubCards() {
   const cards = [];
   for (const roomId of [...rooms.keys()]) {

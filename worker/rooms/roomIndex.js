@@ -1,4 +1,4 @@
-import { hubRoomCard } from './roomCore.js';
+import { hubRoomCard, isHubPartyEnded } from './roomCore.js';
 
 export function hasRoomDirectory(env) {
   return Boolean(env?.ROOM_DIRECTORY);
@@ -12,6 +12,10 @@ function directoryStub(env) {
 /** Register / refresh a room card in the global hub index. */
 export async function directoryUpsert(env, room) {
   if (!hasRoomDirectory(env)) return;
+  if (isHubPartyEnded(room)) {
+    await directoryRemove(env, room?.roomId);
+    return;
+  }
   const card = hubRoomCard(room);
   if (!card) return;
   try {

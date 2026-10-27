@@ -244,7 +244,11 @@ export class GameRoom {
 
       await this.save(result.room);
       if (!result.noop) {
-        this.trackInDirectory(result.room);
+        if (result.roomEnded) {
+          this.ctx.waitUntil(directoryRemove(this.env, result.room.roomId));
+        } else {
+          this.trackInDirectory(result.room);
+        }
         this.broadcast({
           type: 'state',
           seq: result.room.seq,

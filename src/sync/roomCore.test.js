@@ -5,6 +5,7 @@ import {
   createRoomRecord,
   hubRoomCard,
   hydrateRoomLifecycle,
+  isHubPartyEnded,
   isRoomExpired,
   joinRoom,
   releaseSeat,
@@ -185,11 +186,28 @@ describe('roomCore', () => {
     const ended = applyRoomAction(room, { type: 'RESET_GAME' }, { hostKey: room.hostKey });
     expect(ended.ok).toBe(true);
     expect(ended.roomEnded).toBe(true);
+    expect(ended.room.partyEnded).toBe(true);
     expect(ended.room.state.isGameActive).toBe(false);
     expect(ended.room.seatClaims).toEqual({});
     expect(ended.room.seatSecrets).toEqual({});
     expect(ended.room.sessions[joined.sessionToken]).toBeUndefined();
     expect(Object.values(ended.room.sessions).every(s => s.role === ROLES.ADMIN)).toBe(true);
+    expect(hubRoomCard(ended.room)).toBeNull();
+    expect(isHubPartyEnded(ended.room)).toBe(true);
+  });
+
+  it('keeps lobby create rooms in the hub while hiding ended-TTL leftovers', () => {
+    const lobby = createRoomRecord();
+    expect(isHubPartyEnded(lobby)).toBe(false);
+    expect(hubRoomCard(lobby)?.roomId).toBe(lobby.roomId);
+
+    const stale = {
+      roomId: 'ABCD',
+      isGameActive: false,
+      lastActivityAt: '2026-01-01T12:00:00.000Z',
+      expiresAt: new Date(Date.parse('2026-01-01T12:00:00.000Z') + ROOM_ENDED_TTL_MS).toISOString(),
+    };
+    expect(isHubPartyEnded(stale)).toBe(true);
   });
 
   it('kicks the seated player when the host removes that seat', () => {

@@ -1,3 +1,5 @@
+import { isHubPartyEnded } from './roomCore.js';
+
 /**
  * Global index of live rooms for hub "Активные партии".
  * One Durable Object (name: global) stores compact hub cards by roomId.
@@ -24,6 +26,11 @@ export class RoomDirectory {
         }
         const exp = value.expiresAt ? Date.parse(value.expiresAt) : NaN;
         if (Number.isFinite(exp) && exp <= now) {
+          await this.ctx.storage.delete(key);
+          continue;
+        }
+        // Drop finished parties left over before directoryRemove-on-end.
+        if (isHubPartyEnded(value)) {
           await this.ctx.storage.delete(key);
           continue;
         }
