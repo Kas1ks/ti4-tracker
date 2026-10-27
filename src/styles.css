@@ -14726,9 +14726,15 @@ i.pcbat-btn-ico {
       0 0 26px rgba(56, 189, 248, 0.32);
   }
 
-  .hub-quote,
-  .hub-pwa {
+  .hub-quote {
     display: none;
+  }
+
+  /* Keep install hint visible on phones (JS only shows the banner on mobile). */
+  .hub-hero .hub-pwa {
+    display: block;
+    margin-top: 1rem;
+    max-width: none;
   }
 
   .hub-home-bottom {
