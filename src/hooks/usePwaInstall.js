@@ -1,37 +1,51 @@
 import { useEffect, useState } from 'react';
 
 const DISMISS_KEY = 'ti4_pwa_install_dismissed';
-/** «Позже» hides the banner for a day — not forever (so uninstall → reopen still sees it). */
+const INSTALLED_KEY = 'ti4_pwa_installed';
+/** «Позже» hides the banner for a day. */
 const DISMISS_TTL_MS = 24 * 60 * 60 * 1000;
 
 function isStandaloneDisplay() {
   if (typeof window === 'undefined') return false;
-  const mq = window.matchMedia?.('(display-mode: standalone)')?.matches;
-  const ios = window.navigator.standalone === true;
-  return Boolean(mq || ios);
+  if (window.navigator.standalone === true) return true;
+  // Installed PWAs / home-screen apps report one of these, not "browser".
+  const modes = ['standalone', 'fullscreen', 'minimal-ui', 'window-controls-overlay'];
+  return modes.some((mode) => window.matchMedia?.(`(display-mode: ${mode})`)?.matches);
 }
 
 function readDismissed() {
   try {
     const raw = localStorage.getItem(DISMISS_KEY);
     if (!raw) return false;
-    // Legacy: plain "1" from older builds — clear so banner can show again.
+    // Legacy forever-dismiss — clear so logic can recover.
     if (raw === '1') {
       localStorage.removeItem(DISMISS_KEY);
       return false;
     }
     const until = Number(raw);
-    if (!Number.isFinite(until)) {
-      localStorage.removeItem(DISMISS_KEY);
-      return false;
-    }
-    if (until <= Date.now()) {
+    if (!Number.isFinite(until) || until <= Date.now()) {
       localStorage.removeItem(DISMISS_KEY);
       return false;
     }
     return true;
   } catch {
     return false;
+  }
+}
+
+function readInstalledFlag() {
+  try {
+    return localStorage.getItem(INSTALLED_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function writeInstalledFlag() {
+  try {
+    localStorage.setItem(INSTALLED_KEY, '1');
+  } catch {
+    /* ignore */
   }
 }
 
@@ -63,23 +77,45 @@ function isMobileViewport() {
  */
 export function usePwaInstall() {
   const [deferred, setDeferred] = useState(null);
-  const [installed, setInstalled] = useState(() => isStandaloneDisplay());
+  const [installed, setInstalled] = useState(
+    () => isStandaloneDisplay() || readInstalledFlag(),
+  );
   const [dismissed, setDismissed] = useState(() => readDismissed());
 
   useEffect(() => {
+    const markInstalled = () => {
+      writeInstalledFlag();
+      setInstalled(true);
+      setDeferred(null);
+    };
+
+    if (isStandaloneDisplay()) {
+      markInstalled();
+    }
+
     const onBeforeInstall = (event) => {
       event.preventDefault();
       setDeferred(event);
     };
     const onInstalled = () => {
-      setInstalled(true);
-      setDeferred(null);
+      markInstalled();
     };
+
     window.addEventListener('beforeinstallprompt', onBeforeInstall);
     window.addEventListener('appinstalled', onInstalled);
+
+    const medias = ['standalone', 'fullscreen', 'minimal-ui', 'window-controls-overlay']
+      .map((mode) => window.matchMedia?.(`(display-mode: ${mode})`))
+      .filter(Boolean);
+    const onMode = () => {
+      if (isStandaloneDisplay()) markInstalled();
+    };
+    medias.forEach((mq) => mq.addEventListener?.('change', onMode));
+
     return () => {
       window.removeEventListener('beforeinstallprompt', onBeforeInstall);
       window.removeEventListener('appinstalled', onInstalled);
+      medias.forEach((mq) => mq.removeEventListener?.('change', onMode));
     };
   }, []);
 
@@ -98,6 +134,7 @@ export function usePwaInstall() {
     const choice = await deferred.userChoice;
     setDeferred(null);
     if (choice?.outcome === 'accepted') {
+      writeInstalledFlag();
       setInstalled(true);
       return { ok: true };
     }
@@ -109,8 +146,8 @@ export function usePwaInstall() {
   const iosSafari = isIosSafari();
   const mobile = isMobileViewport();
 
-  // Always hint on phone/tablet when not installed (manual steps if no native prompt).
-  const showBanner = !installed && !dismissed && mobile;
+  // Never hint inside an installed / home-screen session.
+  const showBanner = !installed && !dismissed && mobile && !isStandaloneDisplay();
 
   return {
     installed,
