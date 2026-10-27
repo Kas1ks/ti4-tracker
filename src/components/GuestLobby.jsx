@@ -12,6 +12,7 @@ export function GuestLobby({
   roomError,
   onLeaveRoom,
   onPickColor,
+  pushBanner = null,
 }) {
   const roleLabel = ROLE_LABELS[room?.role] || room?.role;
   const seatIdx = players.findIndex((p) => String(p.id) === String(room?.seatPlayerId));
@@ -152,6 +153,8 @@ export function GuestLobby({
             {roomError}
           </div>
         )}
+
+        {pushBanner}
 
         <p className="guest-lobby-status">
           Ожидайте, пока хост настроит стол и начнёт партию.

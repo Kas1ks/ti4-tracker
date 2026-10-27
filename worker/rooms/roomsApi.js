@@ -4,6 +4,8 @@ import {
   memoryGetRoom,
   memoryJoin,
   memoryListHubCards,
+  memoryPushSubscribe,
+  memoryPushUnsubscribe,
   memoryReleaseSeat,
   memoryPublicView,
   memorySubscribe,
@@ -11,6 +13,7 @@ import {
 import { makeRoomId, publicRoomView, adminSessionFromRoom } from './roomCore.js';
 import { assertRoomCreateAllowed } from './roomCreateAuth.js';
 import { directoryList, hasRoomDirectory } from './roomIndex.js';
+import { readVapidConfig } from '../push/sendPush.js';
 
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -46,6 +49,12 @@ export async function handleRoomsApi(request, env) {
   const url = new URL(request.url);
   const { pathname } = url;
   const method = request.method.toUpperCase();
+
+  if (method === 'GET' && pathname === '/api/push/vapid-public-key') {
+    const vapid = readVapidConfig(env);
+    if (!vapid) return json({ error: 'vapid-not-configured', configured: false }, 503);
+    return json({ publicKey: vapid.publicKey, configured: true });
+  }
 
   // Global hub list — all live rooms on this server (not device-local).
   if (method === 'GET' && pathname === '/api/rooms') {
@@ -85,7 +94,9 @@ export async function handleRoomsApi(request, env) {
     }, 201);
   }
 
-  const roomMatch = pathname.match(/^\/api\/rooms\/([^/]+)(?:\/(snapshot|actions|events|join|release-seat))?$/);
+  const roomMatch = pathname.match(
+    /^\/api\/rooms\/([^/]+)(?:\/(snapshot|actions|events|join|release-seat|push\/subscribe|push\/unsubscribe))?$/,
+  );
   if (!roomMatch) return null;
 
   const roomId = decodeURIComponent(roomMatch[1]).trim().toUpperCase();
@@ -133,6 +144,19 @@ export async function handleRoomsApi(request, env) {
     if (method === 'POST' && sub === 'actions') {
       const body = await readJsonBody(request);
       const res = await stub.fetch(new Request('https://room/actions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body || {}),
+      }));
+      return new Response(await res.text(), {
+        status: res.status,
+        headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' },
+      });
+    }
+
+    if (method === 'POST' && (sub === 'push/subscribe' || sub === 'push/unsubscribe')) {
+      const body = await readJsonBody(request);
+      const res = await stub.fetch(new Request(`https://room/${sub}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body || {}),
@@ -201,7 +225,7 @@ export async function handleRoomsApi(request, env) {
     const result = memoryApplyAction(roomId, body?.action, {
       sessionToken: body?.sessionToken,
       hostKey: body?.hostKey,
-    });
+    }, env);
     if (!result.ok) {
       const status = result.error === 'not-found' ? 404
         : (result.error === 'unauthorized' || result.error === 'forbidden') ? 403
@@ -214,6 +238,30 @@ export async function handleRoomsApi(request, env) {
       noop: !!result.noop,
       canUndo: !!result.canUndo,
     });
+  }
+
+  if (method === 'POST' && sub === 'push/subscribe') {
+    const body = await readJsonBody(request);
+    const result = memoryPushSubscribe(roomId, body || {});
+    if (!result.ok) {
+      const status = result.error === 'not-found' ? 404
+        : (result.error === 'unauthorized' || result.error === 'forbidden') ? 403
+          : 400;
+      return json({ error: result.error }, status);
+    }
+    return json({ ok: true });
+  }
+
+  if (method === 'POST' && sub === 'push/unsubscribe') {
+    const body = await readJsonBody(request);
+    const result = memoryPushUnsubscribe(roomId, body || {});
+    if (!result.ok) {
+      const status = result.error === 'not-found' ? 404
+        : (result.error === 'unauthorized' || result.error === 'forbidden') ? 403
+          : 400;
+      return json({ error: result.error }, status);
+    }
+    return json({ ok: true });
   }
 
   if (method === 'GET' && sub === 'events') {

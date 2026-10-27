@@ -10,6 +10,7 @@ import {
 } from './jsonbin.js';
 import { handleRoomsApi } from './rooms/roomsApi.js';
 import { assertRoomCreateAllowed, resolveRoomCreateSecret } from './rooms/roomCreateAuth.js';
+import { readVapidConfig } from './push/sendPush.js';
 import { clientKey, consumeRateLimit } from './secureCompare.js';
 
 function json(data, status = 200, extraHeaders = {}) {
@@ -92,11 +93,18 @@ export async function handleApi(request, env) {
       hasMasterKey: Boolean(resolveMasterKey(env)),
       hasAdminPin: Boolean(resolveAdminPin(env)),
       hasRoomCreateSecret: Boolean(resolveRoomCreateSecret(env)),
+      hasVapid: Boolean(readVapidConfig(env)),
       roomCreateSecretKeys: {
         ROOM_CREATE_SECRET: Boolean(env?.ROOM_CREATE_SECRET),
         VITE_ROOM_CREATE_SECRET: Boolean(env?.VITE_ROOM_CREATE_SECRET),
       },
     });
+  }
+
+  if (method === 'GET' && pathname === '/api/push/vapid-public-key') {
+    const vapid = readVapidConfig(env);
+    if (!vapid) return json({ error: 'vapid-not-configured', configured: false }, 503);
+    return json({ publicKey: vapid.publicKey, configured: true });
   }
 
   if (pathname === '/api/rooms' || pathname.startsWith('/api/rooms/')) {

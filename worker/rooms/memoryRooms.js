@@ -8,8 +8,10 @@ import {
   releaseSeat,
   publicRoomView,
   adminSessionFromRoom,
+  ROLES,
 } from './roomCore.js';
 import { logRoomEvent, measureMs } from './roomLog.js';
+import { notifyNeedsAction, removePushSub, upsertPushSub } from './pushNotify.js';
 import { undoStackDepth } from '../../src/sync/undoStack';
 
 /**
@@ -108,7 +110,7 @@ export function memoryReleaseSeat(roomId, body) {
   return result;
 }
 
-export function memoryApplyAction(roomId, action, auth) {
+export function memoryApplyAction(roomId, action, auth, env = {}) {
   const key = String(roomId || '').toUpperCase();
   const started = Date.now();
   const room = purgeIfExpired(key);
@@ -140,14 +142,18 @@ export function memoryApplyAction(roomId, action, auth) {
     return result;
   }
 
-  rooms.set(key, result.room);
+  let saved = result.room;
+  if (result.roomEnded) {
+    saved = { ...saved, pushSubs: {} };
+  }
+  rooms.set(key, saved);
   if (!result.noop) {
     notify(key, {
       type: 'state',
-      seq: result.room.seq,
-      state: result.room.state,
+      seq: saved.seq,
+      state: saved.state,
       action: result.action,
-      claimedSeats: publicRoomView(result.room).claimedSeats,
+      claimedSeats: publicRoomView(saved).claimedSeats,
       canUndo: !!result.canUndo,
       roomEnded: !!result.roomEnded,
       seatRemoved: !!result.seatRemoved,
@@ -155,7 +161,7 @@ export function memoryApplyAction(roomId, action, auth) {
       revokedSessionToken: result.revokedSessionToken || null,
     });
     if (result.seatRemoved && result.revokedSessionToken) {
-      const removedView = publicRoomView(result.room);
+      const removedView = publicRoomView(saved);
       notify(key, {
         type: 'seats',
         claimedSeats: removedView.claimedSeats,
@@ -167,6 +173,11 @@ export function memoryApplyAction(roomId, action, auth) {
         revokedSessionToken: result.revokedSessionToken,
       });
     }
+    if (!result.roomEnded) {
+      notifyNeedsAction(env, room, saved).then((updated) => {
+        if (updated && updated !== saved) rooms.set(key, updated);
+      }).catch(() => {});
+    }
   }
 
   logRoomEvent('action', {
@@ -176,12 +187,42 @@ export function memoryApplyAction(roomId, action, auth) {
     ok: true,
     noop: !!result.noop,
     durationMs: measureMs(started),
-    seq: result.room.seq,
-    undoDepth: undoStackDepth(result.room.undoStack),
+    seq: saved.seq,
+    undoDepth: undoStackDepth(saved.undoStack),
     sseListeners: listeners.get(key)?.size || 0,
     roomEnded: !!result.roomEnded,
   });
-  return result;
+  return { ...result, room: saved };
+}
+
+export function memoryPushSubscribe(roomId, body) {
+  const key = String(roomId || '').toUpperCase();
+  const room = purgeIfExpired(key);
+  if (!room) return { ok: false, error: 'not-found' };
+  const sessionToken = String(body?.sessionToken || '').trim();
+  const session = room.sessions?.[sessionToken];
+  if (!session) return { ok: false, error: 'unauthorized' };
+  if (session.role === ROLES.VIEWER) return { ok: false, error: 'viewers-no-push' };
+  const next = upsertPushSub(room, sessionToken, {
+    subscription: body?.subscription,
+    seatPlayerId: session.seatPlayerId ?? null,
+    role: session.role,
+  });
+  rooms.set(key, next);
+  return { ok: true, room: next };
+}
+
+export function memoryPushUnsubscribe(roomId, body) {
+  const key = String(roomId || '').toUpperCase();
+  const room = purgeIfExpired(key);
+  if (!room) return { ok: false, error: 'not-found' };
+  const sessionToken = String(body?.sessionToken || '').trim();
+  if (!sessionToken || !room.sessions?.[sessionToken]) {
+    return { ok: false, error: 'unauthorized' };
+  }
+  const next = removePushSub(room, sessionToken);
+  rooms.set(key, next);
+  return { ok: true, room: next };
 }
 
 export function memorySubscribe(roomId, callback) {

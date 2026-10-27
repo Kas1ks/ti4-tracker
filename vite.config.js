@@ -69,6 +69,9 @@ function readCloudSecrets() {
       JSONBIN_MASTER_KEY: parsed.masterKey || parsed.JSONBIN_MASTER_KEY || '',
       ADMIN_PIN: parsed.adminPin || parsed.ADMIN_PIN || '',
       ROOM_CREATE_SECRET: parsed.roomCreateSecret || parsed.ROOM_CREATE_SECRET || '',
+      VAPID_PUBLIC_KEY: parsed.vapidPublicKey || parsed.VAPID_PUBLIC_KEY || '',
+      VAPID_PRIVATE_KEY: parsed.vapidPrivateKey || parsed.VAPID_PRIVATE_KEY || '',
+      VAPID_SUBJECT: parsed.vapidSubject || parsed.VAPID_SUBJECT || '',
     };
   } catch {
     return {};
@@ -100,6 +103,9 @@ function resolveServerEnv(mode) {
       env.VITE_ROOM_CREATE_SECRET ||
       fileSecrets.ROOM_CREATE_SECRET ||
       '',
+    VAPID_PUBLIC_KEY: env.VAPID_PUBLIC_KEY || fileSecrets.VAPID_PUBLIC_KEY || '',
+    VAPID_PRIVATE_KEY: env.VAPID_PRIVATE_KEY || fileSecrets.VAPID_PRIVATE_KEY || '',
+    VAPID_SUBJECT: env.VAPID_SUBJECT || fileSecrets.VAPID_SUBJECT || 'mailto:admin@ti4-tracker.local',
   };
 }
 
@@ -172,6 +178,9 @@ export default defineConfig(({ mode }) => ({
     cloudApiPlugin(mode),
     figurinesStaticPlugin(),
     VitePWA({
+      strategies: 'injectManifest',
+      srcDir: 'src',
+      filename: 'sw.js',
       registerType: 'autoUpdate',
       includeAssets: [
         'favicon.ico',
@@ -188,7 +197,7 @@ export default defineConfig(({ mode }) => ({
       manifest: {
         name: 'TI4 Tracker',
         short_name: 'TI4 Tracker',
-        description: 'Companion дл€ живых партий Twilight Imperium 4',
+        description: 'Companion for live Twilight Imperium 4 games',
         theme_color: '#0f172a',
         background_color: '#020617',
         display: 'standalone',
@@ -224,29 +233,13 @@ export default defineConfig(({ mode }) => ({
           },
         ],
       },
-      workbox: {
-        navigateFallback: '/index.html',
-        navigateFallbackDenylist: [/^\/api\//],
+      injectManifest: {
         // Large expedition art stays out of precache; runtime cache handles images.
         maximumFileSizeToCacheInBytes: 3 * 1024 * 1024,
         globIgnores: ['**/expedition/**'],
-        runtimeCaching: [
-          {
-            urlPattern: ({ url }) => url.pathname.startsWith('/api/'),
-            handler: 'NetworkOnly',
-          },
-          {
-            urlPattern: ({ request }) => request.destination === 'image',
-            handler: 'StaleWhileRevalidate',
-            options: {
-              cacheName: 'ti4-images',
-              expiration: { maxEntries: 120, maxAgeSeconds: 60 * 60 * 24 * 14 },
-            },
-          },
-        ],
         globPatterns: ['**/*.{js,css,html,ico,png,svg,webp,woff2}'],
       },
-      // Keep SW off in dev Ч phone LAN clients otherwise keep stale CSS/JS and UI fixes look "broken".
+      // Keep SW off in dev ? phone LAN clients otherwise keep stale CSS/JS.
       devOptions: {
         enabled: false,
       },

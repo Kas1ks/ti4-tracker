@@ -27,17 +27,19 @@ Company stats live at `/stats` (react-router). Cloudflare assets use SPA `not_fo
 
 ### PWA
 
-The app is installable (manifest + service worker via `vite-plugin-pwa`).
+The app is installable (manifest + custom service worker via `vite-plugin-pwa` `injectManifest` → `src/sw.js`).
 
 - **Production (HTTPS):** Android Chrome can show «Install»; iPhone Safari → Share → Add to Home Screen.
 - **Local LAN (`http://192.168…`):** install prompt may be missing (browsers prefer HTTPS); «Add to Home Screen» as a shortcut still works. Full PWA install is best after `npm run deploy`.
 - `/api/*` is never cached by the service worker (NetworkOnly).
+- **Web Push** (action alerts when the app is backgrounded): needs VAPID keys (below). Android Chrome after install; iOS 16.4+ only from the Home Screen app. Players get a prompt after joining a seat; toggle lives on the mobile console **Стол** tab.
 
 ### Local cloud (optional)
 
 1. Copy `.env.example` → `.env.local`
 2. Fill `JSONBIN_BIN_ID`, `JSONBIN_MASTER_KEY`, `ADMIN_PIN`, `ROOM_CREATE_SECRET` (no `VITE_` prefix)
-3. Or use `cloud.local.json`: `{ "binId", "masterKey", "adminPin", "roomCreateSecret" }`
+3. Optional Web Push: `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` (mailto:…). Generate with `npx web-push generate-vapid-keys`.
+4. Or use `cloud.local.json`: `{ "binId", "masterKey", "adminPin", "roomCreateSecret", "vapidPublicKey", "vapidPrivateKey", "vapidSubject" }`
 
 Cloud buttons are on by default. Set `VITE_CLOUD_ENABLED=false` only if you want to hide them.
 
@@ -55,6 +57,7 @@ Vite serves `/api/*` via a local middleware that keeps secrets on the Node side.
   - `JSONBIN_MASTER_KEY`
   - `ADMIN_PIN`
   - `ROOM_CREATE_SECRET` — required to **create** live rooms (join stays public)
+  - `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT` — Web Push («нужно действовать»); without them subscribe API returns 503 and the client hides enable
 - Remove old `VITE_JSONBIN_*` / `VITE_ADMIN_PIN` / `VITE_ROOM_CREATE_SECRET` from **build** env — they must not appear in `dist/`
 - Optional: `VITE_CLOUD_ENABLED=false` only if you want to hide cloud UI
 - Do not use `public/_redirects` with `/* /index.html 200` — Workers treats that as an infinite loop
@@ -69,6 +72,9 @@ Vite serves `/api/*` via a local middleware that keeps secrets on the Node side.
 | GET | `/api/rooms/:id/snapshot` | Current room state |
 | POST | `/api/rooms/:id/actions` | Body `{ action }` — server applies the game reducer |
 | GET | `/api/rooms/:id/events` | SSE stream of state updates |
+| GET | `/api/push/vapid-public-key` | Public VAPID key for `PushManager.subscribe` |
+| POST | `/api/rooms/:id/push/subscribe` | Body `{ sessionToken, subscription }` — store Web Push sub for seat/host |
+| POST | `/api/rooms/:id/push/unsubscribe` | Body `{ sessionToken }` — drop sub |
 | GET | `/api/stats` | Game history |
 | POST | `/api/stats` | Append finished game; body `{ record, createSecret }` (alias: `POST /api/game`) |
 | POST | `/api/game` | Same as `/api/stats` → `{ ok: true }` |

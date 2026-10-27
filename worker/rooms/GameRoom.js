@@ -7,9 +7,11 @@ import {
   releaseSeat,
   publicRoomView,
   adminSessionFromRoom,
+  ROLES,
 } from './roomCore.js';
 import { directoryRemove, directoryUpsert } from './roomIndex.js';
 import { logRoomEvent, measureMs } from './roomLog.js';
+import { notifyNeedsAction, removePushSub, upsertPushSub } from './pushNotify.js';
 import { undoStackDepth } from '../../src/sync/undoStack';
 
 /**
@@ -242,19 +244,28 @@ export class GameRoom {
         return Response.json({ error: result.error }, { status });
       }
 
-      await this.save(result.room);
+      let saved = result.room;
+      if (result.roomEnded) {
+        saved = { ...saved, pushSubs: {} };
+      }
+      await this.save(saved);
       if (!result.noop) {
         if (result.roomEnded) {
-          this.ctx.waitUntil(directoryRemove(this.env, result.room.roomId));
+          this.ctx.waitUntil(directoryRemove(this.env, saved.roomId));
         } else {
-          this.trackInDirectory(result.room);
+          this.trackInDirectory(saved);
+          this.ctx.waitUntil(
+            notifyNeedsAction(this.env, room, saved).then(async (updated) => {
+              if (updated !== saved) await this.save(updated);
+            }),
+          );
         }
         this.broadcast({
           type: 'state',
-          seq: result.room.seq,
-          state: result.room.state,
+          seq: saved.seq,
+          state: saved.state,
           action: result.action,
-          claimedSeats: publicRoomView(result.room).claimedSeats,
+          claimedSeats: publicRoomView(saved).claimedSeats,
           canUndo: !!result.canUndo,
           roomEnded: !!result.roomEnded,
           seatRemoved: !!result.seatRemoved,
@@ -262,7 +273,7 @@ export class GameRoom {
           revokedSessionToken: result.revokedSessionToken || null,
         });
         if (result.seatRemoved && result.revokedSessionToken) {
-          const removedView = publicRoomView(result.room);
+          const removedView = publicRoomView(saved);
           this.broadcast({
             type: 'seats',
             claimedSeats: removedView.claimedSeats,
@@ -283,18 +294,56 @@ export class GameRoom {
         ok: true,
         noop: !!result.noop,
         durationMs: measureMs(started),
-        seq: result.room.seq,
-        undoDepth: undoStackDepth(result.room.undoStack),
+        seq: saved.seq,
+        undoDepth: undoStackDepth(saved.undoStack),
         sseListeners: this.sseWrites.size,
         roomEnded: !!result.roomEnded,
       });
 
       return Response.json({
-        seq: result.room.seq,
-        state: result.room.state,
+        seq: saved.seq,
+        state: saved.state,
         noop: !!result.noop,
         canUndo: !!result.canUndo,
       });
+    }
+
+    if (method === 'POST' && path.endsWith('/push/subscribe')) {
+      let body = null;
+      try {
+        body = await request.json();
+      } catch {
+        return Response.json({ error: 'invalid-body' }, { status: 400 });
+      }
+      const sessionToken = String(body?.sessionToken || '').trim();
+      const session = room.sessions?.[sessionToken];
+      if (!session) return Response.json({ error: 'unauthorized' }, { status: 403 });
+      if (session.role === ROLES.VIEWER) {
+        return Response.json({ error: 'viewers-no-push' }, { status: 400 });
+      }
+      const next = upsertPushSub(room, sessionToken, {
+        subscription: body?.subscription,
+        seatPlayerId: session.seatPlayerId ?? null,
+        role: session.role,
+      });
+      await this.save(next);
+      return Response.json({ ok: true });
+    }
+
+    if (method === 'POST' && path.endsWith('/push/unsubscribe')) {
+      let body = null;
+      try {
+        body = await request.json();
+      } catch {
+        return Response.json({ error: 'invalid-body' }, { status: 400 });
+      }
+      const sessionToken = String(body?.sessionToken || '').trim();
+      if (!sessionToken || !room.sessions?.[sessionToken]) {
+        return Response.json({ error: 'unauthorized' }, { status: 403 });
+      }
+      const next = removePushSub(room, sessionToken);
+      await this.save(next);
+      return Response.json({ ok: true });
     }
 
     if (method === 'GET' && path.endsWith('/events')) {

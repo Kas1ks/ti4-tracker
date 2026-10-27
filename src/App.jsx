@@ -5,6 +5,7 @@ import { useSyncedGame } from './sync/useSyncedGame';
 import { verifyHostSecret } from './sync/roomApi';
 import { useElapsedSeconds } from './hooks/useTurnTimer';
 import { useYourTurnAlert } from './hooks/useYourTurnAlert';
+import { usePushNotifications } from './hooks/usePushNotifications';
 import { useVisualViewportShell } from './hooks/useVisualViewportShell';
 import { useAppDialog } from './hooks/useAppDialog';
 import { useCloudGame } from './hooks/useCloudGame';
@@ -23,6 +24,7 @@ import { HubCosmosBackdrop } from './components/HubCosmosBackdrop';
 import { StrategyResolutionBanner } from './components/StrategyResolutionBanner';
 import { StartingTechDraftBanner } from './components/StartingTechDraftBanner';
 import { SyncStatusBanner } from './components/SyncStatusBanner';
+import { PushNotificationsBanner } from './components/PushNotificationsBanner';
 import { VictoryLockBanner } from './components/VictoryLockBanner';
 import { ROLES } from './sync/permissions';
 import { playersNeedingStartingTechDraft } from './data/technologies';
@@ -259,6 +261,13 @@ function App() {
     && !passed[mySeatPlayer.id]
   );
   useYourTurnAlert({ enabled: isPlayerClient && isGameActive, isYourTurn: isMyTurn });
+
+  const pushNotify = usePushNotifications({
+    roomId: room?.roomId || null,
+    sessionToken: room?.sessionToken || null,
+    role: perms?.role || null,
+    enabled: roomStatus === 'live' && (isPlayerClient || isHostClient),
+  });
 
   // Desktop: keep expedition dock available during TE games (non-blocking).
   // Mobile: open only via the header button.
@@ -517,6 +526,7 @@ function App() {
 
   const handleLeaveRoom = async () => {
     setSoloSetup(false);
+    await pushNotify.unsubscribeServer();
     await leaveRoom();
   };
 
@@ -585,6 +595,24 @@ function App() {
         onDismissError={dismissRoomError}
         onReconnect={hasRoomSession ? () => resumeLiveSync({ forceSse: true }) : undefined}
       />
+
+      {isPlayerClient && isGameActive && pushNotify.showPrompt && (
+        <div className="fixed inset-x-0 top-0 z-[85] pt-[max(0.5rem,env(safe-area-inset-top))] pointer-events-none">
+          <div className="pointer-events-auto max-w-xl mx-auto">
+            <PushNotificationsBanner
+              showPrompt
+              supported={pushNotify.supported}
+              canUse={pushNotify.canUse}
+              subscribed={pushNotify.subscribed}
+              busy={pushNotify.busy}
+              configured={pushNotify.configured}
+              onEnable={pushNotify.enable}
+              onDismiss={pushNotify.dismissPrompt}
+              onDisable={pushNotify.disable}
+            />
+          </div>
+        </div>
+      )}
 
       {victoryLocked && (
         <VictoryLockBanner
@@ -690,6 +718,20 @@ function App() {
             players={players}
             roomError={roomError}
             onLeaveRoom={handleLeaveRoom}
+            pushBanner={isPlayerClient ? (
+              <PushNotificationsBanner
+                showPrompt={pushNotify.showPrompt}
+                supported={pushNotify.supported}
+                canUse={pushNotify.canUse}
+                subscribed={pushNotify.subscribed}
+                busy={pushNotify.busy}
+                configured={pushNotify.configured}
+                onEnable={pushNotify.enable}
+                onDismiss={pushNotify.dismissPrompt}
+                onDisable={pushNotify.disable}
+                compact
+              />
+            ) : null}
             onPickColor={
               isPlayerClient && room?.seatPlayerId != null
                 ? (color) => dispatch({
@@ -880,6 +922,7 @@ function App() {
                     includeStatus: true,
                     openPhaseModal,
                   })}
+                  pushNotify={pushNotify}
                 />
               </Suspense>
             )}

@@ -17,6 +17,7 @@
     "cf:dev": "npm run build && wrangler dev"
   },
   "dependencies": {
+    "@block65/webcrypto-web-push": "^2.0.0",
     "framer-motion": "^10.18.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
@@ -36,6 +37,11 @@
     "typescript": "^5.8.2",
     "vite": "^5.4.0",
     "vite-plugin-pwa": "^2.0.0",
-    "vitest": "^2.1.9"
+    "vitest": "^2.1.9",
+    "workbox-core": "^7.4.1",
+    "workbox-expiration": "^7.4.1",
+    "workbox-precaching": "^7.4.1",
+    "workbox-routing": "^7.4.1",
+    "workbox-strategies": "^7.4.1"
   }
 }
