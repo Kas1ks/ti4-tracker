@@ -303,10 +303,11 @@ export function useSyncedGame() {
         else if (status === 'reconnecting') setSyncLink('reconnecting');
         else if (status === 'closed') setSyncLink('closed');
       },
+      { sessionToken: room.sessionToken },
     );
 
     return unsubscribe;
-  }, [room?.roomId, sseGeneration, applyAuthoritativeState, clearSoloUndo]);
+  }, [room?.roomId, room?.sessionToken, sseGeneration, applyAuthoritativeState, clearSoloUndo]);
 
   /**
    * After phone unlock / tab resume: catch up via snapshot and force a fresh SSE.
@@ -626,8 +627,18 @@ export function useSyncedGame() {
   const leaveRoom = useCallback(async () => {
     const current = roomRef.current;
 
-    // Player leave must free the seat so the host stops seeing "online".
-    if (
+    // Host leave ends the party so the hub drops the room.
+    if (current?.roomId && (current.role === ROLES.ADMIN || current.hostKey)) {
+      try {
+        await postRoomAction(current.roomId, { type: 'RESET_GAME' }, {
+          sessionToken: current.sessionToken,
+          hostKey: current.hostKey,
+        });
+      } catch (err) {
+        console.error('[room] end party on host leave failed', err);
+      }
+    } else if (
+      // Player leave must free the seat so the host stops seeing "online".
       current?.roomId
       && current.role === ROLES.PLAYER
       && current.seatPlayerId != null
@@ -663,20 +674,7 @@ export function useSyncedGame() {
 
   /** End the live party for everyone, then return this client to the hub. */
   const resetLocalGame = useCallback(async () => {
-    const current = roomRef.current;
-
-    if (current?.roomId && (current.role === ROLES.ADMIN || current.hostKey)) {
-      try {
-        await postRoomAction(current.roomId, { type: 'RESET_GAME' }, {
-          sessionToken: current.sessionToken,
-          hostKey: current.hostKey,
-        });
-      } catch (err) {
-        console.error('[room] end party failed', err);
-      }
-    }
-
-    leaveRoom();
+    await leaveRoom();
   }, [leaveRoom]);
 
   const role = roomStatus === 'solo'

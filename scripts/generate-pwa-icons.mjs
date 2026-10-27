@@ -1,34 +1,55 @@
 /**
- * Rebuild Android/PWA launcher icons from public/pwa/source.jpg.
+ * Rebuild PWA / favicon assets.
  *
- * Android maskable icons must be opaque full-bleed squares.
- * source.jpg has a painted rounded “frame” near the edges — that becomes a
- * second border under the launcher mask. We zoom-crop ~11% so only the scene
- * remains, then resize to exact squares (never stretch).
+ * - Launcher (Android / apple-touch): full-bleed scene from source.jpg
+ * - Browser tab favicons: transparent gold emblem from brand-mark (black → alpha)
  */
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import sharp from 'sharp';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const srcPath = resolve(root, 'public/pwa/source.jpg');
+const scenePath = resolve(root, 'public/pwa/source.jpg');
+const markPath = resolve(root, 'src/assets/brand-mark-lg.png');
 const outDir = resolve(root, 'public/pwa');
 
-/** Fraction of source kept after center crop (1 = no zoom). */
-/** Crop enough to drop the painted squircle glow (~8–10% per side). */
+/** Crop painted squircle glow from cinematic source (~8–10% per side). */
 const KEEP = 0.82;
 
-async function squareIcon(size) {
-  const meta = await sharp(srcPath).metadata();
+async function sceneSquare(size) {
+  const meta = await sharp(scenePath).metadata();
   const w = meta.width;
   const h = meta.height;
   const side = Math.round(Math.min(w, h) * KEEP);
   const left = Math.round((w - side) / 2);
   const top = Math.round((h - side) / 2);
-  return sharp(srcPath)
+  return sharp(scenePath)
     .extract({ left, top, width: side, height: side })
-    .resize(size, size, { fit: 'fill' }) // already square crop — fill = 1:1, no stretch
+    .resize(size, size, { fit: 'fill' })
     .flatten({ background: '#020617' })
+    .png()
+    .toBuffer();
+}
+
+/** Emblem only: near-black pixels become transparent. */
+async function emblemSquare(size) {
+  const { data, info } = await sharp(markPath)
+    .ensureAlpha()
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+  for (let i = 0; i < data.length; i += 4) {
+    const r = data[i];
+    const g = data[i + 1];
+    const b = data[i + 2];
+    if (r < 22 && g < 22 && b < 22) data[i + 3] = 0;
+  }
+  return sharp(data, {
+    raw: { width: info.width, height: info.height, channels: 4 },
+  })
+    .resize(size, size, {
+      fit: 'contain',
+      background: { r: 0, g: 0, b: 0, alpha: 0 },
+    })
     .png()
     .toBuffer();
 }
@@ -40,30 +61,38 @@ async function write(buf, name) {
   if (meta.width !== meta.height) {
     throw new Error(`${name} not square: ${meta.width}x${meta.height}`);
   }
-  console.log(name, `${meta.width}x${meta.height}`);
+  console.log(name, `${meta.width}x${meta.height}`, meta.hasAlpha ? 'alpha' : 'opaque');
 }
 
-const s512 = await squareIcon(512);
-const s192 = await squareIcon(192);
-const s180 = await squareIcon(180);
-const s32 = await squareIcon(32);
-const s16 = await squareIcon(16);
+const s512 = await sceneSquare(512);
+const s192 = await sceneSquare(192);
+const s180 = await sceneSquare(180);
+const mark192 = await emblemSquare(192);
+const mark32 = await emblemSquare(32);
+const mark16 = await emblemSquare(16);
 
-// Canonical + cache-bust "-a" names (Android PWA icon cache is sticky).
+// Android / install icons — cinematic scene (cache-bust -a copies too)
 for (const [buf, base] of [
   [s512, 'icon-512'],
   [s192, 'icon-192'],
   [s512, 'icon-512-maskable'],
   [s192, 'icon-192-maskable'],
   [s180, 'apple-touch-icon'],
-  [s192, 'favicon-192'],
-  [s32, 'favicon-32'],
-  [s16, 'favicon-16'],
 ]) {
   await write(buf, `${base}.png`);
   await write(buf, `${base}-a.png`);
 }
-await sharp(s32).png().toFile(resolve(root, 'public/favicon.png'));
-await sharp(s32).png().toFile(resolve(root, 'public/favicon.ico'));
-console.log('favicon.png / favicon.ico');
-console.log('done keep=', KEEP);
+
+// Browser tab favicons — transparent emblem only
+await write(mark192, 'favicon-192.png');
+await write(mark32, 'favicon-32.png');
+await write(mark16, 'favicon-16.png');
+// Keep -a tab names pointing at emblem too (index may still reference them)
+await write(mark192, 'favicon-192-a.png');
+await write(mark32, 'favicon-32-a.png');
+await write(mark16, 'favicon-16-a.png');
+
+await sharp(mark32).png().toFile(resolve(root, 'public/favicon.png'));
+await sharp(mark32).png().toFile(resolve(root, 'public/favicon.ico'));
+console.log('favicon.png / favicon.ico (transparent emblem)');
+console.log('done');

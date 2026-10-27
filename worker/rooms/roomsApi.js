@@ -168,7 +168,9 @@ export async function handleRoomsApi(request, env) {
     }
 
     if (method === 'GET' && sub === 'events') {
-      return stub.fetch(new Request('https://room/events', {
+      const token = new URL(request.url).searchParams.get('sessionToken') || '';
+      const qs = token ? `?sessionToken=${encodeURIComponent(token)}` : '';
+      return stub.fetch(new Request(`https://room/events${qs}`, {
         headers: { Accept: 'text/event-stream' },
         signal: request.signal,
       }));

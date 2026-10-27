@@ -92,8 +92,13 @@ export async function postRoomAction(roomId, action, auth = {}) {
  * 'open' | 'reconnecting' | 'closed'
  * Returns an unsubscribe function.
  */
-export function subscribeRoom(roomId, onMessage, onStatus) {
-  const source = new EventSource(`/api/rooms/${encodeURIComponent(roomId)}/events`);
+export function subscribeRoom(roomId, onMessage, onStatus, { sessionToken } = {}) {
+  const qs = sessionToken
+    ? `?sessionToken=${encodeURIComponent(sessionToken)}`
+    : '';
+  const source = new EventSource(
+    `/api/rooms/${encodeURIComponent(roomId)}/events${qs}`,
+  );
   let sawOpen = false;
   let intentionalClose = false;
 

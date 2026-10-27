@@ -18,12 +18,19 @@ import { undoStackDepth } from '../../src/sync/undoStack';
  * One Durable Object = one live game room.
  * Idle rooms expire via storage alarm (see roomCore TTL helpers).
  */
+/** After last host SSE drops, wait this long for refresh/reconnect before ending. */
+const HOST_OFFLINE_GRACE_MS = 60_000;
+
 export class GameRoom {
   constructor(ctx, env) {
     this.ctx = ctx;
     this.env = env;
     /** @type {Set<(chunk: string) => Promise<void>>} */
     this.sseWrites = new Set();
+    /** @type {Set<(chunk: string) => Promise<void>>} */
+    this.adminSseWrites = new Set();
+    /** @type {ReturnType<typeof setTimeout> | null} */
+    this.hostOfflineTimer = null;
   }
 
   async load() {
@@ -65,6 +72,67 @@ export class GameRoom {
   trackInDirectory(room) {
     if (!room) return;
     this.ctx.waitUntil(directoryUpsert(this.env, room));
+  }
+
+  clearHostOfflineTimer() {
+    if (this.hostOfflineTimer) {
+      clearTimeout(this.hostOfflineTimer);
+      this.hostOfflineTimer = null;
+    }
+  }
+
+  /** Host SSE reconnected — keep room listed. */
+  async markHostOnline() {
+    this.clearHostOfflineTimer();
+    const room = await this.load();
+    if (!room || room.partyEnded) return;
+    if (room.hostOnline !== false) {
+      this.trackInDirectory({ ...room, hostOnline: true });
+      return;
+    }
+    const next = { ...room, hostOnline: true };
+    await this.save(next);
+    this.trackInDirectory(next);
+  }
+
+  /**
+   * Last host SSE gone: grace period, then end party + drop from hub
+   * (covers closed tab / leave without RESET_GAME).
+   */
+  scheduleHostOffline() {
+    this.clearHostOfflineTimer();
+    this.hostOfflineTimer = setTimeout(() => {
+      this.hostOfflineTimer = null;
+      this.ctx.waitUntil(this.endPartyHostOffline());
+    }, HOST_OFFLINE_GRACE_MS);
+  }
+
+  async endPartyHostOffline() {
+    if (this.adminSseWrites.size > 0) return;
+    const room = await this.load();
+    if (!room || room.partyEnded) {
+      if (room?.roomId) await directoryRemove(this.env, room.roomId);
+      return;
+    }
+    const ended = applyRoomAction(room, { type: 'RESET_GAME' }, { hostKey: room.hostKey });
+    if (!ended.ok) {
+      const next = { ...room, hostOnline: false };
+      await this.save(next);
+      await directoryRemove(this.env, room.roomId);
+      return;
+    }
+    let saved = { ...ended.room, hostOnline: false, pushSubs: {} };
+    await this.save(saved);
+    await directoryRemove(this.env, saved.roomId);
+    this.broadcast({
+      type: 'state',
+      seq: saved.seq,
+      state: saved.state,
+      action: ended.action,
+      claimedSeats: [],
+      canUndo: false,
+      roomEnded: true,
+    });
   }
 
   async alarm() {
@@ -351,12 +419,20 @@ export class GameRoom {
       const writer = writable.getWriter();
       const encoder = new TextEncoder();
       const write = (text) => writer.write(encoder.encode(text));
+      const sessionToken = String(url.searchParams.get('sessionToken') || '').trim();
+      const session = sessionToken ? room.sessions?.[sessionToken] : null;
+      const isAdminSse = session?.role === ROLES.ADMIN;
 
       this.sseWrites.add(write);
+      if (isAdminSse) {
+        this.adminSseWrites.add(write);
+        this.ctx.waitUntil(this.markHostOnline());
+      }
       logRoomEvent('sse_connect', {
         backend: 'do',
         roomId: room.roomId,
         sseListeners: this.sseWrites.size,
+        adminSse: isAdminSse,
       });
       write(`data: ${JSON.stringify({ type: 'hello', ...publicRoomView(room) })}\n\n`);
 
@@ -364,16 +440,22 @@ export class GameRoom {
         write(': ping\n\n').catch(() => {
           clearInterval(heartbeat);
           this.sseWrites.delete(write);
+          if (isAdminSse) this.adminSseWrites.delete(write);
         });
       }, 15000);
 
       const cleanup = () => {
         clearInterval(heartbeat);
         this.sseWrites.delete(write);
+        if (isAdminSse) {
+          this.adminSseWrites.delete(write);
+          if (this.adminSseWrites.size === 0) this.scheduleHostOffline();
+        }
         logRoomEvent('sse_disconnect', {
           backend: 'do',
           roomId: room.roomId,
           sseListeners: this.sseWrites.size,
+          adminSse: isAdminSse,
         });
         writer.close().catch(() => {});
       };

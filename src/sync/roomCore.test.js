@@ -196,14 +196,19 @@ describe('roomCore', () => {
     expect(isHubPartyEnded(ended.room)).toBe(true);
   });
 
-  it('keeps lobby create rooms in the hub while hiding ended-TTL leftovers', () => {
+  it('lists rooms while host is online; hides when host offline or ended-TTL', () => {
     const lobby = createRoomRecord();
+    expect(lobby.hostOnline).toBe(true);
     expect(isHubPartyEnded(lobby)).toBe(false);
     expect(hubRoomCard(lobby)?.roomId).toBe(lobby.roomId);
+    expect(hubRoomCard(lobby)?.hostOnline).toBe(true);
+
+    expect(isHubPartyEnded({ ...hubRoomCard(lobby), hostOnline: false })).toBe(true);
 
     const stale = {
       roomId: 'ABCD',
       isGameActive: false,
+      hostOnline: true,
       lastActivityAt: '2026-01-01T12:00:00.000Z',
       expiresAt: new Date(Date.parse('2026-01-01T12:00:00.000Z') + ROOM_ENDED_TTL_MS).toISOString(),
     };

@@ -92,6 +92,8 @@ export function createRoomRecord(initialState = null) {
     seatClaims: {},
     /** seatPlayerId → short secret required to reclaim */
     seatSecrets: {},
+    /** Hub listing: false after host SSE disconnect / leave (see GameRoom). */
+    hostOnline: true,
   });
 }
 
@@ -346,6 +348,7 @@ export function applyRoomAction(room, action, auth = {}) {
       seatSecrets: {},
       undoStack: [],
       partyEnded: true,
+      hostOnline: false,
     }, { ended: true });
     return {
       ok: true,
@@ -434,14 +437,18 @@ export function publicRoomView(room) {
 }
 
 /**
- * True when the host ended the party (RESET_GAME) or the hub card looks like
- * an ended leftover (short ended-TTL window, inactive). Lobby create rooms use
- * the long idle TTL and must stay listed.
+ * True when the party should not appear in hub «Активные партии»:
+ * - host ended (RESET_GAME / partyEnded)
+ * - host left / went offline (hostOnline === false)
+ * - short ended-TTL leftover card
+ * Rooms stay listed while the host is present (hostOnline !== false).
  * @param {object|null} cardOrRoom
  */
 export function isHubPartyEnded(cardOrRoom) {
   if (!cardOrRoom) return false;
   if (cardOrRoom.partyEnded) return true;
+  // Explicit host-offline flag (SSE disconnect / host leave).
+  if (cardOrRoom.hostOnline === false) return true;
   if (cardOrRoom.isGameActive || cardOrRoom.state?.isGameActive) return false;
   const exp = cardOrRoom.expiresAt ? Date.parse(cardOrRoom.expiresAt) : NaN;
   const act = Date.parse(cardOrRoom.lastActivityAt || cardOrRoom.updatedAt || 0);
@@ -477,6 +484,7 @@ export function hubRoomCard(room) {
     expiresAt: view.expiresAt,
     isGameActive: active,
     partyEnded: false,
+    hostOnline: room.hostOnline !== false,
     roundNumber: Number.isFinite(round) && round > 0 ? round : null,
     roundStartedAt: startedAt,
     playersTotal: Math.max(players.length, 1),

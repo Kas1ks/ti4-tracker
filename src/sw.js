@@ -43,7 +43,7 @@ self.addEventListener('push', (event) => {
   const options = {
     body: data.body || 'Нужно ваше действие в партии.',
     icon: '/pwa/icon-192-a.png',
-    badge: '/pwa/favicon-32-a.png',
+    badge: '/pwa/favicon-32.png',
     data: {
       url: data.url || '/',
       roomId: data.roomId || null,
