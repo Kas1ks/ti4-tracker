@@ -1,4 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
+import {
+  PUSH_PREFS_CACHE,
+  PUSH_PREFS_URL,
+  defaultPushCategories,
+} from '../push/categories';
 import { ROLES } from '../sync/permissions';
 import {
   fetchVapidPublicKey,
@@ -8,11 +13,12 @@ import {
 } from '../sync/pushApi';
 
 const PREF_KEY = 'ti4_push_enabled';
+const CATEGORIES_KEY = 'ti4_push_categories';
 
 function readPref() {
   try {
     const raw = localStorage.getItem(PREF_KEY);
-    if (raw == null) return null; // unset — will prompt once
+    if (raw == null) return null;
     return raw === '1';
   } catch {
     return null;
@@ -22,6 +28,51 @@ function readPref() {
 function writePref(on) {
   try {
     localStorage.setItem(PREF_KEY, on ? '1' : '0');
+  } catch {
+    /* ignore */
+  }
+}
+
+function readCategories() {
+  const defaults = defaultPushCategories();
+  try {
+    const raw = localStorage.getItem(CATEGORIES_KEY);
+    if (!raw) return defaults;
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return defaults;
+    return { ...defaults, ...parsed };
+  } catch {
+    return defaults;
+  }
+}
+
+function writeCategories(categories) {
+  try {
+    localStorage.setItem(CATEGORIES_KEY, JSON.stringify(categories));
+  } catch {
+    /* ignore */
+  }
+}
+
+async function mirrorPushPrefs(payload) {
+  try {
+    if (typeof caches !== 'undefined') {
+      const cache = await caches.open(PUSH_PREFS_CACHE);
+      await cache.put(
+        PUSH_PREFS_URL,
+        new Response(JSON.stringify(payload), {
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      );
+    }
+  } catch {
+    /* ignore */
+  }
+  try {
+    navigator.serviceWorker?.controller?.postMessage({
+      type: 'TI4_PUSH_PREFS',
+      ...payload,
+    });
   } catch {
     /* ignore */
   }
@@ -45,6 +96,7 @@ export function usePushNotifications({
   enabled = true,
 } = {}) {
   const [pref, setPref] = useState(() => readPref());
+  const [categories, setCategories] = useState(() => readCategories());
   const [permission, setPermission] = useState(() => (
     typeof Notification !== 'undefined' ? Notification.permission : 'default'
   ));
@@ -58,6 +110,14 @@ export function usePushNotifications({
     && !!roomId
     && !!sessionToken
     && (role === ROLES.PLAYER || role === ROLES.ADMIN);
+
+  // Keep SW prefs in sync (categories + master flag for clarity).
+  useEffect(() => {
+    mirrorPushPrefs({
+      enabled: pref === true,
+      categories,
+    });
+  }, [pref, categories]);
 
   const syncSubscription = useCallback(async (wantOn) => {
     if (!canUse) return { ok: false, reason: 'unavailable' };
@@ -122,7 +182,7 @@ export function usePushNotifications({
     }
   }, [canUse, roomId, sessionToken]);
 
-  // Auto-subscribe when pref is on (or first join with unset pref → ask once via enable()).
+  // Auto-subscribe when pref is on.
   useEffect(() => {
     if (!canUse) {
       setSubscribed(false);
@@ -140,12 +200,21 @@ export function usePushNotifications({
     return () => { cancelled = true; };
   }, [canUse, pref, syncSubscription]);
 
-  const enable = useCallback(async () => syncSubscription(true), [syncSubscription]);
+  const enable = useCallback(async () => {
+    // Turning master on always re-enables every category; user can fine-tune after.
+    const allOn = defaultPushCategories();
+    writeCategories(allOn);
+    setCategories(allOn);
+    return syncSubscription(true);
+  }, [syncSubscription]);
   const disable = useCallback(async () => syncSubscription(false), [syncSubscription]);
 
-  const dismissPrompt = useCallback(() => {
-    writePref(false);
-    setPref(false);
+  const setCategory = useCallback((id, on) => {
+    setCategories((prev) => {
+      const next = { ...prev, [id]: !!on };
+      writeCategories(next);
+      return next;
+    });
   }, []);
 
   /** Best-effort server unsubscribe when leaving the room (keeps OS subscription). */
@@ -159,8 +228,6 @@ export function usePushNotifications({
     setSubscribed(false);
   }, [roomId, sessionToken]);
 
-  const showPrompt = canUse && pref !== true && pref !== false && permission !== 'denied';
-
   return {
     supported: pushSupported(),
     canUse,
@@ -170,10 +237,10 @@ export function usePushNotifications({
     error,
     subscribed,
     configured,
-    showPrompt,
+    categories,
+    setCategory,
     enable,
     disable,
-    dismissPrompt,
     unsubscribeServer,
   };
 }

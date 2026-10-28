@@ -4,6 +4,11 @@ import { ExpirationPlugin } from 'workbox-expiration';
 import { precacheAndRoute, cleanupOutdatedCaches, createHandlerBoundToURL } from 'workbox-precaching';
 import { NavigationRoute, registerRoute } from 'workbox-routing';
 import { NetworkOnly, StaleWhileRevalidate } from 'workbox-strategies';
+import {
+  PUSH_PREFS_CACHE,
+  PUSH_PREFS_URL,
+  isPushReasonAllowed,
+} from './push/categories.js';
 
 self.skipWaiting();
 clientsClaim();
@@ -32,6 +37,37 @@ registerRoute(
   }),
 );
 
+/** In-memory prefs mirrored from the page (categories filter). */
+let pushPrefsMemory = null;
+
+self.addEventListener('message', (event) => {
+  const data = event.data;
+  if (!data || data.type !== 'TI4_PUSH_PREFS') return;
+  pushPrefsMemory = {
+    enabled: data.enabled !== false,
+    categories: data.categories || null,
+  };
+});
+
+async function readPushPrefs() {
+  if (pushPrefsMemory) return pushPrefsMemory;
+  try {
+    const cache = await caches.open(PUSH_PREFS_CACHE);
+    const res = await cache.match(PUSH_PREFS_URL);
+    if (res) {
+      const parsed = await res.json();
+      pushPrefsMemory = {
+        enabled: parsed?.enabled !== false,
+        categories: parsed?.categories || null,
+      };
+      return pushPrefsMemory;
+    }
+  } catch {
+    /* ignore */
+  }
+  return { enabled: true, categories: null };
+}
+
 self.addEventListener('push', (event) => {
   event.waitUntil((async () => {
     // Skip banner when the app is already on screen (open + visible/focused).
@@ -51,6 +87,10 @@ self.addEventListener('push', (event) => {
     } catch {
       data = { body: event.data?.text?.() || '' };
     }
+
+    const prefs = await readPushPrefs();
+    if (!isPushReasonAllowed(prefs.categories, data.reason)) return;
+
     const title = data.title || 'TI4 Tracker';
     await self.registration.showNotification(title, {
       body: data.body || 'Нужно ваше действие в партии.',

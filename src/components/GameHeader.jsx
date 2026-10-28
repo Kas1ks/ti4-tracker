@@ -132,6 +132,8 @@ export function GameHeader({
   compactBrand = false,
   onLeaveRoom,
   victoryLocked = false,
+  canUsePush = false,
+  onOpenPushSettings,
 }) {
   const role = perms?.role || ROLES.ADMIN;
   const isAdmin = role === ROLES.ADMIN;
@@ -141,8 +143,9 @@ export function GameHeader({
   const canEndGame = isAdmin;
   const canCombat = isAdmin && !victoryLocked;
   const canUndoLast = isAdmin && typeof onUndoLast === 'function';
+  const canPushSettings = !!canUsePush && typeof onOpenPushSettings === 'function';
 
-  const hasMoreItems = canPhases || canExport || canEndGame || canUndoLast;
+  const hasMoreItems = canPhases || canExport || canEndGame || canUndoLast || canPushSettings;
   const leaveButton = typeof onLeaveRoom === 'function' && isViewer ? (
     <button
       type="button"
@@ -276,6 +279,7 @@ export function GameHeader({
                     canExport={canExport}
                     canEndGame={canEndGame}
                     canCombat={canCombat}
+                    canPushSettings={canPushSettings}
                     isPoliticsActive={isPoliticsActive}
                     onTogglePolitics={onTogglePolitics}
                     onExport={onExport}
@@ -285,6 +289,7 @@ export function GameHeader({
                     onOpenExpedition={onOpenExpedition}
                     onOpenCombat={onOpenCombat}
                     onOpenStats={onOpenStats}
+                    onOpenPushSettings={onOpenPushSettings}
                   />
                 )}
                 {undoButton}
@@ -370,6 +375,7 @@ export function GameHeader({
                   canExport={canExport}
                   canEndGame={canEndGame}
                   canCombat={canCombat}
+                  canPushSettings={canPushSettings}
                   isPoliticsActive={isPoliticsActive}
                   onTogglePolitics={onTogglePolitics}
                   onExport={onExport}
@@ -379,6 +385,7 @@ export function GameHeader({
                   onOpenExpedition={onOpenExpedition}
                   onOpenCombat={onOpenCombat}
                   onOpenStats={onOpenStats}
+                  onOpenPushSettings={onOpenPushSettings}
                 />
               </div>
             </>
@@ -412,6 +419,7 @@ function HeaderMoreMenu({
   canExport,
   canEndGame,
   canCombat = false,
+  canPushSettings = false,
   isPoliticsActive,
   onTogglePolitics,
   onExport,
@@ -421,6 +429,7 @@ function HeaderMoreMenu({
   onOpenExpedition,
   onOpenCombat,
   onOpenStats,
+  onOpenPushSettings,
 }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef(null);
@@ -599,6 +608,24 @@ function HeaderMoreMenu({
               <div className="hdr-more-copy">
                 <span className="hdr-more-title">Журнал партии</span>
                 <span className="hdr-more-desc">История событий и действий</span>
+              </div>
+              <i className="fa-solid fa-chevron-right hdr-more-chev" aria-hidden="true" />
+            </button>
+          )}
+
+          {canPushSettings && (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={runAndClose(onOpenPushSettings)}
+              className="hdr-more-item"
+            >
+              <span className="hdr-more-ico is-blue" aria-hidden="true">
+                <i className="fa-solid fa-bell" />
+              </span>
+              <div className="hdr-more-copy">
+                <span className="hdr-more-title">Оповещения</span>
+                <span className="hdr-more-desc">Вкл / выкл и выбор типов пушей</span>
               </div>
               <i className="fa-solid fa-chevron-right hdr-more-chev" aria-hidden="true" />
             </button>

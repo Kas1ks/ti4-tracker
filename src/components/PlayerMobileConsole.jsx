@@ -6,7 +6,6 @@ import { FactionGuideSheet } from './FactionGuideSheet';
 import { PhaseHubChips } from './PhaseHubChips';
 import { PlayerCombatSheet } from './PlayerCombatSheet';
 import { PlayerTechSheet, TechPips } from './TechSheet';
-import { PushNotificationsBanner } from './PushNotificationsBanner';
 import objStage1Bg from '../assets/objectives/stage1-bg.jpg';
 import objStage2Bg from '../assets/objectives/stage2-bg.jpg';
 import tableRowBg from '../assets/table-row-bg.jpg';
@@ -85,7 +84,6 @@ export function PlayerMobileConsole({
   usePok = false,
   useTe = false,
   phaseHub = [],
-  pushNotify = null,
 }) {
   const [tab, setTab] = useState('turn');
   const [objView, setObjView] = useState('personal');
@@ -204,20 +202,6 @@ export function PlayerMobileConsole({
             onSortModeChange={setTableSortMode}
             onOpenPlayerTech={(playerId) => setTechSheetPlayerId(playerId)}
           />
-          {pushNotify?.canUse && !pushNotify.showPrompt && (
-            <PushNotificationsBanner
-              showPrompt={false}
-              supported={pushNotify.supported}
-              canUse={pushNotify.canUse}
-              subscribed={pushNotify.subscribed}
-              busy={pushNotify.busy}
-              configured={pushNotify.configured}
-              onEnable={pushNotify.enable}
-              onDismiss={pushNotify.dismissPrompt}
-              onDisable={pushNotify.disable}
-              compact
-            />
-          )}
         </div>
       </div>
 

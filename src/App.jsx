@@ -24,7 +24,7 @@ import { HubCosmosBackdrop } from './components/HubCosmosBackdrop';
 import { StrategyResolutionBanner } from './components/StrategyResolutionBanner';
 import { StartingTechDraftBanner } from './components/StartingTechDraftBanner';
 import { SyncStatusBanner } from './components/SyncStatusBanner';
-import { PushNotificationsBanner } from './components/PushNotificationsBanner';
+import { PushNotificationsSheet } from './components/PushNotificationsSheet';
 import { VictoryLockBanner } from './components/VictoryLockBanner';
 import { ROLES } from './sync/permissions';
 import { playersNeedingStartingTechDraft } from './data/technologies';
@@ -92,6 +92,7 @@ function App() {
   } = useSyncedGame();
 
   const [soloSetup, setSoloSetup] = useState(false);
+  const [showPushSettings, setShowPushSettings] = useState(false);
 
   const ui = useLocalUi();
   const { setShowExpeditionModal } = ui;
@@ -596,24 +597,6 @@ function App() {
         onReconnect={hasRoomSession ? () => resumeLiveSync({ forceSse: true }) : undefined}
       />
 
-      {isPlayerClient && isGameActive && pushNotify.showPrompt && (
-        <div className="fixed inset-x-0 top-0 z-[85] pt-[max(0.5rem,env(safe-area-inset-top))] pointer-events-none">
-          <div className="pointer-events-auto max-w-xl mx-auto">
-            <PushNotificationsBanner
-              showPrompt
-              supported={pushNotify.supported}
-              canUse={pushNotify.canUse}
-              subscribed={pushNotify.subscribed}
-              busy={pushNotify.busy}
-              configured={pushNotify.configured}
-              onEnable={pushNotify.enable}
-              onDismiss={pushNotify.dismissPrompt}
-              onDisable={pushNotify.disable}
-            />
-          </div>
-        </div>
-      )}
-
       {victoryLocked && (
         <VictoryLockBanner
           winners={winners}
@@ -688,6 +671,8 @@ function App() {
           perms={perms}
           compactBrand={isPlayerClient || isViewerClient}
           onLeaveRoom={perms?.role === ROLES.VIEWER ? handleLeaveRoom : undefined}
+          canUsePush={!!pushNotify.canUse}
+          onOpenPushSettings={() => setShowPushSettings(true)}
         />
       )}
 
@@ -718,20 +703,6 @@ function App() {
             players={players}
             roomError={roomError}
             onLeaveRoom={handleLeaveRoom}
-            pushBanner={isPlayerClient ? (
-              <PushNotificationsBanner
-                showPrompt={pushNotify.showPrompt}
-                supported={pushNotify.supported}
-                canUse={pushNotify.canUse}
-                subscribed={pushNotify.subscribed}
-                busy={pushNotify.busy}
-                configured={pushNotify.configured}
-                onEnable={pushNotify.enable}
-                onDismiss={pushNotify.dismissPrompt}
-                onDisable={pushNotify.disable}
-                compact
-              />
-            ) : null}
             onPickColor={
               isPlayerClient && room?.seatPlayerId != null
                 ? (color) => dispatch({
@@ -922,7 +893,6 @@ function App() {
                     includeStatus: true,
                     openPhaseModal,
                   })}
-                  pushNotify={pushNotify}
                 />
               </Suspense>
             )}
@@ -1429,7 +1399,22 @@ function App() {
             show={ui.showGameSummaryModal}
             onClose={() => { ui.setShowGameSummaryModal(false); }}
           />
-        </LazyWhen>      </main>
+        </LazyWhen>
+
+        <PushNotificationsSheet
+          show={showPushSettings}
+          onClose={() => setShowPushSettings(false)}
+          supported={pushNotify.supported}
+          canUse={pushNotify.canUse}
+          subscribed={pushNotify.subscribed}
+          busy={pushNotify.busy}
+          configured={pushNotify.configured}
+          categories={pushNotify.categories}
+          onEnable={pushNotify.enable}
+          onDisable={pushNotify.disable}
+          onSetCategory={pushNotify.setCategory}
+        />
+      </main>
 
       {isGameActive && (
         <button
