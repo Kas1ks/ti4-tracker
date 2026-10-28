@@ -2,8 +2,6 @@ import { useEffect, useState } from 'react';
 
 const DISMISS_KEY = 'ti4_pwa_install_dismissed';
 const INSTALLED_KEY = 'ti4_pwa_installed';
-/** «Позже» hides the banner for a day. */
-const DISMISS_TTL_MS = 24 * 60 * 60 * 1000;
 
 function isStandaloneDisplay() {
   if (typeof window === 'undefined') return false;
@@ -17,17 +15,12 @@ function readDismissed() {
   try {
     const raw = localStorage.getItem(DISMISS_KEY);
     if (!raw) return false;
-    // Legacy forever-dismiss — clear so logic can recover.
-    if (raw === '1') {
-      localStorage.removeItem(DISMISS_KEY);
-      return false;
-    }
+    // Permanent dismiss ("1") or legacy TTL timestamp still in the future.
+    if (raw === '1') return true;
     const until = Number(raw);
-    if (!Number.isFinite(until) || until <= Date.now()) {
-      localStorage.removeItem(DISMISS_KEY);
-      return false;
-    }
-    return true;
+    if (Number.isFinite(until) && until > Date.now()) return true;
+    localStorage.removeItem(DISMISS_KEY);
+    return false;
   } catch {
     return false;
   }
@@ -122,7 +115,8 @@ export function usePwaInstall() {
   const dismiss = () => {
     setDismissed(true);
     try {
-      localStorage.setItem(DISMISS_KEY, String(Date.now() + DISMISS_TTL_MS));
+      // Permanent — banner must not keep reappearing every day on the hub.
+      localStorage.setItem(DISMISS_KEY, '1');
     } catch {
       /* ignore */
     }

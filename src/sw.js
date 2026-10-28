@@ -33,26 +33,41 @@ registerRoute(
 );
 
 self.addEventListener('push', (event) => {
-  let data = {};
-  try {
-    data = event.data ? event.data.json() : {};
-  } catch {
-    data = { body: event.data?.text?.() || '' };
-  }
-  const title = data.title || 'TI4 Tracker';
-  const options = {
-    body: data.body || 'Нужно ваше действие в партии.',
-    icon: '/pwa/icon-192-a.png',
-    badge: '/pwa/favicon-32.png',
-    data: {
-      url: data.url || '/',
-      roomId: data.roomId || null,
-      reason: data.reason || null,
-    },
-    tag: data.roomId ? `ti4-room-${data.roomId}` : 'ti4-action',
-    renotify: true,
-  };
-  event.waitUntil(self.registration.showNotification(title, options));
+  event.waitUntil((async () => {
+    // Skip banner when the app is already on screen (open + visible/focused).
+    // Background, closed, or locked screen → show notification.
+    const windows = await self.clients.matchAll({
+      type: 'window',
+      includeUncontrolled: true,
+    });
+    const appActive = windows.some(
+      (client) => client.focused || client.visibilityState === 'visible',
+    );
+    if (appActive) return;
+
+    let data = {};
+    try {
+      data = event.data ? event.data.json() : {};
+    } catch {
+      data = { body: event.data?.text?.() || '' };
+    }
+    const title = data.title || 'TI4 Tracker';
+    await self.registration.showNotification(title, {
+      body: data.body || 'Нужно ваше действие в партии.',
+      // Color mark on dark tile (left of notification). Status-bar badge stays mono/white on Android.
+      icon: '/pwa/notification-icon.png',
+      badge: '/pwa/notification-badge.png',
+      // Short buzz so the player notices a turn/action alert (OS may still mute).
+      vibrate: [180, 80, 180],
+      data: {
+        url: data.url || '/',
+        roomId: data.roomId || null,
+        reason: data.reason || null,
+      },
+      tag: data.roomId ? `ti4-room-${data.roomId}` : 'ti4-action',
+      renotify: true,
+    });
+  })());
 });
 
 self.addEventListener('notificationclick', (event) => {

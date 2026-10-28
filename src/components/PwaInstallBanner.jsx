@@ -96,7 +96,7 @@ export function PwaInstallBanner({ variant = 'default' }) {
                   : 'rounded-xl border border-slate-600 bg-slate-900 px-3 py-1.5 text-[11px] font-bold text-slate-400 hover:text-slate-200 transition'
               }
             >
-              Позже
+              Скрыть
             </button>
           </div>
         </div>
