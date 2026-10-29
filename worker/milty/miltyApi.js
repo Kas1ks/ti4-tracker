@@ -9,6 +9,7 @@ import {
   memoryMiltyUndo,
 } from './memoryMilty.js';
 import { randomRoomId } from '../cryptoCodes.js';
+import { assertRoomCreateAllowed } from '../rooms/roomCreateAuth.js';
 
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -57,6 +58,8 @@ export async function handleMiltyApi(request, env) {
 
   if (method === 'POST' && pathname === '/api/milty') {
     const body = await readJson(request);
+    const gate = assertRoomCreateAllowed(env, body?.createSecret);
+    if (!gate.ok) return json({ error: gate.error }, gate.status);
     if (hasDo(env)) {
       const id = randomRoomId();
       const res = await doFetch(env, id, '/create', {

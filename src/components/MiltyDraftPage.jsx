@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
-import brandMark from '../assets/brand-mark.png';
+import brandMarkLg from '../assets/brand-mark-lg.png';
 import { useAllowPageZoom } from '../hooks/useAllowPageZoom';
 import { useAppDialog } from '../hooks/useAppDialog';
 import { assembleResult } from '../milty/draftEngine.js';
@@ -184,6 +184,7 @@ export function MiltyDraftPage({ roomBinding = null } = {}) {
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
   const [pageTab, setPageTab] = useState('draft');
+  const [codeCopied, setCodeCopied] = useState(false);
   const [referenceFaction, setReferenceFaction] = useState(null);
   const [auth, setAuth] = useState(() => {
     if (roomBinding) {
@@ -278,6 +279,16 @@ export function MiltyDraftPage({ roomBinding = null } = {}) {
   }, [id, inRoom, roomBinding?.roomId]);
 
   const currentName = draft?.players?.[draft.currentPlayerId]?.name;
+  const pickTotal = draft?.playerOrder?.length ? draft.playerOrder.length * 3 : 0;
+  const pickNow = draft
+    ? (draft.done ? pickTotal : Math.min((draft.log?.length || 0) + 1, pickTotal || 1))
+    : 0;
+  const turnIdx = draft?.currentPlayerId != null && draft?.playerOrder
+    ? Math.max(1, draft.playerOrder.indexOf(draft.currentPlayerId) + 1)
+    : 1;
+  const statusProgress = pickTotal > 0
+    ? (draft?.done ? 1 : (draft.log?.length || 0) / pickTotal)
+    : 0;
   const currentPlayer = draft?.currentPlayerId ? draft?.players?.[draft.currentPlayerId] : null;
   // In a room, seat session is enough — miltySecret is resolved server-side.
   const mySeatId = inRoom
@@ -541,109 +552,155 @@ export function MiltyDraftPage({ roomBinding = null } = {}) {
     || (inRoom ? `Комната ${roomBinding.roomId}` : `Milty ${draft.id}`);
   const draftCode = inRoom ? String(roomBinding.roomId) : String(draft.id);
 
+  const copyRoomCode = async () => {
+    const text = inRoom ? draftCode : (shareUrl || draftCode);
+    if (!text) return;
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.setAttribute('readonly', '');
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+      }
+      setCodeCopied(true);
+      window.setTimeout(() => setCodeCopied(false), 1600);
+    } catch {
+      setCodeCopied(true);
+      window.setTimeout(() => setCodeCopied(false), 1600);
+    }
+  };
+
   return (
     <div className="milty-draft hub-shell hub-shell--column">
       <HubCosmosBackdrop />
       <div className={`milty-draft__stage${activePage === 'map' ? ' milty-draft__stage--map' : ''}`}>
-        <header className="milty-draft__top">
-          <button
-            type="button"
-            className="hub-back"
-            onClick={() => (roomBinding?.onLeave ? roomBinding.onLeave() : navigate('/'))}
-          >
-            <i className="fa-solid fa-chevron-left" aria-hidden="true" />
-            {inRoom ? 'Выйти' : 'Назад'}
-          </button>
-
-          <div className="milty-draft__brand-row">
-            <div className="milty-draft__brand">
-              <img src={brandMark} alt="" width={28} height={28} draggable={false} />
-              <div className="min-w-0">
-                <h1 className="milty-draft__title">Milty Draft</h1>
-                <p className="milty-draft__lead truncate" title={draftTitle}>{draftTitle}</p>
-              </div>
-            </div>
-            <div className="milty-draft__tools">
-              <span className="milty-draft-code" title={draftCode}>{draftCode}</span>
-              <button
-                type="button"
-                className="milty-draft-tool"
-                onClick={() => navigator.clipboard?.writeText(shareUrl)}
-              >
-                <i className="fa-solid fa-link" aria-hidden="true" />
-                {inRoom ? 'Код' : 'Ссылка'}
-              </button>
-              {isHost && (
-                <button
-                  type="button"
-                  disabled={busy || !draft.log?.length}
-                  onClick={onUndo}
-                  className="milty-draft-tool"
-                >
-                  <i className="fa-solid fa-rotate-left" aria-hidden="true" />
-                  Undo
-                </button>
-              )}
-              {inRoom && draft.done && roomBinding?.onPromote && roomBinding?.hostKey && (
-                <button
-                  type="button"
-                  disabled={busy}
-                  onClick={onPromote}
-                  className="milty-draft-tool milty-draft-tool--accent"
-                >
-                  На стол
-                </button>
-              )}
+        <header className="milty-draft__topbar">
+          <div className="milty-draft__brand">
+            <img
+              className="milty-draft__brand-mark"
+              src={brandMarkLg}
+              alt=""
+              width={64}
+              height={64}
+              draggable={false}
+            />
+            <div className="min-w-0">
+              <h1 className="milty-draft__title">Milty Draft</h1>
+              <p className="milty-draft__lead truncate" title={draftTitle}>{draftTitle}</p>
             </div>
           </div>
-        </header>
 
-        <nav className="milty-page-tabs" role="tablist" aria-label="Разделы драфта">
-          {pageTabs.map((t) => (
+          <nav className="milty-page-tabs" role="tablist" aria-label="Разделы драфта">
+            {pageTabs.map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                role="tab"
+                aria-selected={activePage === t.id}
+                onClick={() => setPageTab(t.id)}
+                className={`milty-page-tab${activePage === t.id ? ' is-active' : ''}`}
+              >
+                {t.label}
+              </button>
+            ))}
+          </nav>
+
+          <div className="milty-draft__tools">
+            <span className="milty-draft-code" title={draftCode}>{draftCode}</span>
             <button
-              key={t.id}
               type="button"
-              role="tab"
-              aria-selected={activePage === t.id}
-              onClick={() => setPageTab(t.id)}
-              className={`milty-page-tab${activePage === t.id ? ' is-active' : ''}`}
+              className={`milty-draft-tool milty-draft-tool--share${codeCopied ? ' is-copied' : ''}`}
+              onClick={copyRoomCode}
+              title={inRoom ? `Скопировать код ${draftCode}` : 'Скопировать ссылку'}
             >
-              {t.label}
+              <i className={`fa-solid ${codeCopied ? 'fa-check' : 'fa-link'}`} aria-hidden="true" />
+              {codeCopied
+                ? 'Скопировано'
+                : (inRoom ? 'Код' : 'Ссылка')}
             </button>
-          ))}
-        </nav>
+            {isHost && (
+              <button
+                type="button"
+                disabled={busy || !draft.log?.length}
+                onClick={onUndo}
+                className="milty-draft-tool milty-draft-tool--undo"
+              >
+                <i className="fa-solid fa-rotate-left" aria-hidden="true" />
+                Undo
+              </button>
+            )}
+            {inRoom && draft.done && roomBinding?.onPromote && roomBinding?.hostKey && (
+              <button
+                type="button"
+                disabled={busy}
+                onClick={onPromote}
+                className="milty-draft-tool milty-draft-tool--accent milty-draft-tool--promote"
+              >
+                На стол
+              </button>
+            )}
+            <button
+              type="button"
+              className="milty-draft-tool milty-draft-tool--exit"
+              onClick={() => (roomBinding?.onLeave ? roomBinding.onLeave() : navigate('/'))}
+            >
+              <i className="fa-solid fa-right-from-bracket" aria-hidden="true" />
+              {inRoom ? 'Выйти' : 'Назад'}
+            </button>
+          </div>
+        </header>
 
         {activePage === 'draft' && (
           <>
             <div className="milty-draft__overview">
               <section className="milty-draft__panel milty-draft__status">
                 <h2 className="milty-draft-label">Статус</h2>
-                <div className="milty-draft-status__body">
-                  {draft.done ? (
-                    <p className="milty-draft-status__done">Драфт завершён</p>
-                  ) : (
-                    <p className="milty-draft-status__turn">
-                      Ход: <strong>{currentName || '…'}</strong>
-                      <span className="milty-draft-status__pick">
-                        {' '}· пик {draft.log.length + 1}/{draft.playerOrder.length * 3}
+                <div
+                  className={`milty-draft-status__body${draft.done ? ' is-done' : ''}`}
+                  style={{ '--status-progress': statusProgress }}
+                >
+                  <div className="milty-draft-status__row">
+                    <div className="milty-draft-status__dial" aria-hidden="true">
+                      <span className="milty-draft-status__dial-num">
+                        {draft.done ? '✓' : turnIdx}
                       </span>
-                    </p>
-                  )}
-                  {(myPlayer || isHost) && (
-                    <div className="milty-draft-status__meta">
-                      {myPlayer ? <span>Вы: {myPlayer.name}</span> : null}
-                      {myPlayer && isHost ? (
-                        <span className="milty-draft-status__sep" aria-hidden="true">·</span>
-                      ) : null}
-                      {isHost ? (
-                        <span>
-                          {inRoom
-                            ? <>Хост · <code>{draftCode}</code></>
-                            : 'Админ'}
-                        </span>
-                      ) : null}
                     </div>
-                  )}
+                    <div className="milty-draft-status__copy">
+                      {draft.done ? (
+                        <p className="milty-draft-status__done">Драфт завершён</p>
+                      ) : (
+                        <p className="milty-draft-status__turn">
+                          Ход: <strong>{currentName || '…'}</strong>
+                          <span className="milty-draft-status__pick">
+                            {' '}· Пик {pickNow}/{pickTotal}
+                          </span>
+                        </p>
+                      )}
+                      {(myPlayer || isHost) && (
+                        <div className="milty-draft-status__meta">
+                          {myPlayer ? <span>Вы: {myPlayer.name}</span> : null}
+                          {myPlayer && isHost ? (
+                            <span className="milty-draft-status__sep" aria-hidden="true">·</span>
+                          ) : null}
+                          {isHost ? (
+                            <span>
+                              {inRoom
+                                ? <>Хост · <code>{draftCode}</code></>
+                                : 'Админ'}
+                            </span>
+                          ) : null}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <div className="milty-draft-status__bar" aria-hidden="true" />
                 </div>
                 {error && <p className="milty-draft-error" role="alert">{error}</p>}
               </section>
@@ -717,10 +774,16 @@ export function MiltyDraftPage({ roomBinding = null } = {}) {
                             />
                           </div>
                           <div className="milty-turn-card__meta">
-                            {!fac ? <span className="is-empty">раса —</span> : null}
+                            {!fac ? (
+                              <>
+                                <span className="is-empty">раса —</span>
+                                <span className="milty-turn-card__sep" aria-hidden="true">|</span>
+                              </>
+                            ) : null}
                             <span className={p.slice != null ? '' : 'is-empty'}>
                               {p.slice != null ? `слайс ${p.slice + 1}` : 'слайс —'}
                             </span>
+                            <span className="milty-turn-card__sep" aria-hidden="true">|</span>
                             <span className={p.position != null ? '' : 'is-empty'}>
                               {p.position != null
                                 ? (p.position === 0 ? 'Speaker' : seatOrdinalLabel(p.position + 1))
@@ -732,150 +795,153 @@ export function MiltyDraftPage({ roomBinding = null } = {}) {
                     );
                   })}
                 </div>
-                <p className="milty-draft-hint">
-                  {isHost
-                    ? 'Серая точка — свободно (нажмите, чтобы сесть как хост+игрок). Зелёная — своё место (нажмите, чтобы встать).'
-                    : 'Серая точка — свободно, зелёная — занято. Нажмите точку, чтобы занять или освободить.'}
-                </p>
               </section>
             </div>
 
-            <section className="milty-draft__panel">
-              <h2 className="milty-draft-label">Фракции</h2>
-              <div className="milty-draft-factions">
-                {draft.factionPool.map((raw) => {
-                  const f = resolveFaction(raw);
-                  const taken = takenFactions.has(f.id);
-                  const locked = busy || draft.done || !canPick || pickPlayer?.faction != null;
-                  const by = claimedBy.faction[f.id];
-                  const wiki = f?.wiki || null;
-                  const refUrl = factionReferenceUrl(f?.id);
-                  return (
-                    <div
-                      key={f.id}
-                      className={`milty-pick milty-draft-fac${taken ? ' milty-pick--taken' : ''}`}
-                    >
-                      <button
-                        type="button"
-                        disabled={taken || locked}
-                        onClick={() => onPick('faction', f.id)}
-                        className="milty-draft-fac__pick"
+            <div className="milty-draft__board">
+              <section className="milty-draft__panel milty-draft__col milty-draft__col--factions">
+                <h2 className="milty-draft-label">Фракции</h2>
+                <div className="milty-draft-factions">
+                  {draft.factionPool.map((raw) => {
+                    const f = resolveFaction(raw);
+                    const taken = takenFactions.has(f.id);
+                    const locked = busy || draft.done || !canPick || pickPlayer?.faction != null;
+                    const by = claimedBy.faction[f.id];
+                    const wiki = f?.wiki || null;
+                    const refUrl = factionReferenceUrl(f?.id);
+                    return (
+                      <div
+                        key={f.id}
+                        className={`milty-pick milty-draft-fac${taken ? ' milty-pick--taken' : ''}`}
                       >
-                        <FactionIcon faction={f} size={56} />
-                        <span className="milty-draft-fac__name">{f.displayName || f.name}</span>
-                      </button>
-                      <div className="milty-draft-fac__links">
-                        {wiki ? (
-                          <a
-                            href={wiki}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="milty-draft-fac__link"
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            [wiki]
-                          </a>
-                        ) : null}
-                        {refUrl ? (
-                          <button
-                            type="button"
-                            className="milty-draft-fac__link"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setReferenceFaction({
-                                id: f.id,
-                                name: f.displayName || f.name,
-                                url: refUrl,
-                              });
-                            }}
-                          >
-                            [reference]
-                          </button>
-                        ) : null}
+                        <button
+                          type="button"
+                          disabled={taken || locked}
+                          onClick={() => onPick('faction', f.id)}
+                          className="milty-draft-fac__pick"
+                        >
+                          <FactionIcon faction={f} size={56} />
+                          <span className="milty-draft-fac__name">{f.displayName || f.name}</span>
+                        </button>
+                        <div className="milty-draft-fac__links">
+                          {wiki ? (
+                            <a
+                              href={wiki}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="milty-draft-fac__link"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              [wiki]
+                            </a>
+                          ) : null}
+                          {refUrl ? (
+                            <button
+                              type="button"
+                              className="milty-draft-fac__link"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setReferenceFaction({
+                                  id: f.id,
+                                  name: f.displayName || f.name,
+                                  url: refUrl,
+                                });
+                              }}
+                            >
+                              [reference]
+                            </button>
+                          ) : null}
+                        </div>
+                        {by ? <span className="milty-pick-tag" title={by}>{by}</span> : null}
                       </div>
-                      {by ? <span className="milty-pick-tag" title={by}>{by}</span> : null}
-                    </div>
-                  );
-                })}
-              </div>
-            </section>
+                    );
+                  })}
+                </div>
+              </section>
 
-            <section className="milty-draft__panel milty-draft__panel--overflow">
-              <h2 className="milty-draft-label">Слайсы</h2>
-              <div className="milty-draft-slices">
-                {draft.slicePool.map((s, idx) => {
-                  const taken = takenSlices.has(idx);
-                  const locked = busy || draft.done || !canPick || pickPlayer?.slice != null;
-                  const canSelect = !taken && !locked;
-                  const by = claimedBy.slice[idx];
-                  return (
-                    <div
-                      key={idx}
-                      role={canSelect ? 'button' : undefined}
-                      tabIndex={canSelect ? 0 : undefined}
-                      onClick={() => {
-                        if (!canSelect) return;
-                        onPick('slice', idx);
-                      }}
-                      onKeyDown={(e) => {
-                        if (!canSelect) return;
-                        if (e.key === 'Enter' || e.key === ' ') {
-                          e.preventDefault();
+              <section className="milty-draft__panel milty-draft__panel--overflow milty-draft__col milty-draft__col--slices">
+                <h2 className="milty-draft-label">Слайсы</h2>
+                <div className="milty-draft-slices">
+                  {draft.slicePool.map((s, idx) => {
+                    const taken = takenSlices.has(idx);
+                    const locked = busy || draft.done || !canPick || pickPlayer?.slice != null;
+                    const canSelect = !taken && !locked;
+                    const by = claimedBy.slice[idx];
+                    return (
+                      <div
+                        key={idx}
+                        role={canSelect ? 'button' : undefined}
+                        tabIndex={canSelect ? 0 : undefined}
+                        onClick={() => {
+                          if (!canSelect) return;
                           onPick('slice', idx);
-                        }
-                      }}
-                      className={`milty-pick milty-slice-card milty-draft-slice${
-                        taken ? ' milty-pick--taken' : ''
-                      }${canSelect ? ' is-pickable' : ''}`}
-                    >
-                      {by ? <span className="milty-pick-tag" title={by}>{by}</span> : null}
-                      <div className="milty-draft-slice__title">Слайс {idx + 1}</div>
-                      <MiltySliceGraph tileIds={s.tileIds} />
-                      <div className="milty-slice-card__body">
-                        <SliceMeta slice={s} />
-                        <div className="milty-res-block">
-                          <SliceResourceCount
-                            label="Total:"
-                            resources={s.totalResources}
-                            influence={s.totalInfluence}
-                          />
-                          <SliceResourceCount
-                            label="Optimal:"
-                            resources={s.optimalResources}
-                            influence={s.optimalInfluence}
-                          />
+                        }}
+                        onKeyDown={(e) => {
+                          if (!canSelect) return;
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            onPick('slice', idx);
+                          }
+                        }}
+                        className={`milty-pick milty-slice-card milty-draft-slice${
+                          taken ? ' milty-pick--taken' : ''
+                        }${canSelect ? ' is-pickable' : ''}`}
+                      >
+                        {by ? <span className="milty-pick-tag" title={by}>{by}</span> : null}
+                        <div className="milty-draft-slice__title">Слайс {idx + 1}</div>
+                        <div className="milty-draft-slice__visual">
+                          <MiltySliceGraph tileIds={s.tileIds} />
+                        </div>
+                        <div className="milty-slice-card__body">
+                          <div className="milty-slice-stats-rail">
+                            <div className="milty-slice-stats-rail__icons">
+                              <SliceMeta slice={s} />
+                            </div>
+                            <div className="milty-res-block">
+                              <SliceResourceCount
+                                label="Total:"
+                                resources={s.totalResources}
+                                influence={s.totalInfluence}
+                              />
+                              <SliceResourceCount
+                                label="Optimal:"
+                                resources={s.optimalResources}
+                                influence={s.optimalInfluence}
+                              />
+                            </div>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </section>
+                    );
+                  })}
+                </div>
+              </section>
 
-            <section className="milty-draft__panel">
-              <h2 className="milty-draft-label">Места за столом</h2>
-              <div className="milty-draft-seats">
-                {draft.playerOrder.map((_, idx) => {
-                  const taken = takenPositions.has(idx);
-                  const locked = busy || draft.done || !canPick || pickPlayer?.position != null;
-                  const by = claimedBy.position[idx];
-                  return (
-                    <button
-                      key={idx}
-                      type="button"
-                      disabled={taken || locked}
-                      onClick={() => onPick('position', idx)}
-                      className={`milty-pick milty-draft-seat${taken ? ' milty-pick--taken' : ''}`}
-                    >
-                      {by ? <span className="milty-pick-tag" title={by}>{by}</span> : null}
-                      <span className="milty-draft-seat__title">
-                        {idx === 0 ? 'Speaker' : seatOrdinalLabel(idx + 1)}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            </section>
+              <section className="milty-draft__panel milty-draft__col milty-draft__col--seats">
+                <h2 className="milty-draft-label">Места за столом</h2>
+                <div className="milty-draft-seats">
+                  {draft.playerOrder.map((_, idx) => {
+                    const taken = takenPositions.has(idx);
+                    const locked = busy || draft.done || !canPick || pickPlayer?.position != null;
+                    const by = claimedBy.position[idx];
+                    return (
+                      <button
+                        key={idx}
+                        type="button"
+                        disabled={taken || locked}
+                        onClick={() => onPick('position', idx)}
+                        className={`milty-pick milty-draft-seat${taken ? ' milty-pick--taken' : ''}`}
+                      >
+                        {by ? <span className="milty-pick-tag" title={by}>{by}</span> : null}
+                        <span className="milty-draft-seat__title">
+                          {idx === 0 ? 'Speaker' : seatOrdinalLabel(idx + 1)}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </section>
+            </div>
 
             {draft.done && result && (
               <section className="milty-draft__panel milty-draft__panel--result">
@@ -935,10 +1001,10 @@ export function MiltyDraftPage({ roomBinding = null } = {}) {
         )}
 
         {activePage === 'map' && (
-          <section className="milty-draft__panel milty-draft__panel--overflow">
+          <section className="milty-draft__panel milty-draft__panel--overflow milty-draft__panel--map">
             <h2 className="milty-draft-label">Общая карта</h2>
             <MiltyDraftMap draft={draft} />
-            <p className="milty-draft-hint milty-draft-hint--center">
+            <p className="milty-draft-hint milty-draft-hint--center milty-draft-hint--map">
               Карта собирается по мере выбора позиции и слайса.
               {' '}Для 3–5 игроков пустой сектор закрывают гиперлинии.
             </p>

@@ -7,6 +7,16 @@ import { defaultMiltySettings, parseCustomSlicesText } from '../milty/settings.j
 import { createMiltyDraft } from '../sync/miltyApi';
 import { HubCosmosBackdrop } from './HubCosmosBackdrop';
 
+function createSecretErrorMessage(code) {
+  if (code === 'create-secret-not-configured') {
+    return 'На сервере не задан ROOM_CREATE_SECRET. Добавьте его в Worker Secrets / .dev.vars.';
+  }
+  if (code === 'forbidden') {
+    return 'Неверный код доступа.';
+  }
+  return '';
+}
+
 function sessionKey(id) {
   return `ti4_milty_${String(id).toUpperCase()}`;
 }
@@ -60,8 +70,18 @@ function Stepper({ label, value, min, max, step = 1, onChange, hint }) {
   );
 }
 
-export function MiltyCreatePage({ partyMode = false, onCreateParty = null } = {}) {
+export function MiltyCreatePage({
+  partyMode = false,
+  onCreateParty = null,
+  createSecret: createSecretProp = null,
+  unlockAsHost = null,
+} = {}) {
   const navigate = useNavigate();
+  const [hostSecret, setHostSecret] = useState(() => (
+    createSecretProp ? String(createSecretProp) : ''
+  ));
+  const [gateReady, setGateReady] = useState(() => !!(partyMode || createSecretProp));
+  const [gateError, setGateError] = useState(null);
   const [numPlayers, setNumPlayers] = useState(6);
   const [names, setNames] = useState(() => Array.from({ length: 6 }, (_, i) => `Игрок ${i + 1}`));
   const [usePok, setUsePok] = useState(true);
@@ -88,6 +108,42 @@ export function MiltyCreatePage({ partyMode = false, onCreateParty = null } = {}
     document.body.classList.add('hub-cinematic');
     return () => document.body.classList.remove('hub-cinematic');
   }, []);
+
+  useEffect(() => {
+    if (partyMode) {
+      setGateReady(true);
+      return undefined;
+    }
+    if (createSecretProp) {
+      setHostSecret(String(createSecretProp));
+      setGateReady(true);
+      return undefined;
+    }
+    if (typeof unlockAsHost !== 'function') {
+      setGateError('Код доступа обязателен для создания Milty.');
+      setGateReady(false);
+      return undefined;
+    }
+    let cancelled = false;
+    (async () => {
+      const secret = await unlockAsHost({ title: 'Milty Draft', forcePrompt: true });
+      if (cancelled) return;
+      if (!secret) {
+        navigate('/');
+        return;
+      }
+      setHostSecret(String(secret));
+      setGateReady(true);
+    })().catch(() => {
+      if (!cancelled) {
+        setGateError('Не удалось проверить код доступа.');
+        setGateReady(false);
+      }
+    });
+    return () => { cancelled = true; };
+    // unlockAsHost is recreated each App render — gate only on route/mode/secret.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [partyMode, createSecretProp, navigate]);
 
   const setPlayerCount = (n) => {
     const count = Math.min(8, Math.max(3, Number(n) || 6));
@@ -147,7 +203,18 @@ export function MiltyCreatePage({ partyMode = false, onCreateParty = null } = {}
         return;
       }
 
-      const result = await createMiltyDraft(settings);
+      let secret = hostSecret;
+      if (!secret && typeof unlockAsHost === 'function') {
+        secret = await unlockAsHost({ title: 'Milty Draft', forcePrompt: true });
+        if (!secret) return;
+        setHostSecret(String(secret));
+      }
+      if (!secret) {
+        setError('Нужен код доступа для создания Milty.');
+        return;
+      }
+
+      const result = await createMiltyDraft(settings, { createSecret: secret });
       try {
         sessionStorage.setItem(sessionKey(result.id), JSON.stringify({
           adminSecret: result.adminSecret,
@@ -157,11 +224,31 @@ export function MiltyCreatePage({ partyMode = false, onCreateParty = null } = {}
       }
       navigate(`/milty/${result.id}?admin=${encodeURIComponent(result.adminSecret)}`);
     } catch (err) {
-      setError(String(err?.message || err));
+      const code = String(err?.message || err);
+      setError(createSecretErrorMessage(code) || code);
     } finally {
       setBusy(false);
     }
   };
+
+  if (!partyMode && !gateReady) {
+    return (
+      <div className="milty-create hub-shell hub-shell--column">
+        <HubCosmosBackdrop />
+        <div className="milty-create__stage milty-create__stage--center">
+          {gateError ? (
+            <p className="milty-draft-error" role="alert">{gateError}</p>
+          ) : (
+            <i className="fa-solid fa-spinner fa-spin text-2xl text-[var(--hub-gold-bright)]" aria-hidden="true" />
+          )}
+          <button type="button" className="hub-back" onClick={() => navigate('/')}>
+            <i className="fa-solid fa-chevron-left" aria-hidden="true" />
+            Назад
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="milty-create hub-shell hub-shell--column">

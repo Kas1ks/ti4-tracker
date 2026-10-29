@@ -120,6 +120,10 @@ export async function handleApi(request, env) {
 
   if (pathname === '/api/milty' || pathname.startsWith('/api/milty/')) {
     try {
+      if (method === 'POST' && pathname === '/api/milty') {
+        const limited = rateLimited(request, 'milty-create', { limit: 20, windowMs: 60_000 });
+        if (limited) return limited;
+      }
       const miltyResponse = await handleMiltyApi(request, env);
       if (miltyResponse) return miltyResponse;
     } catch (err) {

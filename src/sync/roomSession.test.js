@@ -38,6 +38,8 @@ describe('roomSession', () => {
       role: 'admin',
       seatPlayerId: null,
       seq: 4,
+      miltySecret: null,
+      miltyAdminSecret: null,
     });
     expect(localStorage.getItem(ROOM_SESSION_KEY)).toBeTruthy();
   });

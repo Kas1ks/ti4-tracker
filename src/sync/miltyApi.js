@@ -7,11 +7,11 @@ async function readJson(res) {
   }
 }
 
-export async function createMiltyDraft(settings) {
+export async function createMiltyDraft(settings, { createSecret } = {}) {
   const res = await fetch('/api/milty', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ settings }),
+    body: JSON.stringify({ settings, createSecret: createSecret ?? '' }),
   });
   const data = await readJson(res);
   if (!res.ok) throw new Error(data?.error || data?.message || `HTTP ${res.status}`);

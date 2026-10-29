@@ -53,15 +53,14 @@ export function MiltyDraftMap({ draft }) {
 
     const update = () => {
       const cw = el.clientWidth;
-      if (cw < 8) return;
-      const mobile = window.matchMedia('(max-width: 767px)').matches;
-      if (mobile) {
-        const maxH = Math.max(220, window.innerHeight * 0.62);
-        setScale(Math.min(cw / bounds.width, maxH / bounds.height));
-      } else {
-        // Fill content width, then 15% smaller for breathing room.
-        setScale(Math.max(cw / bounds.width, 1) * 0.85);
-      }
+      const ch = el.clientHeight;
+      if (cw < 8 || !bounds.width || !bounds.height) return;
+      // Fit both axes so the galaxy sits on one screen (tiny scroll only if needed).
+      const availH = ch > 48
+        ? ch
+        : Math.max(220, window.innerHeight * 0.68);
+      const fit = Math.min(cw / bounds.width, availH / bounds.height);
+      setScale(Math.max(0.12, fit * 0.98));
     };
 
     update();

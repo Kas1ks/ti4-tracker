@@ -503,6 +503,12 @@ function App() {
     navigate('/milty', { state: { party: true, createSecret } });
   };
 
+  const handleOpenMilty = async () => {
+    const createSecret = await unlockAsHost({ title: 'Milty Draft', forcePrompt: true });
+    if (!createSecret) return;
+    navigate('/milty', { state: { createSecret } });
+  };
+
   const handleCreatePartyWithMilty = async (miltySettings, createSecretFromNav) => {
     setSoloSetup(false);
     let createSecret = createSecretFromNav || null;
@@ -642,6 +648,8 @@ function App() {
           {isMiltyCreateRoute ? (
             <MiltyCreatePage
               partyMode={partyMode}
+              createSecret={partyCreateSecret}
+              unlockAsHost={unlockAsHost}
               onCreateParty={partyMode
                 ? (settings) => handleCreatePartyWithMilty(settings, partyCreateSecret)
                 : null}
@@ -788,7 +796,7 @@ function App() {
             uiPrompt={uiPrompt}
             onOpenStats={openStatsTab}
             onOpenGuide={() => navigate('/guide')}
-            onOpenMilty={() => navigate('/milty')}
+            onOpenMilty={handleOpenMilty}
           />
         )}
 
