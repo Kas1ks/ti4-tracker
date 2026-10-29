@@ -54,8 +54,10 @@ export function RoomHub({
   uiPrompt,
   onOpenStats,
   onOpenGuide,
+  onOpenMilty,
+  onCreateWithMilty,
 }) {
-  const [view, setView] = useState('hub'); // hub | join | extras
+  const [view, setView] = useState('hub'); // hub | join | extras | create-choose
   const [joinCode, setJoinCode] = useState('');
   /** Room chosen from «Активные партии» — kept private, never shown in the code field. */
   const [selectedRoomId, setSelectedRoomId] = useState(null);
@@ -304,11 +306,11 @@ export function RoomHub({
       <button
         type="button"
         className="hub-dock-card"
-        onClick={() => setSoonNote('Сообщество скоро')}
+        onClick={() => (onOpenMilty ? onOpenMilty() : setSoonNote('Milty Draft скоро'))}
       >
-        <i className="fa-solid fa-users hub-dock-icon" aria-hidden="true" />
-        <span className="hub-dock-title">Сообщество</span>
-        <span className="hub-dock-caption">Найдите игроков</span>
+        <i className="fa-solid fa-map hub-dock-icon" aria-hidden="true" />
+        <span className="hub-dock-title">Milty Draft</span>
+        <span className="hub-dock-caption">Слайсы и драфт карты</span>
         <i className="fa-solid fa-chevron-right hub-dock-chevron" aria-hidden="true" />
       </button>
       <button
@@ -406,7 +408,9 @@ export function RoomHub({
                     <div className="hub-seats-grid">
                       {previewPlayers.map((p, idx) => {
                         const taken = claimed.some((id) => String(id) === String(p.id));
-                        const faction = ALL_FACTIONS.find((f) => f.id === p.factionId);
+                        const faction = p.factionId
+                          ? ALL_FACTIONS.find((f) => f.id === p.factionId)
+                          : null;
                         return (
                           <button
                             key={p.id}
@@ -416,12 +420,16 @@ export function RoomHub({
                             className={`hub-seat${taken ? ' is-taken' : ''}`}
                           >
                             <span className="hub-seat-icon">
-                              <img src={faction?.iconUrl} alt="" />
+                              {faction?.iconUrl ? (
+                                <img src={faction.iconUrl} alt="" />
+                              ) : (
+                                <i className="fa-solid fa-user" aria-hidden="true" />
+                              )}
                             </span>
                             <span className="hub-seat-meta">
                               <span className="hub-seat-num">Место #{idx + 1}</span>
                               <span className="hub-seat-name">{p.name}</span>
-                              <span className="hub-seat-faction">{faction?.name || '—'}</span>
+                              <span className="hub-seat-faction">{faction?.name || 'Драфт / цвет позже'}</span>
                             </span>
                             {taken ? (
                               <span className="hub-seat-badge">
@@ -453,6 +461,56 @@ export function RoomHub({
 
             {roomError && <p className="hub-stage-msg is-error">{roomError}</p>}
             {connecting && <p className="hub-stage-msg">Подключение…</p>}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (view === 'create-choose') {
+    return (
+      <div className="hub-shell hub-shell--column">
+        <HubCosmosBackdrop />
+        {topbar}
+        <div className="hub-main hub-main--focus">
+          <div className="hub-stage">
+            <button type="button" onClick={() => setView('hub')} className="hub-back">
+              <i className="fa-solid fa-arrow-left" aria-hidden="true" />
+              Назад
+            </button>
+            <header className="hub-stage-head">
+              <h1 className="hub-stage-title">Создать партию</h1>
+              <p className="hub-stage-sub">С драфтом слайсов или сразу к столу</p>
+            </header>
+            <div className="hub-cta-stack" style={{ gap: '0.75rem' }}>
+              <button
+                type="button"
+                disabled={connecting}
+                className="hub-cta-primary"
+                onClick={() => {
+                  if (onCreateWithMilty) onCreateWithMilty();
+                  else if (onOpenMilty) onOpenMilty();
+                }}
+              >
+                <span className="hub-cta-label">
+                  <i className="fa-solid fa-map" aria-hidden="true" />
+                  С Milty Draft
+                </span>
+                <i className="fa-solid fa-chevron-right hub-cta-chevron" aria-hidden="true" />
+              </button>
+              <button
+                type="button"
+                disabled={connecting}
+                className="hub-cta-secondary"
+                onClick={onCreateRoom}
+              >
+                <span className="hub-cta-label">
+                  <i className="fa-solid fa-users" aria-hidden="true" />
+                  Без драфта
+                </span>
+                <i className="fa-solid fa-chevron-right hub-cta-chevron" aria-hidden="true" />
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -535,7 +593,7 @@ export function RoomHub({
                 <button
                   type="button"
                   disabled={connecting}
-                  onClick={onCreateRoom}
+                  onClick={() => setView('create-choose')}
                   className="hub-cta-primary"
                 >
                   <span className="hub-cta-label">

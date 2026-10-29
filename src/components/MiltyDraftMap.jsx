@@ -1,0 +1,168 @@
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { assembleDraftMap, calculateOffsets, BOARD_SIZE } from '../milty/assembleMap.js';
+import { tileImageUrl } from '../milty/tiles.js';
+
+/** Intrinsic tile size — desktop scales up to fill width; mobile scales down to fit. */
+const TILE_W = 112;
+const TILE_H = 97;
+
+/**
+ * Assembled milty galaxy: Mecatol + slices on a real hex grid, with hyperlanes for <6 players.
+ */
+export function MiltyDraftMap({ draft }) {
+  const assembled = useMemo(() => (draft ? assembleDraftMap(draft) : null), [draft]);
+  const offsets = useMemo(() => calculateOffsets(TILE_W, TILE_H), []);
+  const [zoomId, setZoomId] = useState(null);
+  const viewportRef = useRef(null);
+  const [scale, setScale] = useState(1);
+
+  const bounds = useMemo(() => {
+    if (!assembled) return null;
+    let minX = Infinity;
+    let maxX = -Infinity;
+    let minY = Infinity;
+    let maxY = -Infinity;
+    for (let i = 0; i < BOARD_SIZE; i += 1) {
+      const cell = assembled.cells[i];
+      if (cell.tileId == null && cell.kind === 'empty') continue;
+      const [dx, dy] = offsets[i];
+      minX = Math.min(minX, dx);
+      maxX = Math.max(maxX, dx + TILE_W);
+      minY = Math.min(minY, dy);
+      maxY = Math.max(maxY, dy + TILE_H);
+    }
+    if (!Number.isFinite(minX)) {
+      minX = -TILE_W;
+      maxX = TILE_W;
+      minY = -TILE_H;
+      maxY = TILE_H;
+    }
+    const pad = 10;
+    return {
+      minX,
+      minY,
+      pad,
+      width: maxX - minX + pad * 2,
+      height: maxY - minY + pad * 2,
+    };
+  }, [assembled, offsets]);
+
+  useEffect(() => {
+    const el = viewportRef.current;
+    if (!el || !bounds) return undefined;
+
+    const update = () => {
+      const cw = el.clientWidth;
+      if (cw < 8) return;
+      const mobile = window.matchMedia('(max-width: 767px)').matches;
+      if (mobile) {
+        const maxH = Math.max(220, window.innerHeight * 0.62);
+        setScale(Math.min(cw / bounds.width, maxH / bounds.height));
+      } else {
+        // Fill content width, then 15% smaller for breathing room.
+        setScale(Math.max(cw / bounds.width, 1) * 0.85);
+      }
+    };
+
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    window.addEventListener('resize', update);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener('resize', update);
+    };
+  }, [bounds]);
+
+  useEffect(() => {
+    if (zoomId == null) return undefined;
+    const onPointerDown = (e) => {
+      if (e.target?.closest?.('.milty-galaxy__tile')) return;
+      setZoomId(null);
+    };
+    document.addEventListener('pointerdown', onPointerDown);
+    return () => document.removeEventListener('pointerdown', onPointerDown);
+  }, [zoomId]);
+
+  if (!assembled || !bounds) return null;
+
+  const { minX, minY, pad, width, height } = bounds;
+  const scaledW = width * scale;
+  const scaledH = height * scale;
+
+  return (
+    <div className="milty-galaxy" ref={viewportRef}>
+      <div className="milty-galaxy__frame" style={{ width: scaledW, height: scaledH }}>
+        <div
+          className="milty-galaxy__board"
+          style={{
+            width,
+            height,
+            transform: `scale(${scale})`,
+          }}
+        >
+          {assembled.cells.map((cell) => {
+            if (cell.tileId == null && cell.kind === 'empty') return null;
+            const [dx, dy] = offsets[cell.index];
+            const left = dx - minX + pad;
+            const top = dy - minY + pad;
+            const zoomed = zoomId === cell.index;
+            const showLabel = cell.kind === 'home' && cell.playerName;
+            return (
+              <div
+                key={cell.index}
+                className={`milty-galaxy__tile milty-galaxy__tile--${cell.kind}${zoomed ? ' is-zoomed' : ''}`}
+                style={{ left, top, width: TILE_W, height: TILE_H }}
+                title={cell.tileId != null ? `Система ${cell.tileId}` : undefined}
+                role={cell.tileId != null ? 'button' : undefined}
+                tabIndex={cell.tileId != null ? 0 : undefined}
+                onClick={(e) => {
+                  if (cell.tileId == null) return;
+                  e.stopPropagation();
+                  setZoomId((prev) => (prev === cell.index ? null : cell.index));
+                }}
+                onKeyDown={(e) => {
+                  if (cell.tileId == null) return;
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    setZoomId((prev) => (prev === cell.index ? null : cell.index));
+                  }
+                }}
+              >
+                {cell.tileId != null ? (
+                  <img
+                    className="milty-galaxy__img"
+                    src={tileImageUrl(cell.tileId)}
+                    alt=""
+                    draggable={false}
+                    style={{ transform: `rotate(${(cell.rotation || 0) * 60}deg)` }}
+                  />
+                ) : (
+                  <span className="milty-galaxy__ph" />
+                )}
+                {cell.tileId != null ? (
+                  <span className="milty-galaxy__id">{cell.tileId}</span>
+                ) : null}
+                {showLabel ? (
+                  <span className="milty-galaxy__name">{cell.playerName}</span>
+                ) : null}
+                {cell.kind === 'home' && cell.seatIndex === 0 ? (
+                  <span className="milty-galaxy__spk">Spk</span>
+                ) : null}
+                {cell.tileId != null ? (
+                  <img
+                    className="milty-galaxy__zoom"
+                    src={tileImageUrl(cell.tileId)}
+                    alt=""
+                    draggable={false}
+                    style={{ transform: `translate(-50%, -50%) rotate(${(cell.rotation || 0) * 60}deg)` }}
+                  />
+                ) : null}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}

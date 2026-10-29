@@ -27,6 +27,8 @@ export function loadRoomSession() {
       role: data.role || null,
       seatPlayerId: data.seatPlayerId ?? null,
       seq: typeof data.seq === 'number' ? data.seq : 0,
+      miltySecret: data.miltySecret || null,
+      miltyAdminSecret: data.miltyAdminSecret || null,
     };
   } catch {
     return null;
@@ -47,6 +49,8 @@ export function saveRoomSession(session) {
       role: session.role || null,
       seatPlayerId: session.seatPlayerId ?? null,
       seq: typeof session.seq === 'number' ? session.seq : 0,
+      miltySecret: session.miltySecret || null,
+      miltyAdminSecret: session.miltyAdminSecret || null,
     }));
   } catch {
     /* quota / private mode */

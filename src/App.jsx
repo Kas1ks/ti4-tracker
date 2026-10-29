@@ -38,6 +38,8 @@ const ViewerMobileConsole = lazy(() => import('./components/ViewerMobileConsole'
 const GameSummaryModal = lazy(() => import('./components/GameSummaryModal').then(m => ({ default: m.GameSummaryModal })));
 const StatsPage = lazy(() => import('./components/StatsModal').then(m => ({ default: m.StatsPage })));
 const GuidePage = lazy(() => import('./components/GuidePage').then(m => ({ default: m.GuidePage })));
+const MiltyCreatePage = lazy(() => import('./components/MiltyCreatePage').then(m => ({ default: m.MiltyCreatePage })));
+const MiltyDraftPage = lazy(() => import('./components/MiltyDraftPage').then(m => ({ default: m.MiltyDraftPage })));
 const StatusPhaseModal = lazy(() => import('./components/StatusPhaseModal').then(m => ({ default: m.StatusPhaseModal })));
 const ObjectiveScoringModal = lazy(() => import('./components/ObjectiveScoringModal').then(m => ({ default: m.ObjectiveScoringModal })));
 const EndGameModal = lazy(() => import('./components/EndGameModal').then(m => ({ default: m.EndGameModal })));
@@ -71,6 +73,9 @@ function App() {
   const location = useLocation();
   const isStatsRoute = location.pathname === '/stats';
   const isGuideRoute = location.pathname === '/guide';
+  const isMiltyCreateRoute = location.pathname === '/milty';
+  const miltyDraftMatch = location.pathname.match(/^\/milty\/([^/]+)$/);
+  const isMiltyDraftRoute = !!miltyDraftMatch;
 
   const { dialog, close, uiAlert, uiConfirm, uiPrompt, uiForm } = useAppDialog();
   const {
@@ -83,8 +88,10 @@ function App() {
     resumeLiveSync,
     dismissRoomError,
     startHostRoom,
+    promoteMiltyToSetup,
     joinRoomById,
     releaseSeatById,
+    claimHostSeatById,
     leaveRoom,
     resetLocalGame,
     perms,
@@ -175,10 +182,18 @@ function App() {
   const isLive = roomStatus === 'live' && !!room?.roomId;
   const isConnecting = roomStatus === 'connecting';
   const hasRoomSession = isLive || isConnecting || !!room?.roomId;
+  // Until snapshot arrives, phase/milty/isGameActive may be stale — don't flash wrong screens.
+  const roomBooting = isConnecting && !!room?.roomId;
+  const miltyDrafting = !roomBooting && hasRoomSession && (
+    room?.phase === 'milty' || room?.milty?.status === 'drafting'
+  );
   const canSetup = perms?.can('setup') !== false;
   const showHub = !isGameActive && !soloSetup && !hasRoomSession;
-  const showAdminSetup = !isGameActive && canSetup && (soloSetup || hasRoomSession);
-  const showGuestLobby = !isGameActive && !canSetup && hasRoomSession;
+  const showMiltyPhase = !isGameActive && miltyDrafting;
+  const showAdminSetup = !isGameActive && !roomBooting && canSetup && (soloSetup || hasRoomSession) && !miltyDrafting;
+  const showGuestLobby = !isGameActive && !roomBooting && !canSetup && hasRoomSession && !miltyDrafting;
+  const showRoomBoot = roomBooting;
+  const showActiveGame = isGameActive && !roomBooting;
   const isPlayerClient = perms?.role === ROLES.PLAYER;
   const isViewerClient = perms?.role === ROLES.VIEWER;
   const showImperialClaimModal = !!imperialClaim?.active && !victoryLocked && (
@@ -297,7 +312,7 @@ function App() {
     extra?.();
   };
 
-  const mobileShell = (isPlayerClient || isViewerClient) && isGameActive;
+  const mobileShell = (isPlayerClient || isViewerClient) && showActiveGame;
   useVisualViewportShell(mobileShell);
 
   useEffect(() => {
@@ -460,7 +475,7 @@ function App() {
 
   const handleCreateRoom = async () => {
     setSoloSetup(false);
-    const createSecret = await unlockAsHost({ title: 'Создать партию' });
+    const createSecret = await unlockAsHost({ title: 'Создать партию', forcePrompt: true });
     if (!createSecret) return;
     try {
       const created = await startHostRoom(createSecret);
@@ -479,6 +494,41 @@ function App() {
         hostSecretErrorMessage(code) || `Не удалось создать комнату: ${code}`,
         { title: 'Ошибка', variant: 'danger' },
       );
+    }
+  };
+
+  const handleCreateWithMilty = async () => {
+    const createSecret = await unlockAsHost({ title: 'Создать партию с Milty', forcePrompt: true });
+    if (!createSecret) return;
+    navigate('/milty', { state: { party: true, createSecret } });
+  };
+
+  const handleCreatePartyWithMilty = async (miltySettings, createSecretFromNav) => {
+    setSoloSetup(false);
+    let createSecret = createSecretFromNav || null;
+    if (!createSecret) {
+      createSecret = await unlockAsHost({ title: 'Создать партию с Milty', forcePrompt: true });
+    }
+    if (!createSecret) return;
+    try {
+      const created = await startHostRoom(createSecret, { milty: miltySettings });
+      try {
+        await navigator.clipboard.writeText(created.roomId);
+      } catch {
+        /* ignore */
+      }
+      navigate('/');
+      await uiAlert(
+        `Драфт создан. Код комнаты: ${created.roomId}\nИгроки входят по коду (в хабе не видна, пока идёт драфт).`,
+        { title: 'Milty Draft', variant: 'success' },
+      );
+    } catch (err) {
+      const code = String(err.message || err);
+      await uiAlert(
+        hostSecretErrorMessage(code) || `Не удалось создать: ${code}`,
+        { title: 'Ошибка', variant: 'danger' },
+      );
+      throw err;
     }
   };
 
@@ -577,7 +627,35 @@ function App() {
     );
   }
 
-  const fullBleedShell = showHub || showAdminSetup || showGuestLobby || isGameActive;
+  if (isMiltyCreateRoute || isMiltyDraftRoute) {
+    const partyMode = !!(location.state?.party);
+    const partyCreateSecret = location.state?.createSecret || null;
+    return (
+      <>
+        <Suspense
+          fallback={(
+            <div className="min-h-screen flex items-center justify-center text-[var(--hub-muted)] bg-[var(--hub-ink)]">
+              <i className="fa-solid fa-spinner fa-spin text-2xl text-[var(--hub-gold-bright)]" aria-hidden="true" />
+            </div>
+          )}
+        >
+          {isMiltyCreateRoute ? (
+            <MiltyCreatePage
+              partyMode={partyMode}
+              onCreateParty={partyMode
+                ? (settings) => handleCreatePartyWithMilty(settings, partyCreateSecret)
+                : null}
+            />
+          ) : (
+            <MiltyDraftPage />
+          )}
+        </Suspense>
+        <AppDialog dialog={dialog} onClose={close} />
+      </>
+    );
+  }
+
+  const fullBleedShell = showHub || showAdminSetup || showGuestLobby || showMiltyPhase || showRoomBoot || showActiveGame;
 
   return (
     <div
@@ -585,11 +663,11 @@ function App() {
         mobileShell
           ? 'player-app-frame game-shell min-h-screen max-md:min-h-0 md:relative md:h-auto md:max-h-none md:overflow-visible md:px-8 max-md:px-0'
           : fullBleedShell
-            ? `min-h-screen px-0${isGameActive ? ' game-shell' : ''}`
+            ? `min-h-screen px-0${showActiveGame ? ' game-shell' : ''}`
             : 'min-h-screen px-3 md:px-8'
       }`}
     >
-      {isGameActive && <HubCosmosBackdrop />}
+      {showActiveGame && <HubCosmosBackdrop />}
       <SyncStatusBanner
         roomError={hasRoomSession ? roomError : null}
         syncLink={hasRoomSession ? syncLink : 'idle'}
@@ -597,7 +675,7 @@ function App() {
         onReconnect={hasRoomSession ? () => resumeLiveSync({ forceSse: true }) : undefined}
       />
 
-      {victoryLocked && (
+      {victoryLocked && showActiveGame && (
         <VictoryLockBanner
           winners={winners}
           targetScore={targetScore}
@@ -629,7 +707,7 @@ function App() {
         />
       )}
 
-      {!showHub && !showAdminSetup && (
+      {!showHub && !showAdminSetup && !showRoomBoot && !showMiltyPhase && !showGuestLobby && (
         <GameHeader
           isGameActive={isGameActive}
           roundNumber={roundNumber}
@@ -677,24 +755,77 @@ function App() {
       )}
 
       <main
-        className={`${showHub || showAdminSetup || showGuestLobby ? 'flex-grow p-0' : `py-6 flex-grow space-y-6${isGameActive ? ' px-3 md:px-8 max-w-[1800px] mx-auto w-full box-border' : ''}`} ${
+        className={`${showHub || showAdminSetup || showGuestLobby || showMiltyPhase || showRoomBoot ? 'flex-grow p-0' : `py-6 flex-grow space-y-6${showActiveGame ? ' px-3 md:px-8 max-w-[1800px] mx-auto w-full box-border' : ''}`} ${
           mobileShell
             ? 'md:px-0 max-md:py-0 max-md:space-y-0 max-md:flex-1 max-md:min-h-0 max-md:overflow-hidden max-md:flex max-md:flex-col'
             : ''
         }`}
       >
+        {showRoomBoot && (
+          <div className="hub-shell hub-shell--column min-h-screen relative flex items-center justify-center">
+            <HubCosmosBackdrop />
+            <div className="relative z-10 flex flex-col items-center gap-3 px-6 text-center">
+              <i className="fa-solid fa-spinner fa-spin text-2xl text-amber-200/90" aria-hidden="true" />
+              <p className="font-['Montserrat'] text-sm font-semibold tracking-wide text-slate-300">
+                Подключение к комнате…
+              </p>
+              {room?.roomId ? (
+                <p className="font-mono text-xs text-amber-200/70 tracking-wider">{room.roomId}</p>
+              ) : null}
+            </div>
+          </div>
+        )}
+
         {showHub && (
           <RoomHub
             roomStatus={roomStatus}
             roomError={roomError}
             onCreateRoom={handleCreateRoom}
+            onCreateWithMilty={handleCreateWithMilty}
             onJoinRoom={handleJoinRoom}
             onPlaySolo={handlePlaySolo}
             importGameToken={handleImportGameToken}
             uiPrompt={uiPrompt}
             onOpenStats={openStatsTab}
             onOpenGuide={() => navigate('/guide')}
+            onOpenMilty={() => navigate('/milty')}
           />
+        )}
+
+        {showMiltyPhase && room?.milty?.draftId && (
+          <Suspense
+            fallback={(
+              <div className="min-h-screen flex items-center justify-center text-slate-400">
+                <i className="fa-solid fa-spinner fa-spin text-2xl" aria-hidden="true" />
+              </div>
+            )}
+          >
+            <MiltyDraftPage
+              roomBinding={{
+                roomId: room.roomId,
+                draftId: room.milty.draftId,
+                hostKey: room.hostKey,
+                sessionToken: room.sessionToken,
+                seatPlayerId: room.seatPlayerId,
+                miltySecret: room.miltySecret,
+                miltyAdminSecret: room.miltyAdminSecret,
+                onPromote: async () => {
+                  await promoteMiltyToSetup();
+                  await uiAlert('Драфт перенесён в создание партии. Выберите цвета и запускайте.', {
+                    title: 'На стол',
+                    variant: 'success',
+                  });
+                },
+                onHostClaimSeat: room.hostKey
+                  ? async (seatPlayerId) => claimHostSeatById(seatPlayerId)
+                  : null,
+                onHostReleaseSeat: room.hostKey
+                  ? async (seatPlayerId) => releaseSeatById(seatPlayerId)
+                  : null,
+                onLeave: handleLeaveRoom,
+              }}
+            />
+          </Suspense>
         )}
 
         {showGuestLobby && (
@@ -741,10 +872,11 @@ function App() {
             onPlaySolo={handlePlaySolo}
             importGameToken={handleImportGameToken}
             isSolo={soloSetup && !hasRoomSession}
+            miltySeeded={room?.milty?.status === 'done'}
           />
         )}
 
-        {isGameActive && (
+        {showActiveGame && (
           <>
             {activePlayer
               && turnOrder.length > 0
@@ -1416,7 +1548,7 @@ function App() {
         />
       </main>
 
-      {isGameActive && (
+      {showActiveGame && (
         <button
           type="button"
           onClick={() => ui.setShowProductionCalculator(true)}

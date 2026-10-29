@@ -94,6 +94,10 @@ export function createRoomRecord(initialState = null) {
     seatSecrets: {},
     /** Hub listing: false after host SSE disconnect / leave (see GameRoom). */
     hostOnline: true,
+    /** Explicit hub visibility (false while milty drafting). Default listed. */
+    hubListed: true,
+    /** @type {null | { draftId: string, status: string, adminSecret?: string, seatSecrets?: object }} */
+    milty: null,
   });
 }
 
@@ -219,12 +223,18 @@ export function releaseSeat(room, seatPlayerId, auth = {}) {
 
   const previousToken = room.seatClaims?.[seat.id] ?? null;
   const sessions = { ...(room.sessions || {}) };
-  if (previousToken && sessions[previousToken]) {
-    delete sessions[previousToken];
-  }
-  // Also drop the caller's session if it differs (should not for self-release).
-  if (auth.sessionToken && sessions[auth.sessionToken]) {
-    delete sessions[auth.sessionToken];
+  const dropOrClear = (token) => {
+    if (!token || !sessions[token]) return;
+    if (sessions[token].role === ROLES.ADMIN) {
+      // Host stays host — only leave the player seat.
+      sessions[token] = { ...sessions[token], seatPlayerId: null };
+    } else {
+      delete sessions[token];
+    }
+  };
+  dropOrClear(previousToken);
+  if (auth.sessionToken && auth.sessionToken !== previousToken) {
+    dropOrClear(auth.sessionToken);
   }
 
   const seatClaims = { ...(room.seatClaims || {}) };
@@ -244,6 +254,65 @@ export function releaseSeat(room, seatPlayerId, auth = {}) {
     seatPlayerId: seat.id,
     revokedSessionToken: previousToken,
     released: true,
+  };
+}
+
+/**
+ * Host sits as a player without losing ADMIN role (host + player).
+ */
+export function hostClaimSeat(room, seatPlayerId, auth = {}) {
+  if (!auth.hostKey || auth.hostKey !== room.hostKey) {
+    return { ok: false, error: 'unauthorized' };
+  }
+  const adminToken = (
+    auth.sessionToken
+    && room.sessions?.[auth.sessionToken]?.role === ROLES.ADMIN
+  )
+    ? auth.sessionToken
+    : adminSessionFromRoom(room);
+  if (!adminToken || !room.sessions?.[adminToken]) {
+    return { ok: false, error: 'no-admin-session' };
+  }
+
+  const seat = room.state.players.find((p) => String(p.id) === String(seatPlayerId));
+  if (!seat) return { ok: false, error: 'unknown-seat' };
+
+  const existingClaim = room.seatClaims?.[seat.id] ?? null;
+  if (existingClaim && existingClaim !== adminToken) {
+    return { ok: false, error: 'seat-taken' };
+  }
+
+  const sessions = { ...room.sessions };
+  const seatClaims = { ...(room.seatClaims || {}) };
+  const seatSecrets = { ...(room.seatSecrets || {}) };
+  const prevSeat = sessions[adminToken].seatPlayerId;
+
+  if (prevSeat != null && String(prevSeat) !== String(seat.id)) {
+    if (seatClaims[prevSeat] === adminToken) delete seatClaims[prevSeat];
+    delete seatSecrets[prevSeat];
+  }
+
+  seatClaims[seat.id] = adminToken;
+  if (!seatSecrets[seat.id]) seatSecrets[seat.id] = makeSeatSecret();
+  sessions[adminToken] = {
+    ...sessions[adminToken],
+    role: ROLES.ADMIN,
+    seatPlayerId: seat.id,
+  };
+
+  const next = touchRoomActivity({
+    ...room,
+    sessions,
+    seatClaims,
+    seatSecrets,
+  });
+  return {
+    ok: true,
+    room: next,
+    seatPlayerId: seat.id,
+    seatSecret: seatSecrets[seat.id],
+    sessionToken: adminToken,
+    role: ROLES.ADMIN,
   };
 }
 
@@ -422,6 +491,17 @@ export function publicRoomView(room) {
     return Number.isNaN(asNum) ? id : asNum;
   });
 
+  const milty = room.milty?.draftId
+    ? {
+      draftId: room.milty.draftId,
+      status: room.milty.status || 'drafting',
+    }
+    : null;
+
+  let phase = 'setup';
+  if (room.state?.isGameActive) phase = 'game';
+  else if (milty?.status === 'drafting') phase = 'milty';
+
   return {
     roomId: room.roomId,
     seq: room.seq,
@@ -433,6 +513,9 @@ export function publicRoomView(room) {
     claimedSeats,
     securedSeats,
     canUndo: undoStackDepth(room.undoStack) > 0,
+    hubListed: room.hubListed !== false && milty?.status !== 'drafting',
+    milty,
+    phase,
   };
 }
 
@@ -468,6 +551,8 @@ export function isHubPartyEnded(cardOrRoom) {
 export function hubRoomCard(room) {
   if (!room?.roomId) return null;
   if (isHubPartyEnded(room)) return null;
+  // Hide from hub while Milty draft is in progress (join by code only).
+  if (room.hubListed === false || room.milty?.status === 'drafting') return null;
   const view = publicRoomView(room);
   const state = view.state;
   const players = (state?.players || []).filter((p) => !p?.eliminated);

@@ -48,6 +48,7 @@ export function SetupScreen({
   onPlaySolo,
   importGameToken,
   isSolo = false,
+  miltySeeded = false,
 }) {
   const [panel, setPanel] = useState('setup'); // setup | settings
   const [soonNote, setSoonNote] = useState('');
@@ -234,6 +235,7 @@ export function SetupScreen({
                       key={n}
                       type="button"
                       className={`setup-chip ${players.length === n ? 'is-on' : ''}`}
+                      disabled={miltySeeded}
                       onClick={() => setPlayerCount(n)}
                     >
                       {n}
@@ -374,23 +376,29 @@ export function SetupScreen({
                           )}
                           <div className="setup-player-faction">
                             <img src={faction?.iconUrl} alt="" />
-                            <select
-                              value={p.factionId}
-                              onChange={(e) => updatePlayer(p.id, {
-                                factionId: e.target.value,
-                                startingTechIds: [],
-                              })}
-                            >
-                              {availableFactions.map((f) => (
-                                <option
-                                  key={f.id}
-                                  value={f.id}
-                                  disabled={isFactionTaken(f.id, p.id)}
-                                >
-                                  {f.name}{isFactionTaken(f.id, p.id) ? ' 🔒' : ''}
-                                </option>
-                              ))}
-                            </select>
+                            {miltySeeded ? (
+                              <span className="setup-player-faction-locked truncate" title="Фракция из Milty">
+                                {faction?.name || p.factionId || '—'}
+                              </span>
+                            ) : (
+                              <select
+                                value={p.factionId || ''}
+                                onChange={(e) => updatePlayer(p.id, {
+                                  factionId: e.target.value,
+                                  startingTechIds: [],
+                                })}
+                              >
+                                {availableFactions.map((f) => (
+                                  <option
+                                    key={f.id}
+                                    value={f.id}
+                                    disabled={isFactionTaken(f.id, p.id)}
+                                  >
+                                    {f.name}{isFactionTaken(f.id, p.id) ? ' 🔒' : ''}
+                                  </option>
+                                ))}
+                              </select>
+                            )}
                           </div>
                           <div
                             className={`setup-player-colors${p.color ? ' is-picked' : ''}`}

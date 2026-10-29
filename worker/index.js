@@ -1,8 +1,9 @@
 import { handleApi } from './api.js';
 import { GameRoom } from './rooms/GameRoom.js';
 import { RoomDirectory } from './rooms/RoomDirectory.js';
+import { MiltyDraft } from './milty/MiltyDraft.js';
 
-export { GameRoom, RoomDirectory };
+export { GameRoom, RoomDirectory, MiltyDraft };
 
 export default {
   async fetch(request, env) {

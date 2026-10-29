@@ -9,14 +9,55 @@ async function readError(res) {
   }
 }
 
-export async function createRoom(state, { createSecret } = {}) {
+export async function createRoom(state, { createSecret, milty } = {}) {
   const res = await fetch('/api/rooms', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      state: state ?? null,
+      state: milty ? null : (state ?? null),
       createSecret: createSecret ?? '',
+      milty: milty || undefined,
     }),
+  });
+  if (!res.ok) throw new Error(await readError(res));
+  return res.json();
+}
+
+export async function promoteMiltyRoom(roomId, { hostKey }) {
+  const res = await fetch(`/api/rooms/${encodeURIComponent(roomId)}/milty/promote`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ hostKey }),
+  });
+  if (!res.ok) throw new Error(await readError(res));
+  return res.json();
+}
+
+export async function pickMiltyInRoom(roomId, body) {
+  const res = await fetch(`/api/rooms/${encodeURIComponent(roomId)}/milty/pick`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body || {}),
+  });
+  if (!res.ok) throw new Error(await readError(res));
+  return res.json();
+}
+
+export async function undoMiltyInRoom(roomId, { hostKey }) {
+  const res = await fetch(`/api/rooms/${encodeURIComponent(roomId)}/milty/undo`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ hostKey }),
+  });
+  if (!res.ok) throw new Error(await readError(res));
+  return res.json();
+}
+
+export async function regenMiltyInRoom(roomId, { hostKey, part }) {
+  const res = await fetch(`/api/rooms/${encodeURIComponent(roomId)}/milty/regen`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ hostKey, part }),
   });
   if (!res.ok) throw new Error(await readError(res));
   return res.json();
@@ -65,6 +106,17 @@ export async function joinRoom(roomId, { role, seatPlayerId, seatSecret }) {
 
 export async function releaseSeat(roomId, { seatPlayerId, sessionToken, hostKey }) {
   const res = await fetch(`/api/rooms/${encodeURIComponent(roomId)}/release-seat`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ seatPlayerId, sessionToken, hostKey }),
+  });
+  if (!res.ok) throw new Error(await readError(res));
+  return res.json();
+}
+
+/** Host sits as a player without losing ADMIN (host + player). */
+export async function claimHostSeat(roomId, { seatPlayerId, sessionToken, hostKey }) {
+  const res = await fetch(`/api/rooms/${encodeURIComponent(roomId)}/claim-seat`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ seatPlayerId, sessionToken, hostKey }),

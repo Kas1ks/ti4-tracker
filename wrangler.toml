@@ -16,6 +16,10 @@ class_name = "GameRoom"
 name = "ROOM_DIRECTORY"
 class_name = "RoomDirectory"
 
+[[durable_objects.bindings]]
+name = "MILTY_DRAFTS"
+class_name = "MiltyDraft"
+
 [[migrations]]
 tag = "v1-game-rooms"
 new_sqlite_classes = ["GameRoom"]
@@ -23,6 +27,10 @@ new_sqlite_classes = ["GameRoom"]
 [[migrations]]
 tag = "v2-room-directory"
 new_sqlite_classes = ["RoomDirectory"]
+
+[[migrations]]
+tag = "v3-milty-drafts"
+new_sqlite_classes = ["MiltyDraft"]
 
 # Staging / previous prod snapshot:
 #   https://ti4-tracker-dv.skvcom1.workers.dev
@@ -44,6 +52,10 @@ class_name = "GameRoom"
 name = "ROOM_DIRECTORY"
 class_name = "RoomDirectory"
 
+[[env.dev.durable_objects.bindings]]
+name = "MILTY_DRAFTS"
+class_name = "MiltyDraft"
+
 [[env.dev.migrations]]
 tag = "v1-game-rooms"
 new_sqlite_classes = ["GameRoom"]
@@ -51,3 +63,7 @@ new_sqlite_classes = ["GameRoom"]
 [[env.dev.migrations]]
 tag = "v2-room-directory"
 new_sqlite_classes = ["RoomDirectory"]
+
+[[env.dev.migrations]]
+tag = "v3-milty-drafts"
+new_sqlite_classes = ["MiltyDraft"]

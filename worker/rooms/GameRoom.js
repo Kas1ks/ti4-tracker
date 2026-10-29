@@ -4,11 +4,23 @@ import {
   hydrateRoomLifecycle,
   isRoomExpired,
   joinRoom,
+  hostClaimSeat,
   releaseSeat,
   publicRoomView,
   adminSessionFromRoom,
   ROLES,
 } from './roomCore.js';
+import {
+  applyMiltyResultToRoom,
+  bindMiltySeat,
+  getMiltyInEnv,
+  isMiltyDrafting,
+  notifyMiltyTurn,
+  pickMiltyInEnv,
+  regenMiltyInEnv,
+  unbindMiltySeat,
+  undoMiltyInEnv,
+} from './miltyAttach.js';
 import { directoryRemove, directoryUpsert } from './roomIndex.js';
 import { logRoomEvent, measureMs } from './roomLog.js';
 import { notifyNeedsAction, removePushSub, upsertPushSub } from './pushNotify.js';
@@ -182,21 +194,35 @@ export class GameRoom {
         }
       }
 
-      const room = createRoomRecord(body?.state ?? null);
+      let room = createRoomRecord(body?.state ?? null);
       const namedId = url.searchParams.get('roomId');
       if (namedId) room.roomId = namedId.toUpperCase();
+      if (body?.milty?.draftId && body?.milty?.adminSecret) {
+        room = {
+          ...room,
+          hubListed: false,
+          milty: {
+            draftId: String(body.milty.draftId).toUpperCase(),
+            status: 'drafting',
+            adminSecret: String(body.milty.adminSecret),
+            seatSecrets: {},
+          },
+        };
+      }
       await this.save(room);
       this.trackInDirectory(room);
       logRoomEvent('room_create', {
         backend: 'do',
         roomId: room.roomId,
         players: room.state?.players?.length ?? 0,
+        milty: !!room.milty,
       });
       return Response.json({
         ...publicRoomView(room),
         hostKey: room.hostKey,
         sessionToken: adminSessionFromRoom(room),
         role: 'admin',
+        miltyAdminSecret: room.milty?.adminSecret || undefined,
       }, { status: 201 });
     }
 
@@ -227,9 +253,16 @@ export class GameRoom {
           || result.error === 'bad-seat-secret') ? 409 : 400;
         return Response.json({ error: result.error }, { status });
       }
-      await this.save(result.room);
-      this.trackInDirectory(result.room);
-      const joinedView = publicRoomView(result.room);
+      let nextRoom = result.room;
+      let miltySecret = null;
+      if (isMiltyDrafting(nextRoom) && result.seatPlayerId != null) {
+        const bound = await bindMiltySeat(this.env, nextRoom, result.seatPlayerId);
+        nextRoom = bound.room;
+        miltySecret = bound.miltySecret;
+      }
+      await this.save(nextRoom);
+      this.trackInDirectory(nextRoom);
+      const joinedView = publicRoomView(nextRoom);
       this.broadcast({
         type: 'seats',
         claimedSeats: joinedView.claimedSeats,
@@ -244,8 +277,161 @@ export class GameRoom {
         role: result.role,
         seatPlayerId: result.seatPlayerId,
         seatSecret: result.seatSecret,
+        miltySecret,
         reclaimed: !!result.reclaimed,
       });
+    }
+
+    if (method === 'POST' && path.endsWith('/milty/promote')) {
+      let body = null;
+      try {
+        body = await request.json();
+      } catch {
+        body = null;
+      }
+      if (!body?.hostKey || body.hostKey !== room.hostKey) {
+        return Response.json({ error: 'unauthorized' }, { status: 403 });
+      }
+      if (!room.milty?.draftId) {
+        return Response.json({ error: 'no-milty' }, { status: 400 });
+      }
+      const draftRes = await getMiltyInEnv(this.env, room.milty.draftId, {
+        adminSecret: room.milty.adminSecret,
+      });
+      if (!draftRes.ok) {
+        return Response.json({ error: draftRes.error || 'draft-missing' }, { status: 404 });
+      }
+      // Need full draft with done flag — public view is enough if done is present
+      if (!draftRes.draft?.done) {
+        return Response.json({ error: 'draft-not-done' }, { status: 400 });
+      }
+      // Re-fetch isn't full engine draft; assembleResult needs players with picks.
+      // publicDraftView includes players/factionPool/slicePool/playerOrder — enough for assembleResult
+      // if we pass a draft-shaped object.
+      const applied = applyMiltyResultToRoom(room, draftRes.draft);
+      if (!applied.ok) {
+        return Response.json({ error: applied.error }, { status: 400 });
+      }
+      await this.save(applied.room);
+      this.trackInDirectory(applied.room);
+      this.broadcast({ type: 'state', seq: applied.room.seq, state: applied.room.state, milty: publicRoomView(applied.room).milty, phase: 'setup' });
+      return Response.json(publicRoomView(applied.room));
+    }
+
+    if (method === 'POST' && path.endsWith('/milty/pick')) {
+      let body = null;
+      try {
+        body = await request.json();
+      } catch {
+        return Response.json({ error: 'invalid-body' }, { status: 400 });
+      }
+      if (!isMiltyDrafting(room)) {
+        return Response.json({ error: 'no-milty' }, { status: 400 });
+      }
+      const session = body?.sessionToken ? room.sessions?.[body.sessionToken] : null;
+      const isHost = body?.hostKey && body.hostKey === room.hostKey;
+      if (!isHost && (!session || session.role === ROLES.VIEWER)) {
+        return Response.json({ error: 'unauthorized' }, { status: 403 });
+      }
+      const playerId = body.playerId != null
+        ? body.playerId
+        : (isHost ? null : session.seatPlayerId);
+      if (playerId == null) {
+        return Response.json({ error: 'missing-player' }, { status: 400 });
+      }
+      if (!isHost && String(session.seatPlayerId) !== String(playerId)) {
+        return Response.json({ error: 'not-your-seat' }, { status: 403 });
+      }
+
+      let nextRoom = room;
+      let miltySecret = nextRoom.milty?.seatSecrets?.[String(playerId)] || null;
+      if (!miltySecret && !isHost) {
+        const bound = await bindMiltySeat(this.env, nextRoom, playerId);
+        nextRoom = bound.room;
+        miltySecret = bound.miltySecret;
+        if (!miltySecret) {
+          return Response.json({ error: bound.error || 'milty-bind-failed' }, { status: 400 });
+        }
+      }
+
+      const before = await getMiltyInEnv(this.env, nextRoom.milty.draftId);
+      const prevId = before.ok ? before.draft?.currentPlayerId : null;
+      const picked = await pickMiltyInEnv(this.env, nextRoom.milty.draftId, {
+        playerId: String(playerId),
+        category: body.category,
+        value: body.value,
+        secret: miltySecret,
+        adminSecret: isHost ? nextRoom.milty.adminSecret : undefined,
+        logIndex: body.logIndex,
+      });
+      if (!picked?.ok) {
+        return Response.json({ error: picked?.error || 'pick-failed' }, { status: 400 });
+      }
+      nextRoom = await notifyMiltyTurn(
+        this.env,
+        nextRoom,
+        prevId,
+        picked.draft?.currentPlayerId,
+        { done: !!picked.draft?.done },
+      );
+      await this.save(nextRoom);
+      this.broadcast({
+        type: 'milty',
+        draft: picked.draft,
+        milty: publicRoomView(nextRoom).milty,
+      });
+      return Response.json({
+        ok: true,
+        draft: picked.draft,
+        room: publicRoomView(nextRoom),
+      });
+    }
+
+    if (method === 'POST' && path.endsWith('/milty/undo')) {
+      let body = null;
+      try {
+        body = await request.json();
+      } catch {
+        body = null;
+      }
+      if (!body?.hostKey || body.hostKey !== room.hostKey) {
+        return Response.json({ error: 'unauthorized' }, { status: 403 });
+      }
+      if (!room.milty?.draftId) {
+        return Response.json({ error: 'no-milty' }, { status: 400 });
+      }
+      const undone = await undoMiltyInEnv(this.env, room.milty.draftId, {
+        adminSecret: room.milty.adminSecret,
+      });
+      if (!undone?.ok) {
+        return Response.json({ error: undone?.error || 'undo-failed' }, { status: 400 });
+      }
+      this.broadcast({ type: 'milty', draft: undone.draft, milty: publicRoomView(room).milty });
+      return Response.json({ ok: true, draft: undone.draft, room: publicRoomView(room) });
+    }
+
+    if (method === 'POST' && path.endsWith('/milty/regen')) {
+      let body = null;
+      try {
+        body = await request.json();
+      } catch {
+        body = null;
+      }
+      if (!body?.hostKey || body.hostKey !== room.hostKey) {
+        return Response.json({ error: 'unauthorized' }, { status: 403 });
+      }
+      if (!room.milty?.draftId) {
+        return Response.json({ error: 'no-milty' }, { status: 400 });
+      }
+      const regen = await regenMiltyInEnv(this.env, room.milty.draftId, {
+        part: body.part,
+        adminSecret: room.milty.adminSecret,
+      });
+      if (!regen?.ok) {
+        return Response.json({ error: regen?.error || 'regen-failed' }, { status: 400 });
+      }
+      this.broadcast({ type: 'milty', draft: regen.draft, milty: publicRoomView(room).milty });
+      return Response.json({ ok: true, draft: regen.draft, room: publicRoomView(room) });
     }
 
     if (method === 'POST' && path.endsWith('/release-seat')) {
@@ -263,9 +449,14 @@ export class GameRoom {
         const status = released.error === 'unauthorized' || released.error === 'forbidden' ? 403 : 400;
         return Response.json({ error: released.error }, { status });
       }
-      await this.save(released.room);
-      this.trackInDirectory(released.room);
-      const releasedView = publicRoomView(released.room);
+      let nextRoom = released.room;
+      if (isMiltyDrafting(nextRoom)) {
+        const unbound = await unbindMiltySeat(this.env, nextRoom, released.seatPlayerId);
+        nextRoom = unbound.room;
+      }
+      await this.save(nextRoom);
+      this.trackInDirectory(nextRoom);
+      const releasedView = publicRoomView(nextRoom);
       this.broadcast({
         type: 'seats',
         claimedSeats: releasedView.claimedSeats,
@@ -275,9 +466,64 @@ export class GameRoom {
         seatPlayerId: released.seatPlayerId,
         revokedSessionToken: released.revokedSessionToken || null,
       });
+      if (isMiltyDrafting(nextRoom)) {
+        const snap = await getMiltyInEnv(this.env, nextRoom.milty.draftId);
+        if (snap?.ok) {
+          this.broadcast({ type: 'milty', draft: snap.draft, milty: releasedView.milty });
+        }
+      }
       return Response.json({
-        ...publicRoomView(released.room),
+        ...publicRoomView(nextRoom),
         seatPlayerId: released.seatPlayerId,
+      });
+    }
+
+    if (method === 'POST' && path.endsWith('/claim-seat')) {
+      let body = null;
+      try {
+        body = await request.json();
+      } catch {
+        return Response.json({ error: 'invalid-body' }, { status: 400 });
+      }
+      const claimed = hostClaimSeat(room, body?.seatPlayerId, {
+        sessionToken: body?.sessionToken,
+        hostKey: body?.hostKey,
+      });
+      if (!claimed.ok) {
+        const status = claimed.error === 'unauthorized' ? 403
+          : claimed.error === 'seat-taken' ? 409
+            : 400;
+        return Response.json({ error: claimed.error }, { status });
+      }
+      let nextRoom = claimed.room;
+      let miltySecret = null;
+      if (isMiltyDrafting(nextRoom) && claimed.seatPlayerId != null) {
+        const bound = await bindMiltySeat(this.env, nextRoom, claimed.seatPlayerId);
+        nextRoom = bound.room;
+        miltySecret = bound.miltySecret;
+        if (!miltySecret && bound.error) {
+          return Response.json({ error: bound.error }, { status: 400 });
+        }
+      }
+      await this.save(nextRoom);
+      this.trackInDirectory(nextRoom);
+      const view = publicRoomView(nextRoom);
+      this.broadcast({
+        type: 'seats',
+        claimedSeats: view.claimedSeats,
+        securedSeats: view.securedSeats,
+        seatPlayerId: claimed.seatPlayerId,
+      });
+      if (isMiltyDrafting(nextRoom)) {
+        const snap = await getMiltyInEnv(this.env, nextRoom.milty.draftId);
+        if (snap?.ok) this.broadcast({ type: 'milty', draft: snap.draft, milty: view.milty });
+      }
+      return Response.json({
+        ...view,
+        seatPlayerId: claimed.seatPlayerId,
+        seatSecret: claimed.seatSecret,
+        miltySecret,
+        role: claimed.role,
       });
     }
 

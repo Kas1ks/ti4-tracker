@@ -10,6 +10,11 @@ export const PUSH_CATEGORIES = [
     desc: 'Когда наступает ваш ход в фазе действий',
   },
   {
+    id: 'milty',
+    label: 'Milty Draft',
+    desc: 'Ваш ход в драфте слайсов и фракций',
+  },
+  {
     id: 'combat',
     label: 'Бой',
     desc: 'Попадания, назначение урона, действия хоста',
@@ -55,6 +60,7 @@ export function defaultPushCategories() {
 export function reasonToCategory(reason) {
   if (!reason || typeof reason !== 'string') return null;
   if (reason === 'turn') return 'turn';
+  if (reason === 'milty-turn' || reason === 'milty-done') return 'milty';
   if (reason.startsWith('combat')) return 'combat';
   if (reason === 'strategy-resolution') return 'strategy';
   if (reason === 'scoring' || reason === 'imperial') return 'scoring';

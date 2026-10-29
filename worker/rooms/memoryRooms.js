@@ -5,11 +5,23 @@ import {
   hydrateRoomLifecycle,
   isRoomExpired,
   joinRoom,
+  hostClaimSeat,
   releaseSeat,
   publicRoomView,
   adminSessionFromRoom,
   ROLES,
 } from './roomCore.js';
+import {
+  applyMiltyResultToRoom,
+  bindMiltySeat,
+  getMiltyInEnv,
+  isMiltyDrafting,
+  notifyMiltyTurn,
+  pickMiltyInEnv,
+  regenMiltyInEnv,
+  unbindMiltySeat,
+  undoMiltyInEnv,
+} from './miltyAttach.js';
 import { logRoomEvent, measureMs } from './roomLog.js';
 import { notifyNeedsAction, removePushSub, upsertPushSub } from './pushNotify.js';
 import { undoStackDepth } from '../../src/sync/undoStack';
@@ -52,13 +64,26 @@ function purgeIfExpired(roomId) {
   return hydrated;
 }
 
-export function memoryCreateRoom(initialState) {
-  const room = createRoomRecord(initialState);
+export function memoryCreateRoom(initialState, { milty } = {}) {
+  let room = createRoomRecord(initialState);
+  if (milty?.draftId && milty?.adminSecret) {
+    room = {
+      ...room,
+      hubListed: false,
+      milty: {
+        draftId: String(milty.draftId).toUpperCase(),
+        status: 'drafting',
+        adminSecret: String(milty.adminSecret),
+        seatSecrets: {},
+      },
+    };
+  }
   rooms.set(room.roomId, room);
   logRoomEvent('room_create', {
     backend: 'memory',
     roomId: room.roomId,
     players: room.state?.players?.length ?? 0,
+    milty: !!room.milty,
   });
   return room;
 }
@@ -68,14 +93,21 @@ export function memoryGetRoom(roomId) {
 }
 
 
-export function memoryJoin(roomId, body) {
+export async function memoryJoin(roomId, body, env = {}) {
   const key = String(roomId || '').toUpperCase();
   const room = purgeIfExpired(key);
   if (!room) return { ok: false, error: 'not-found' };
   const result = joinRoom(room, body);
   if (!result.ok) return result;
-  rooms.set(key, result.room);
-  const joinedView = publicRoomView(result.room);
+  let nextRoom = result.room;
+  let miltySecret = null;
+  if (isMiltyDrafting(nextRoom) && result.seatPlayerId != null) {
+    const bound = await bindMiltySeat(env, nextRoom, result.seatPlayerId);
+    nextRoom = bound.room;
+    miltySecret = bound.miltySecret;
+  }
+  rooms.set(key, nextRoom);
+  const joinedView = publicRoomView(nextRoom);
   notify(key, {
     type: 'seats',
     claimedSeats: joinedView.claimedSeats,
@@ -84,10 +116,113 @@ export function memoryJoin(roomId, body) {
     seatPlayerId: result.seatPlayerId,
     revokedSessionToken: result.revokedSessionToken || null,
   });
-  return result;
+  return { ...result, room: nextRoom, miltySecret };
 }
 
-export function memoryReleaseSeat(roomId, body) {
+export async function memoryMiltyPromote(roomId, { hostKey } = {}, env = {}) {
+  const key = String(roomId || '').toUpperCase();
+  const room = purgeIfExpired(key);
+  if (!room) return { ok: false, error: 'not-found' };
+  if (!hostKey || hostKey !== room.hostKey) return { ok: false, error: 'unauthorized' };
+  if (!room.milty?.draftId) return { ok: false, error: 'no-milty' };
+  const draftRes = await getMiltyInEnv(env, room.milty.draftId, {
+    adminSecret: room.milty.adminSecret,
+  });
+  if (!draftRes.ok) return { ok: false, error: draftRes.error || 'draft-missing' };
+  if (!draftRes.draft?.done) return { ok: false, error: 'draft-not-done' };
+  const applied = applyMiltyResultToRoom(room, draftRes.draft);
+  if (!applied.ok) return applied;
+  rooms.set(key, applied.room);
+  notify(key, {
+    type: 'state',
+    seq: applied.room.seq,
+    state: applied.room.state,
+    milty: publicRoomView(applied.room).milty,
+    phase: 'setup',
+  });
+  return { ok: true, room: applied.room };
+}
+
+export async function memoryMiltyPick(roomId, body = {}, env = {}) {
+  const key = String(roomId || '').toUpperCase();
+  let room = purgeIfExpired(key);
+  if (!room) return { ok: false, error: 'not-found' };
+  if (!isMiltyDrafting(room)) return { ok: false, error: 'no-milty' };
+  const session = body.sessionToken ? room.sessions?.[body.sessionToken] : null;
+  const isHost = body.hostKey && body.hostKey === room.hostKey;
+  if (!isHost && (!session || session.role === ROLES.VIEWER)) {
+    return { ok: false, error: 'unauthorized' };
+  }
+  const playerId = body.playerId != null
+    ? body.playerId
+    : (isHost ? null : session.seatPlayerId);
+  if (playerId == null) return { ok: false, error: 'missing-player' };
+  if (!isHost && String(session.seatPlayerId) !== String(playerId)) {
+    return { ok: false, error: 'not-your-seat' };
+  }
+
+  let miltySecret = room.milty?.seatSecrets?.[String(playerId)] || null;
+  if (!miltySecret && !isHost) {
+    const bound = await bindMiltySeat(env, room, playerId);
+    room = bound.room;
+    miltySecret = bound.miltySecret;
+    rooms.set(key, room);
+    if (!miltySecret) return { ok: false, error: bound.error || 'milty-bind-failed' };
+  }
+
+  const before = await getMiltyInEnv(env, room.milty.draftId);
+  const prevId = before.ok ? before.draft?.currentPlayerId : null;
+  const picked = await pickMiltyInEnv(env, room.milty.draftId, {
+    playerId: String(playerId),
+    category: body.category,
+    value: body.value,
+    secret: miltySecret,
+    adminSecret: isHost ? room.milty.adminSecret : undefined,
+    logIndex: body.logIndex,
+  });
+  if (!picked?.ok) return { ok: false, error: picked?.error || 'pick-failed' };
+  let nextRoom = await notifyMiltyTurn(
+    env,
+    room,
+    prevId,
+    picked.draft?.currentPlayerId,
+    { done: !!picked.draft?.done },
+  );
+  rooms.set(key, nextRoom);
+  notify(key, { type: 'milty', draft: picked.draft, milty: publicRoomView(nextRoom).milty });
+  return { ok: true, draft: picked.draft, room: nextRoom };
+}
+
+export async function memoryMiltyUndo(roomId, { hostKey } = {}, env = {}) {
+  const key = String(roomId || '').toUpperCase();
+  const room = purgeIfExpired(key);
+  if (!room) return { ok: false, error: 'not-found' };
+  if (!hostKey || hostKey !== room.hostKey) return { ok: false, error: 'unauthorized' };
+  if (!room.milty?.draftId) return { ok: false, error: 'no-milty' };
+  const undone = await undoMiltyInEnv(env, room.milty.draftId, {
+    adminSecret: room.milty.adminSecret,
+  });
+  if (!undone?.ok) return { ok: false, error: undone?.error || 'undo-failed' };
+  notify(key, { type: 'milty', draft: undone.draft, milty: publicRoomView(room).milty });
+  return { ok: true, draft: undone.draft, room };
+}
+
+export async function memoryMiltyRegen(roomId, { hostKey, part } = {}, env = {}) {
+  const key = String(roomId || '').toUpperCase();
+  const room = purgeIfExpired(key);
+  if (!room) return { ok: false, error: 'not-found' };
+  if (!hostKey || hostKey !== room.hostKey) return { ok: false, error: 'unauthorized' };
+  if (!room.milty?.draftId) return { ok: false, error: 'no-milty' };
+  const regen = await regenMiltyInEnv(env, room.milty.draftId, {
+    part,
+    adminSecret: room.milty.adminSecret,
+  });
+  if (!regen?.ok) return { ok: false, error: regen?.error || 'regen-failed' };
+  notify(key, { type: 'milty', draft: regen.draft, milty: publicRoomView(room).milty });
+  return { ok: true, draft: regen.draft, room };
+}
+
+export async function memoryReleaseSeat(roomId, body, env = {}) {
   const key = String(roomId || '').toUpperCase();
   const room = purgeIfExpired(key);
   if (!room) return { ok: false, error: 'not-found' };
@@ -96,8 +231,13 @@ export function memoryReleaseSeat(roomId, body) {
     hostKey: body?.hostKey,
   });
   if (!result.ok) return result;
-  rooms.set(key, result.room);
-  const releasedView = publicRoomView(result.room);
+  let nextRoom = result.room;
+  if (isMiltyDrafting(nextRoom)) {
+    const unbound = await unbindMiltySeat(env, nextRoom, result.seatPlayerId);
+    nextRoom = unbound.room;
+  }
+  rooms.set(key, nextRoom);
+  const releasedView = publicRoomView(nextRoom);
   notify(key, {
     type: 'seats',
     claimedSeats: releasedView.claimedSeats,
@@ -107,7 +247,52 @@ export function memoryReleaseSeat(roomId, body) {
     revokedSessionToken: result.revokedSessionToken || null,
     released: true,
   });
-  return result;
+  if (isMiltyDrafting(nextRoom)) {
+    const snap = await getMiltyInEnv(env, nextRoom.milty.draftId);
+    if (snap?.ok) notify(key, { type: 'milty', draft: snap.draft, milty: releasedView.milty });
+  }
+  return { ...result, room: nextRoom };
+}
+
+export async function memoryHostClaimSeat(roomId, body = {}, env = {}) {
+  const key = String(roomId || '').toUpperCase();
+  const room = purgeIfExpired(key);
+  if (!room) return { ok: false, error: 'not-found' };
+  const result = hostClaimSeat(room, body?.seatPlayerId, {
+    sessionToken: body?.sessionToken,
+    hostKey: body?.hostKey,
+  });
+  if (!result.ok) return result;
+  let nextRoom = result.room;
+  let miltySecret = null;
+  if (isMiltyDrafting(nextRoom) && result.seatPlayerId != null) {
+    const bound = await bindMiltySeat(env, nextRoom, result.seatPlayerId);
+    nextRoom = bound.room;
+    miltySecret = bound.miltySecret;
+    if (!miltySecret && bound.error) {
+      return { ok: false, error: bound.error };
+    }
+  }
+  rooms.set(key, nextRoom);
+  const view = publicRoomView(nextRoom);
+  notify(key, {
+    type: 'seats',
+    claimedSeats: view.claimedSeats,
+    securedSeats: view.securedSeats,
+    seatPlayerId: result.seatPlayerId,
+  });
+  if (isMiltyDrafting(nextRoom)) {
+    const snap = await getMiltyInEnv(env, nextRoom.milty.draftId);
+    if (snap?.ok) notify(key, { type: 'milty', draft: snap.draft, milty: view.milty });
+  }
+  return {
+    ok: true,
+    room: nextRoom,
+    seatPlayerId: result.seatPlayerId,
+    seatSecret: result.seatSecret,
+    miltySecret,
+    role: result.role,
+  };
 }
 
 export function memoryApplyAction(roomId, action, auth, env = {}) {

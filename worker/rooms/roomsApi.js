@@ -4,12 +4,22 @@ import {
   memoryGetRoom,
   memoryJoin,
   memoryListHubCards,
+  memoryMiltyPick,
+  memoryMiltyPromote,
+  memoryMiltyRegen,
+  memoryMiltyUndo,
   memoryPushSubscribe,
   memoryPushUnsubscribe,
   memoryReleaseSeat,
+  memoryHostClaimSeat,
   memoryPublicView,
   memorySubscribe,
 } from './memoryRooms.js';
+import {
+  buildMiltyLobbyState,
+  createMiltyInEnv,
+  linkedMiltySettings,
+} from './miltyAttach.js';
 import { makeRoomId, publicRoomView, adminSessionFromRoom } from './roomCore.js';
 import { assertRoomCreateAllowed } from './roomCreateAuth.js';
 import { directoryList, hasRoomDirectory } from './roomIndex.js';
@@ -73,29 +83,51 @@ export async function handleRoomsApi(request, env) {
     const gate = assertRoomCreateAllowed(env, body?.createSecret);
     if (!gate.ok) return json({ error: gate.error }, gate.status);
 
+    let createState = body?.state ?? null;
+    let miltyAttach = null;
+    let miltyAdminSecret = undefined;
+
+    if (body?.milty) {
+      const linked = linkedMiltySettings(body.milty);
+      const milty = await createMiltyInEnv(env, linked.settings);
+      if (!milty?.ok) {
+        return json({ error: milty?.error || 'milty-create-failed' }, 500);
+      }
+      createState = buildMiltyLobbyState(linked.names, {
+        usePok: linked.usePok,
+        useTe: linked.useTe,
+      });
+      miltyAttach = { draftId: milty.id, adminSecret: milty.adminSecret };
+      miltyAdminSecret = milty.adminSecret;
+    }
+
     if (hasDurableRooms(env)) {
       const roomId = makeRoomId();
       const stub = await stubFor(env, roomId);
       const res = await stub.fetch(new Request(`https://room/create?roomId=${roomId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ state: body?.state ?? null }),
+        body: JSON.stringify({ state: createState, milty: miltyAttach }),
       }));
       const data = await res.json();
+      if (miltyAdminSecret && !data.miltyAdminSecret) {
+        data.miltyAdminSecret = miltyAdminSecret;
+      }
       return json(data, res.status);
     }
 
-    const room = memoryCreateRoom(body?.state ?? null);
+    const room = memoryCreateRoom(createState, { milty: miltyAttach });
     return json({
       ...publicRoomView(room),
       hostKey: room.hostKey,
       sessionToken: adminSessionFromRoom(room),
       role: 'admin',
+      miltyAdminSecret,
     }, 201);
   }
 
   const roomMatch = pathname.match(
-    /^\/api\/rooms\/([^/]+)(?:\/(snapshot|actions|events|join|release-seat|push\/subscribe|push\/unsubscribe))?$/,
+    /^\/api\/rooms\/([^/]+)(?:\/(snapshot|actions|events|join|release-seat|claim-seat|push\/subscribe|push\/unsubscribe|milty\/promote|milty\/pick|milty\/undo|milty\/regen))?$/,
   );
   if (!roomMatch) return null;
 
@@ -141,6 +173,19 @@ export async function handleRoomsApi(request, env) {
       });
     }
 
+    if (method === 'POST' && sub === 'claim-seat') {
+      const body = await readJsonBody(request);
+      const res = await stub.fetch(new Request('https://room/claim-seat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body || {}),
+      }));
+      return new Response(await res.text(), {
+        status: res.status,
+        headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' },
+      });
+    }
+
     if (method === 'POST' && sub === 'actions') {
       const body = await readJsonBody(request);
       const res = await stub.fetch(new Request('https://room/actions', {
@@ -155,6 +200,19 @@ export async function handleRoomsApi(request, env) {
     }
 
     if (method === 'POST' && (sub === 'push/subscribe' || sub === 'push/unsubscribe')) {
+      const body = await readJsonBody(request);
+      const res = await stub.fetch(new Request(`https://room/${sub}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body || {}),
+      }));
+      return new Response(await res.text(), {
+        status: res.status,
+        headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' },
+      });
+    }
+
+    if (method === 'POST' && (sub === 'milty/promote' || sub === 'milty/pick' || sub === 'milty/undo' || sub === 'milty/regen')) {
       const body = await readJsonBody(request);
       const res = await stub.fetch(new Request(`https://room/${sub}`, {
         method: 'POST',
@@ -188,7 +246,7 @@ export async function handleRoomsApi(request, env) {
 
   if (method === 'POST' && sub === 'join') {
     const body = await readJsonBody(request);
-    const result = memoryJoin(roomId, body || {});
+    const result = await memoryJoin(roomId, body || {}, env);
     if (!result.ok) {
       const status = result.error === 'not-found' ? 404
         : (result.error === 'seat-taken'
@@ -203,13 +261,74 @@ export async function handleRoomsApi(request, env) {
       role: result.role,
       seatPlayerId: result.seatPlayerId,
       seatSecret: result.seatSecret,
+      miltySecret: result.miltySecret || null,
       reclaimed: !!result.reclaimed,
+    });
+  }
+
+  if (method === 'POST' && sub === 'milty/promote') {
+    const body = await readJsonBody(request);
+    const result = await memoryMiltyPromote(roomId, body || {}, env);
+    if (!result.ok) {
+      const status = result.error === 'not-found' ? 404
+        : result.error === 'unauthorized' ? 403
+          : 400;
+      return json({ error: result.error }, status);
+    }
+    return json(publicRoomView(result.room));
+  }
+
+  if (method === 'POST' && sub === 'milty/pick') {
+    const body = await readJsonBody(request);
+    const result = await memoryMiltyPick(roomId, body || {}, env);
+    if (!result.ok) {
+      const status = result.error === 'not-found' ? 404
+        : result.error === 'unauthorized' ? 403
+          : 400;
+      return json({ error: result.error }, status);
+    }
+    return json({
+      ok: true,
+      draft: result.draft,
+      room: publicRoomView(result.room),
+    });
+  }
+
+  if (method === 'POST' && sub === 'milty/regen') {
+    const body = await readJsonBody(request);
+    const result = await memoryMiltyRegen(roomId, body || {}, env);
+    if (!result.ok) {
+      const status = result.error === 'not-found' ? 404
+        : result.error === 'unauthorized' ? 403
+          : 400;
+      return json({ error: result.error }, status);
+    }
+    return json({
+      ok: true,
+      draft: result.draft,
+      room: publicRoomView(result.room),
+    });
+  }
+
+  if (method === 'POST' && sub === 'milty/undo') {
+    const body = await readJsonBody(request);
+    const result = await memoryMiltyUndo(roomId, body || {}, env);
+    if (!result.ok) {
+      const status = result.error === 'not-found' ? 404
+        : result.error === 'unauthorized' ? 403
+          : 400;
+      return json({ error: result.error }, status);
+    }
+    return json({
+      ok: true,
+      draft: result.draft,
+      room: publicRoomView(result.room),
     });
   }
 
   if (method === 'POST' && sub === 'release-seat') {
     const body = await readJsonBody(request);
-    const result = memoryReleaseSeat(roomId, body || {});
+    const result = await memoryReleaseSeat(roomId, body || {}, env);
     if (!result.ok) {
       const status = result.error === 'not-found' ? 404
         : (result.error === 'unauthorized' || result.error === 'forbidden') ? 403
@@ -219,6 +338,25 @@ export async function handleRoomsApi(request, env) {
     return json({
       ...publicRoomView(result.room),
       seatPlayerId: result.seatPlayerId,
+    });
+  }
+
+  if (method === 'POST' && sub === 'claim-seat') {
+    const body = await readJsonBody(request);
+    const result = await memoryHostClaimSeat(roomId, body || {}, env);
+    if (!result.ok) {
+      const status = result.error === 'not-found' ? 404
+        : result.error === 'unauthorized' ? 403
+          : result.error === 'seat-taken' ? 409
+            : 400;
+      return json({ error: result.error }, status);
+    }
+    return json({
+      ...publicRoomView(result.room),
+      seatPlayerId: result.seatPlayerId,
+      seatSecret: result.seatSecret,
+      miltySecret: result.miltySecret || null,
+      role: result.role,
     });
   }
 

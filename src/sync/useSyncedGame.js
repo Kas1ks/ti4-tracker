@@ -13,7 +13,9 @@ import {
   fetchRoomSnapshot,
   joinRoom,
   postRoomAction,
+  promoteMiltyRoom,
   releaseSeat as releaseSeatApi,
+  claimHostSeat as claimHostSeatApi,
   subscribeRoom,
 } from './roomApi';
 import { loadSeatSecret, saveSeatSecret, clearSeatSecret } from './seatSecrets';
@@ -114,6 +116,8 @@ export function useSyncedGame() {
       seq: typeof seq === 'number' ? seq : prev.seq,
       claimedSeats: extras.claimedSeats ?? prev.claimedSeats,
       securedSeats: extras.securedSeats ?? prev.securedSeats,
+      milty: extras.milty !== undefined ? extras.milty : prev.milty,
+      phase: extras.phase !== undefined ? extras.phase : prev.phase,
     } : prev));
     return true;
   }, []);
@@ -189,6 +193,10 @@ export function useSyncedGame() {
           seatSecret: loadSeatSecret(saved.roomId, saved.seatPlayerId),
           seq: seqRef.current,
           claimedSeats: snap.claimedSeats || [],
+          milty: snap.milty || null,
+          phase: snap.phase || (snap.milty?.status === 'drafting' ? 'milty' : 'setup'),
+          miltySecret: saved.miltySecret || null,
+          miltyAdminSecret: saved.miltyAdminSecret || null,
         };
         roomRef.current = next;
         setRoom(next);
@@ -293,7 +301,18 @@ export function useSyncedGame() {
           claimedSeats: msg.claimedSeats,
           securedSeats: msg.securedSeats,
           canUndo: typeof msg.canUndo === 'boolean' ? msg.canUndo : undefined,
+          milty: msg.milty,
+          phase: msg.phase,
         });
+        return;
+      }
+
+      if (msg.type === 'milty') {
+        setRoom((prev) => (prev ? {
+          ...prev,
+          milty: msg.milty ?? prev.milty,
+          phase: msg.milty?.status === 'drafting' ? 'milty' : (msg.phase || prev.phase),
+        } : prev));
       }
       },
       (status) => {
@@ -527,16 +546,19 @@ export function useSyncedGame() {
       });
   }, [applyAuthoritativeState, clearSoloUndo]);
 
-  const startHostRoom = useCallback(async (createSecret) => {
+  const startHostRoom = useCallback(async (createSecret, { milty } = {}) => {
     const gen = sessionGenRef.current;
     setRoomStatus('connecting');
     setRoomError(null);
     try {
-      const created = await createRoom(game, { createSecret });
+      const created = await createRoom(milty ? null : game, { createSecret, milty });
       if (sessionGenRef.current !== gen) return created;
       seqRef.current = created.seq || 0;
       clearSoloUndo();
       setCanUndo(typeof created.canUndo === 'boolean' ? created.canUndo : false);
+      if (created.state) {
+        setGame({ type: '__REPLACE__', state: created.state });
+      }
       const next = {
         roomId: created.roomId,
         hostKey: created.hostKey,
@@ -545,6 +567,10 @@ export function useSyncedGame() {
         role: ROLES.ADMIN,
         seatPlayerId: null,
         claimedSeats: created.claimedSeats || [],
+        milty: created.milty || null,
+        phase: created.phase || (created.milty?.status === 'drafting' ? 'milty' : 'setup'),
+        miltyAdminSecret: created.miltyAdminSecret || null,
+        miltySecret: null,
       };
       roomRef.current = next;
       setRoom(next);
@@ -559,6 +585,23 @@ export function useSyncedGame() {
       throw err;
     }
   }, [game, clearSoloUndo]);
+
+  const promoteMiltyToSetup = useCallback(async () => {
+    const current = roomRef.current;
+    if (!current?.roomId || !current.hostKey) throw new Error('no-room');
+    const view = await promoteMiltyRoom(current.roomId, { hostKey: current.hostKey });
+    if (view?.state) {
+      setGame({ type: '__REPLACE__', state: view.state });
+    }
+    setRoom((prev) => (prev ? {
+      ...prev,
+      seq: view.seq ?? prev.seq,
+      milty: view.milty ?? prev.milty,
+      phase: view.phase || 'setup',
+      claimedSeats: view.claimedSeats ?? prev.claimedSeats,
+    } : prev));
+    return view;
+  }, []);
 
   const joinRoomById = useCallback(async (roomId, { role, seatPlayerId, seatSecret } = {}) => {
     const id = String(roomId || '').trim().toUpperCase();
@@ -590,6 +633,10 @@ export function useSyncedGame() {
         seatPlayerId: joined.seatPlayerId ?? null,
         seatSecret: joined.seatSecret || null,
         claimedSeats: joined.claimedSeats || [],
+        milty: joined.milty || null,
+        phase: joined.phase || (joined.milty?.status === 'drafting' ? 'milty' : 'setup'),
+        miltySecret: joined.miltySecret || null,
+        miltyAdminSecret: null,
       };
       roomRef.current = next;
       setRoom(next);
@@ -620,6 +667,31 @@ export function useSyncedGame() {
     setRoom(prev => (prev ? {
       ...prev,
       claimedSeats: result.claimedSeats ?? prev.claimedSeats,
+      seatPlayerId: String(prev.seatPlayerId) === String(seatPlayerId) ? null : prev.seatPlayerId,
+      seatSecret: String(prev.seatPlayerId) === String(seatPlayerId) ? null : prev.seatSecret,
+      miltySecret: String(prev.seatPlayerId) === String(seatPlayerId) ? null : prev.miltySecret,
+    } : prev));
+    return result;
+  }, []);
+
+  const claimHostSeatById = useCallback(async (seatPlayerId) => {
+    const current = roomRef.current;
+    if (!current?.roomId || !current.hostKey) throw new Error('no-host');
+    const result = await claimHostSeatApi(current.roomId, {
+      seatPlayerId,
+      sessionToken: current.sessionToken,
+      hostKey: current.hostKey,
+    });
+    if (result.seatSecret && result.seatPlayerId != null) {
+      saveSeatSecret(current.roomId, result.seatPlayerId, result.seatSecret);
+    }
+    setRoom(prev => (prev ? {
+      ...prev,
+      claimedSeats: result.claimedSeats ?? prev.claimedSeats,
+      seatPlayerId: result.seatPlayerId ?? null,
+      seatSecret: result.seatSecret || prev.seatSecret,
+      miltySecret: result.miltySecret || prev.miltySecret,
+      role: ROLES.ADMIN,
     } : prev));
     return result;
   }, []);
@@ -700,8 +772,10 @@ export function useSyncedGame() {
     perms,
     canUndo,
     startHostRoom,
+    promoteMiltyToSetup,
     joinRoomById,
     releaseSeatById,
+    claimHostSeatById,
     leaveRoom,
     resetLocalGame,
   };

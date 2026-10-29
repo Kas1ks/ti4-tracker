@@ -9,6 +9,7 @@ import {
   withCloudBinLock,
 } from './jsonbin.js';
 import { handleRoomsApi } from './rooms/roomsApi.js';
+import { handleMiltyApi } from './milty/miltyApi.js';
 import { assertRoomCreateAllowed, resolveRoomCreateSecret } from './rooms/roomCreateAuth.js';
 import { readVapidConfig } from './push/sendPush.js';
 import { clientKey, consumeRateLimit } from './secureCompare.js';
@@ -114,6 +115,16 @@ export async function handleApi(request, env) {
     } catch (err) {
       console.error('[rooms]', err);
       return json({ error: 'room-error', message: String(err?.message || err) }, 500);
+    }
+  }
+
+  if (pathname === '/api/milty' || pathname.startsWith('/api/milty/')) {
+    try {
+      const miltyResponse = await handleMiltyApi(request, env);
+      if (miltyResponse) return miltyResponse;
+    } catch (err) {
+      console.error('[milty]', err);
+      return json({ error: 'milty-error', message: String(err?.message || err) }, 500);
     }
   }
 
