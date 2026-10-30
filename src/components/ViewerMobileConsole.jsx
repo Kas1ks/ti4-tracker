@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { ALL_FACTIONS, STRATEGY_CARDS } from '../data/gameData';
 import { formatTime } from '../utils/game';
+import { lawsOwnedByPlayer } from '../game/agendaDeck';
 import { areAllStrategiesPlayed, isStrategyCardPlayed } from '../game/selectors';
 import { PhaseHubChips } from './PhaseHubChips';
 import { PlayerTechSheet, TechPips } from './TechSheet';
@@ -49,6 +50,7 @@ export function ViewerMobileConsole({
   resolvingCardId = null,
   usePok = false,
   useTe = false,
+  activeLaws = [],
   phaseHub = [],
 }) {
   const [tab, setTab] = useState('turn');
@@ -118,6 +120,7 @@ export function ViewerMobileConsole({
             getPlayerScore={getPlayerScore}
             targetScore={targetScore}
             speakerId={speakerId}
+            activeLaws={activeLaws}
             onOpenPlayerTech={setTechSheetPlayerId}
           />
         </div>
@@ -153,6 +156,7 @@ export function ViewerMobileConsole({
           player={players.find(p => p.id === techSheetPlayerId) || null}
           usePok={usePok}
           useTe={useTe}
+          activeLaws={activeLaws}
           onClose={() => setTechSheetPlayerId(null)}
         />
       )}
@@ -470,6 +474,7 @@ function ViewerTableTab({
   getPlayerScore,
   targetScore,
   speakerId,
+  activeLaws = [],
   onOpenPlayerTech,
 }) {
   const list = players
@@ -499,6 +504,7 @@ function ViewerTableTab({
           const isCurrent = activePlayer?.id === p.id && !passed[p.id];
           const hasPassed = !!passed[p.id];
           const cardsPlayed = areAllStrategiesPlayed(p);
+          const playerLaws = lawsOwnedByPlayer(activeLaws, p.id);
           const status = hasPassed
             ? 'Пас'
             : isCurrent
@@ -531,6 +537,18 @@ function ViewerTableTab({
                 <div className="tbl-name-row">
                   <span className="tbl-name">{p.name}</span>
                   {p.id === speakerId && <span className="tbl-chip is-speaker">спикер</span>}
+                  {playerLaws.length > 0 && (
+                    <span
+                      className={`tbl-chip is-law is-icon${playerLaws.length > 1 ? ' is-multi' : ''}`}
+                      title={playerLaws.map((l) => l.title).filter(Boolean).join(', ') || 'Закон'}
+                      aria-label={playerLaws.length > 1 ? `Законы: ${playerLaws.length}` : 'Закон'}
+                    >
+                      <i className="fa-solid fa-scroll" aria-hidden="true" />
+                      {playerLaws.length > 1 && (
+                        <span className="tbl-chip-count">{playerLaws.length}</span>
+                      )}
+                    </span>
+                  )}
                 </div>
                 <div className="tbl-sub">
                   <span className={`tbl-status ${isCurrent ? 'is-live' : ''} ${hasPassed ? 'is-out' : ''}`}>

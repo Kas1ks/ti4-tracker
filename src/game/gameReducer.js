@@ -55,6 +55,7 @@ import { reduceDraftPhase } from './reducers/draftPhase';
 import { reduceDevTools } from './reducers/devTools';
 import { reducePoliticsPhase } from './reducers/politicsPhase';
 import { reduceStatusPhase } from './reducers/statusPhase';
+import { buildShuffledAgendaDeck } from './agendaDeck';
 
 /** Naalu always goes last-to-act first, then lowest strategy card, then seat order. */
 function sortedForTurnOrder(players) {
@@ -910,7 +911,28 @@ function strategyResolutionOf(state) {
   return state.round?.strategyResolution || EMPTY_STRATEGY_RESOLUTION;
 }
 
-function startStrategyResolution(state, cardId, at = Date.now()) {
+/** Ensure a shuffled agenda deck exists for Politics primary (peek). */
+function ensurePoliticsAgendaDeck(state) {
+  const deck = state.politics?.agendaDeck;
+  if (Array.isArray(deck) && deck.length > 0) return state;
+  const discard = new Set((state.politics?.agendaDiscard || []).map(String));
+  const inPlay = new Set((state.politics?.activeLaws || []).map((l) => String(l.id)));
+  const inAgendas = new Set(
+    (state.politics?.agendas || [])
+      .flatMap((a) => [a?.cardId, a?.hidden?.cardId, a?.revote?.id])
+      .filter(Boolean)
+      .map(String),
+  );
+  const built = buildShuffledAgendaDeck(!!state.meta?.usePok).filter(
+    (id) => !discard.has(String(id)) && !inPlay.has(String(id)) && !inAgendas.has(String(id)),
+  );
+  return withPolitics(state, {
+    agendaDeck: built,
+    agendaDiscard: Array.isArray(state.politics?.agendaDiscard) ? state.politics.agendaDiscard : [],
+  });
+}
+
+function startStrategyResolution(state, cardId, at = Date.now(), { peekFirst = false } = {}) {
   const player = activePlayer(state);
   if (!player?.cards?.length) return state;
   if (state.round.strategyActionTaken) return state;
@@ -933,13 +955,44 @@ function startStrategyResolution(state, cardId, at = Date.now()) {
   if (resolvedCardId == null || already.has(resolvedCardId)) return state;
   if (!player.cards.some(c => c.id === resolvedCardId)) return state;
 
+  // Pause the active-player turn clock; resolution time is billed per seat instead.
+  const pausedAccum = liveTurnElapsed(state, at);
+
+  if (peekFirst && resolvedCardId === 3) {
+    let next = ensurePoliticsAgendaDeck(state);
+    const deck = [...(next.politics.agendaDeck || [])];
+    const peekCards = deck.slice(0, 2);
+    if (peekCards.length === 0) {
+      return startStrategyResolution(state, 3, at, { peekFirst: false });
+    }
+    const rest = deck.slice(peekCards.length);
+    next = withPolitics(next, { agendaDeck: rest });
+    // Secondaries may answer played/pass while primary peeks the agenda deck.
+    const responses = {};
+    activePlayers(next).forEach((p) => {
+      responses[p.id] = p.id === player.id ? 'peeking' : 'pending';
+    });
+    return withRound(next, {
+      turnStartedAt: null,
+      turnPausedAccum: pausedAccum,
+      strategyActionTaken: true,
+      strategyResolution: {
+        active: true,
+        cardId: 3,
+        playerId: player.id,
+        startedAt: at,
+        responses,
+        resolvedAt: {},
+        phase: 'peek',
+        peekCards,
+      },
+    });
+  }
+
   const responses = {};
   activePlayers(state).forEach(p => {
     responses[p.id] = 'pending';
   });
-
-  // Pause the active-player turn clock; resolution time is billed per seat instead.
-  const pausedAccum = liveTurnElapsed(state, at);
 
   return withRound(state, {
     turnStartedAt: null,
@@ -952,6 +1005,59 @@ function startStrategyResolution(state, cardId, at = Date.now()) {
       startedAt: at,
       responses,
       resolvedAt: {},
+      phase: 'resolve',
+      peekCards: [],
+    },
+  });
+}
+
+/**
+ * Politics primary: put peeked agendas on top/bottom (in listed order).
+ * placements: [{ cardId, dest: 'top'|'bottom' }, ...] — applied sequentially.
+ */
+function commitPoliticsPeek(state, placements) {
+  const resolution = strategyResolutionOf(state);
+  if (!resolution.active || resolution.cardId !== 3 || resolution.phase !== 'peek') return state;
+  const peek = Array.isArray(resolution.peekCards) ? resolution.peekCards.map(String) : [];
+  if (!peek.length) {
+    // Nothing to place — open normal resolution.
+  } else {
+    const list = Array.isArray(placements) ? placements : [];
+    if (list.length !== peek.length) return state;
+    const seen = new Set();
+    for (const row of list) {
+      const id = String(row?.cardId || '');
+      const dest = row?.dest === 'bottom' ? 'bottom' : 'top';
+      if (!id || !peek.includes(id) || seen.has(id)) return state;
+      if (dest !== 'top' && dest !== 'bottom') return state;
+      seen.add(id);
+    }
+    if (seen.size !== peek.length) return state;
+
+    let deck = [...(state.politics?.agendaDeck || [])];
+    for (const row of list) {
+      const id = String(row.cardId);
+      if (row.dest === 'bottom') deck = [...deck, id];
+      else deck = [id, ...deck];
+    }
+    state = withPolitics(state, { agendaDeck: deck });
+  }
+
+  // Keep secondary answers already made during peek; unlock primary to played/pass.
+  const responses = { ...(resolution.responses || {}) };
+  activePlayers(state).forEach((p) => {
+    if (p.id === resolution.playerId || responses[p.id] === 'peeking' || responses[p.id] == null) {
+      responses[p.id] = 'pending';
+    }
+  });
+
+  return withRound(state, {
+    strategyResolution: {
+      ...resolution,
+      phase: 'resolve',
+      peekCards: [],
+      responses,
+      resolvedAt: { ...(resolution.resolvedAt || {}) },
     },
   });
 }
@@ -1011,6 +1117,10 @@ function beginStrategyPlay(state, cardId, at = Date.now()) {
     });
   }
 
+  if (resolvedCardId === 3) {
+    return startStrategyResolution(state, 3, at, { peekFirst: true });
+  }
+
   return startStrategyResolution(state, resolvedCardId, at);
 }
 
@@ -1060,7 +1170,11 @@ function resolveStrategyResponse(state, playerId, choice, at = Date.now()) {
   if (choice !== 'played' && choice !== 'passed') return state;
 
   const current = resolution.responses?.[playerId];
-  if (current == null || current !== 'pending') return state;
+  // Primary cannot answer while still peeking the agenda deck.
+  if (current === 'peeking' || current == null || current !== 'pending') return state;
+  if (resolution.phase === 'peek' && String(playerId) === String(resolution.playerId)) {
+    return state;
+  }
 
   // Sequential (legacy) tech sessions block the shared poll; concurrent card-7 does not.
   const tech = techResearchOf(state);
@@ -1079,7 +1193,9 @@ function resolveStrategyResponse(state, playerId, choice, at = Date.now()) {
     strategyResolution: { ...resolution, responses, resolvedAt },
   });
 
-  const allDone = Object.values(responses).every(s => s === 'played' || s === 'passed');
+  // Never finish Politics while the agenda peek is still open.
+  const allDone = resolution.phase !== 'peek'
+    && Object.values(responses).every(s => s === 'played' || s === 'passed');
   if (allDone) next = commitStrategyPlay(next, at);
   return next;
 }
@@ -1092,9 +1208,18 @@ function discardObjectiveAndRevealNext(state, objectiveId) {
   const stage = Number(removed.stage) === 2 ? 2 : 1;
   const deckKey = stage === 2 ? 'stage2Deck' : 'stage1Deck';
   const active = state.objectives.active.filter(o => o.id !== objectiveId);
-  const deck = state.objectives[deckKey].filter(o => o.id !== objectiveId);
+  const deck = (state.objectives[deckKey] || []).filter(o => o.id !== objectiveId);
 
-  const next = deck.find(o => !active.some(a => a.id === o.id));
+  // Host "extra" (6th+) slots must not pull another official card into cadence.
+  const officialLeft = active.filter((o) => {
+    if (o?.extra) return false;
+    const isII = Number(o.stage) === 2;
+    return stage === 2 ? isII : !isII;
+  }).length;
+  const shouldReplace = !removed.extra && officialLeft < 5;
+  const next = shouldReplace
+    ? deck.find(o => !active.some(a => a.id === o.id))
+    : null;
   const newActive = next ? [...active, next] : active;
 
   const completions = { ...state.objectives.completions };
@@ -1731,6 +1856,9 @@ export function gameReducer(state, action) {
 
     case 'RESOLVE_STRATEGY':
       return resolveStrategyResponse(state, action.playerId, action.choice, actionAt(action));
+
+    case 'COMMIT_POLITICS_PEEK':
+      return commitPoliticsPeek(state, action.placements);
 
     case 'TICK': {
       // Legacy solo tick: display-only turnTime. totalTime is banked on turn change.

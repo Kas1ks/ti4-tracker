@@ -11,6 +11,14 @@ import {
   isArgentFlightPlayer,
   isXxchaPlayer,
 } from '../game/selectors';
+import { agendaEffectText } from '../data/agendas';
+import {
+  agendaNeedsSpeakerBreak,
+  covertOutcomeLabel,
+  electTargetLabel,
+  isAgendaFaceUp,
+  voteTypeForLaw,
+} from '../game/agendaDeck';
 
 function pluralVotes(n) {
   const abs = Math.abs(n) % 100;
@@ -514,6 +522,11 @@ export function PoliticsModal({
   onToggleOneVoteLaw,
   onSetSpeaker: _onSetSpeaker,
   onNextAgenda,
+  onSkipAgenda,
+  onRevealAgenda,
+  onSelectMiscountLaw,
+  onSpeakerAgendaDecision,
+  activeLaws = [],
   onFinish,
   voteOrder = [],
   currentVoterId = null,
@@ -539,6 +552,7 @@ export function PoliticsModal({
   const EXIT_MS = 320;
   const [entered, setEntered] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const [unveilAnim, setUnveilAnim] = useState(false);
 
   useEscapeKey(onClose, wantOpen);
   useBodyScrollLock(wantOpen);
@@ -562,6 +576,26 @@ export function PoliticsModal({
     return () => window.clearTimeout(timer);
   }, [wantOpen, show, openForClient]);
 
+  const liveAgenda = agendas?.[currentAgendaIndex];
+  const liveFaceKey = liveAgenda?.cardId && liveAgenda?.revealed
+    ? `${currentAgendaIndex}:${liveAgenda.cardId}:face`
+    : null;
+  const liveCovertKey = liveAgenda?.hiddenRevealed
+    ? `${currentAgendaIndex}:${liveAgenda.hidden?.cardId || ''}:covert`
+    : null;
+
+  // Smooth unveil when speaker opens the law (or Covert nested card).
+  useEffect(() => {
+    const key = liveCovertKey || liveFaceKey;
+    if (!key) {
+      setUnveilAnim(false);
+      return undefined;
+    }
+    setUnveilAnim(true);
+    const t = window.setTimeout(() => setUnveilAnim(false), 1100);
+    return () => window.clearTimeout(t);
+  }, [liveFaceKey, liveCovertKey]);
+
   if (!show || !openForClient || !mounted) return null;
 
   // Solo / admin can edit any; player only own seat.
@@ -577,8 +611,74 @@ export function PoliticsModal({
   const setAgendaVotes = onSetVote;
   const lockVote = onLockVote;
   const handleNextAgenda = onNextAgenda;
-  const handleSkipAgenda = onNextAgenda;
+  const handleSkipAgenda = onSkipAgenda || onNextAgenda;
   const setCustomChoices = onSetCustomChoices;
+  /** Speaker seat (not host-by-role) flips laws face-up. */
+  const isSpeakerSeat = seatId != null && speakerId != null && String(seatId) === String(speakerId);
+  const isCovert = !!(currentAgenda?.covert && currentAgenda?.hidden?.cardId);
+  const isMiscount = !!currentAgenda?.miscount;
+  const faceUp = isAgendaFaceUp(currentAgenda);
+  const miscountReady = !!(isMiscount && currentAgenda.miscountRevote && currentAgenda.revote);
+  const miscountNeedsPick = !!(isMiscount && faceUp && !currentAgenda.miscountRevote);
+  const covertRevealed = !!(isCovert && currentAgenda.hiddenRevealed);
+  /** Nested Covert text: speaker may peek; public only after unveil. */
+  const canSeeCovertHidden = isCovert && faceUp && (covertRevealed || isSpeakerSeat);
+  const canPickMiscount = miscountNeedsPick
+    && !readOnly
+    && (isSpeakerSeat || canAdmin)
+    && typeof onSelectMiscountLaw === 'function'
+    && (activeLaws || []).length > 0;
+  const revealedCard = currentAgenda?.cardId && faceUp
+    ? (isCovert
+      ? {
+        title: currentAgenda.title,
+        kind: currentAgenda.kind,
+        elect: currentAgenda.elect,
+        desc: currentAgenda.desc,
+        covert: true,
+        shrouded: !canSeeCovertHidden,
+        outcomeLabel: covertOutcomeLabel(currentAgenda.type || currentAgenda.hidden?.voteType),
+        hidden: canSeeCovertHidden
+          ? {
+            title: currentAgenda.hidden.title,
+            kind: currentAgenda.hidden.kind,
+            desc: currentAgenda.hidden.desc,
+            effect: agendaEffectText({
+              voteType: currentAgenda.hidden.voteType || currentAgenda.type,
+              forText: currentAgenda.hidden.forText,
+              againstText: currentAgenda.hidden.againstText,
+              text: currentAgenda.hidden.text,
+            }),
+          }
+          : null,
+        speakerHint: isSpeakerSeat && !covertRevealed,
+      }
+      : {
+        title: currentAgenda.title,
+        kind: currentAgenda.kind,
+        elect: currentAgenda.elect,
+        desc: currentAgenda.desc,
+        effect: agendaEffectText({
+          voteType: currentAgenda.type || 'OTHER',
+          forText: currentAgenda.forText,
+          againstText: currentAgenda.againstText,
+          text: currentAgenda.text,
+        }),
+        miscount: isMiscount,
+        revote: miscountReady
+          ? {
+            title: currentAgenda.revote.title,
+            desc: currentAgenda.revote.desc,
+            effect: agendaEffectText({
+              voteType: currentAgenda.revote.voteType || currentAgenda.type,
+              forText: currentAgenda.revote.forText,
+              againstText: currentAgenda.revote.againstText,
+              text: currentAgenda.revote.text,
+            }),
+          }
+          : null,
+      })
+    : null;
 
   const voteTotals = (() => {
     if (!currentAgenda?.type) return {};
@@ -606,6 +706,13 @@ export function PoliticsModal({
   const completedAgendasCount = agendas.filter((agenda) =>
     isAgendaFullyVoted(agenda, activePlayers)
   ).length;
+  const needsFaceReveal = !!(currentAgenda?.cardId && !faceUp);
+  const needsCovertUnveil = isCovert && faceUp && !covertRevealed && allVotedOnCurrentAgenda;
+  const canRevealAgenda = (needsFaceReveal || needsCovertUnveil)
+    && !readOnly
+    && (isSpeakerSeat || canAdmin)
+    && typeof onRevealAgenda === 'function';
+  const waitingAgendaReveal = needsFaceReveal || needsCovertUnveil;
 
   const currentSpeaker = activePlayers.find(p => p.id === speakerId);
   const orderedForVote = voteOrder.length ? voteOrder : activePlayers;
@@ -628,6 +735,40 @@ export function PoliticsModal({
       : 'Передача жетона Спикера.';
 
   const pcDistributed = Object.values(voteTotals).reduce((sum, n) => sum + (Number(n) || 0), 0);
+  const needsSpeakerBreak = !!(
+    currentAgenda
+    && allVotedOnCurrentAgenda
+    && !needsFaceReveal
+    && !needsCovertUnveil
+    && !miscountNeedsPick
+    && (game
+      ? agendaNeedsSpeakerBreak(game, currentAgenda)
+      : (
+        currentAgenda.type === 'FOR_AGAINST'
+          ? forVotes === againstVotes
+          : (() => {
+            const entries = Object.entries(voteTotals).filter(([, w]) => (Number(w) || 0) > 0);
+            if (!entries.length) return true;
+            const max = Math.max(...entries.map(([, w]) => Number(w) || 0));
+            return entries.filter(([, w]) => (Number(w) || 0) === max).length > 1;
+          })()
+      ))
+  );
+  const speakerDecisionPending = needsSpeakerBreak
+    && (currentAgenda.speakerDecision == null || currentAgenda.speakerDecision === '');
+  const canPickSpeakerDecision = needsSpeakerBreak
+    && !readOnly
+    && (isSpeakerSeat || canAdmin)
+    && typeof onSpeakerAgendaDecision === 'function';
+  const speakerDecisionReason = !needsSpeakerBreak
+    ? ''
+    : currentAgenda?.type === 'FOR_AGAINST'
+      ? (forVotes === 0 && againstVotes === 0
+        ? 'Голосов нет (0–0) — спикер выбирает исход.'
+        : `Ничья ${forVotes}:${againstVotes} — спикер выбирает исход.`)
+      : (pcDistributed <= 0
+        ? 'Голосов нет — спикер выбирает исход.'
+        : 'Ничья по вариантам — спикер выбирает исход.');
   const playerPcPool = (p) => {
     if (oneVoteLaw) return 1;
     const spentPrev = agendas.slice(0, currentAgendaIndex).reduce((acc, agenda) => {
@@ -896,67 +1037,248 @@ export function PoliticsModal({
               )}
 
               {!currentAgenda?.type && (
-                canAdmin ? (
-                  <div className="pol-type-pick">
-                    <h3 className="pol-type-pick-title">Выберите тип голосования</h3>
-                    <div className="pol-type-grid">
-                      <button
-                        type="button"
-                        onClick={() => setAgendaType('FOR_AGAINST')}
-                        className="pol-type-card tone-for"
-                      >
-                        <span className="pol-type-radio" aria-hidden="true" />
-                        <span className="pol-type-art" aria-hidden="true">
-                          <i className="fa-solid fa-thumbs-up" />
-                          <i className="fa-solid fa-thumbs-down" />
-                        </span>
-                        <span className="pol-type-name">За / Против</span>
-                        <span className="pol-type-desc">
-                          Простое голосование: каждый выбирает «За» или «Против» закона.
-                        </span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setAgendaType('PLAYER_CHOICE')}
-                        className="pol-type-card tone-player"
-                      >
-                        <span className="pol-type-radio" aria-hidden="true" />
-                        <span className="pol-type-art" aria-hidden="true">
-                          <i className="fa-solid fa-users" />
-                        </span>
-                        <span className="pol-type-name">Выбор игрока</span>
-                        <span className="pol-type-desc">
-                          Голосование за конкретного игрока (например, за должность или эффект закона).
-                        </span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setAgendaType('OTHER')}
-                        className="pol-type-card tone-other"
-                      >
-                        <span className="pol-type-radio" aria-hidden="true" />
-                        <span className="pol-type-art" aria-hidden="true">
-                          <i className="fa-solid fa-file-pen" />
-                        </span>
-                        <span className="pol-type-name">Другой выбор</span>
-                        <span className="pol-type-desc">
-                          Несколько вариантов ответа (A / B / C / …), которые вы задаёте вручную.
-                        </span>
-                      </button>
+                <div className="pol-card-reveal is-pending">
+                  <p className="text-center text-sm text-slate-400 py-6">
+                    {canAdmin
+                      ? 'Колода готовит карту… Если пусто — нажмите «Перейти к голосованию» ещё раз или следующий закон.'
+                      : 'Ожидание раскрытия карты повестки…'}
+                  </p>
+                  {canAdmin && (
+                    <div className="pol-type-pick">
+                      <h3 className="pol-type-pick-title">Запасной выбор типа (без карты)</h3>
+                      <div className="pol-type-grid">
+                        <button type="button" onClick={() => setAgendaType('FOR_AGAINST')} className="pol-type-card tone-for">
+                          <span className="pol-type-name">За / Против</span>
+                        </button>
+                        <button type="button" onClick={() => setAgendaType('PLAYER_CHOICE')} className="pol-type-card tone-player">
+                          <span className="pol-type-name">Выбор игрока</span>
+                        </button>
+                        <button type="button" onClick={() => setAgendaType('OTHER')} className="pol-type-card tone-other">
+                          <span className="pol-type-name">Другой выбор</span>
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                ) : (
-                  <p className="text-center text-sm text-slate-500 py-8">Админ выбирает тип закона…</p>
-                )
+                  )}
+                </div>
               )}
 
-              {currentAgenda?.type && (
+              {currentAgenda?.cardId && !faceUp && (
+                <div className="pol-card-reveal is-sealed is-covert">
+                  <div className="pol-card-reveal-top">
+                    <span className="pol-card-reveal-kind">
+                      Повестка
+                      {currentAgendaIndex != null ? ` · #${currentAgendaIndex + 1}` : ''}
+                    </span>
+                    <h3 className="pol-card-reveal-title">Закон ещё не открыт</h3>
+                    <p className="pol-card-reveal-desc">
+                      Хост начал голосование. Спикер открывает карту для всех.
+                    </p>
+                  </div>
+                  <div className="pol-covert-reveal-bar">
+                    {canRevealAgenda ? (
+                      <button
+                        type="button"
+                        className="pol-covert-reveal-btn"
+                        onClick={onRevealAgenda}
+                      >
+                        <i className="fa-solid fa-scroll" aria-hidden="true" />
+                        Открыть закон
+                      </button>
+                    ) : (
+                      <p className="pol-covert-reveal-wait">
+                        Ожидание спикера — откроет закон…
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {currentAgenda?.cardId && faceUp && (
                 <>
-                  {(currentAgenda.type === 'FOR_AGAINST' || currentAgenda.type === 'PLAYER_CHOICE' || currentAgenda.type === 'OTHER') && !isSeatPlayer && (
+                  {revealedCard && (
+                    <div
+                      className={[
+                        'pol-card-reveal',
+                        revealedCard.kind === 'law' ? 'is-law' : 'is-directive',
+                        revealedCard.covert ? 'is-covert' : '',
+                        revealedCard.shrouded ? 'is-shrouded' : '',
+                        unveilAnim && !needsCovertUnveil ? 'is-unveiling' : '',
+                      ].filter(Boolean).join(' ')}
+                    >
+                      <div className="pol-card-reveal-top">
+                        <span className="pol-card-reveal-kind">
+                          {revealedCard.covert
+                            ? 'Тайный законопроект'
+                            : revealedCard.miscount
+                              ? 'Пересчёт'
+                              : (revealedCard.kind === 'law' ? 'Закон' : 'Директива')}
+                          {currentAgendaIndex != null ? ` · #${currentAgendaIndex + 1}` : ''}
+                        </span>
+                        <h3 className="pol-card-reveal-title">{revealedCard.title}</h3>
+                        {revealedCard.desc && !revealedCard.shrouded && !revealedCard.hidden && (
+                          <p className="pol-card-reveal-desc">{revealedCard.desc}</p>
+                        )}
+                      </div>
+                      {revealedCard.shrouded && (
+                        <div className="pol-card-reveal-effect pol-card-reveal-shroud">
+                          <p>
+                            Скрытая agenda. Текст видит только спикер.
+                            Голосуйте по допустимым исходам, не зная эффектов.
+                          </p>
+                          {revealedCard.outcomeLabel && (
+                            <p className="pol-card-reveal-outcomes">
+                              Исходы: <strong>{revealedCard.outcomeLabel}</strong>
+                            </p>
+                          )}
+                        </div>
+                      )}
+                      {revealedCard.speakerHint && (
+                        <p className="pol-card-reveal-desc">
+                          Вы спикер — ниже скрытая карта. После голосования нажмите «Открыть закон».
+                        </p>
+                      )}
+                      {revealedCard.hidden && (
+                        <div
+                          className={[
+                            'pol-card-reveal',
+                            'pol-card-reveal-nested',
+                            revealedCard.hidden.kind === 'law' ? 'is-law' : 'is-directive',
+                            covertRevealed ? 'is-public' : 'is-speaker-preview',
+                            unveilAnim && covertRevealed ? 'is-unveiling' : '',
+                          ].filter(Boolean).join(' ')}
+                        >
+                          <div className="pol-card-reveal-top">
+                            <span className="pol-card-reveal-kind">
+                              {covertRevealed ? 'Раскрыто' : 'Только спикер'}
+                              {' · '}
+                              {revealedCard.hidden.kind === 'law' ? 'Закон' : 'Директива'}
+                            </span>
+                            <h3 className="pol-card-reveal-title">{revealedCard.hidden.title}</h3>
+                            {revealedCard.hidden.desc && (
+                              <p className="pol-card-reveal-desc">{revealedCard.hidden.desc}</p>
+                            )}
+                          </div>
+                          {revealedCard.hidden.effect && (
+                            <div className="pol-card-reveal-effect">
+                              {revealedCard.hidden.effect.split('\n\n').map((block, i) => (
+                                <p key={i}>{block}</p>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                      {revealedCard.effect && (
+                        <div className="pol-card-reveal-effect">
+                          {revealedCard.effect.split('\n\n').map((block, i) => (
+                            <p key={i}>{block}</p>
+                          ))}
+                        </div>
+                      )}
+                      {revealedCard.revote && (
+                        <div className="pol-card-reveal pol-card-reveal-nested is-law is-unveiling">
+                          <div className="pol-card-reveal-top">
+                            <span className="pol-card-reveal-kind">Повторное голосование · Закон</span>
+                            <h3 className="pol-card-reveal-title">{revealedCard.revote.title}</h3>
+                            {revealedCard.revote.desc && (
+                              <p className="pol-card-reveal-desc">{revealedCard.revote.desc}</p>
+                            )}
+                          </div>
+                          <div className="pol-miscount-mode">
+                            Режим голосования:{' '}
+                            <strong>
+                              {currentAgenda.type === 'FOR_AGAINST'
+                                ? 'За / Против'
+                                : currentAgenda.type === 'PLAYER_CHOICE'
+                                  ? 'Избрать игрока'
+                                  : `Особый выбор (${electTargetLabel(currentAgenda.revote?.elect || currentAgenda.elect)})`}
+                            </strong>
+                          </div>
+                          {revealedCard.revote.effect && (
+                            <div className="pol-card-reveal-effect">
+                              {revealedCard.revote.effect.split('\n\n').map((block, i) => (
+                                <p key={i}>{block}</p>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {miscountNeedsPick && (
+                        <div className="pol-miscount-pick">
+                          {(activeLaws || []).length === 0 ? (
+                            <p className="pol-covert-reveal-wait">
+                              Нет принятых законов — хост нажимает «Пропустить закон».
+                            </p>
+                          ) : (
+                            <>
+                              <p className="pol-card-reveal-desc">
+                                {canPickMiscount
+                                  ? 'Выберите закон для повторного голосования.'
+                                  : 'Спикер выбирает закон для пересчёта…'}
+                              </p>
+                              {canPickMiscount && (
+                                <div className="pol-miscount-law-grid">
+                                  {(activeLaws || []).map((law) => {
+                                    const vt = voteTypeForLaw(law);
+                                    const mode = vt === 'FOR_AGAINST'
+                                      ? 'За / Против'
+                                      : vt === 'PLAYER_CHOICE'
+                                        ? 'Избрать игрока'
+                                        : `Выбор · ${electTargetLabel(law.elect)}`;
+                                    return (
+                                      <button
+                                        key={law.id}
+                                        type="button"
+                                        className="pol-miscount-law-btn"
+                                        onClick={() => onSelectMiscountLaw(law.id)}
+                                      >
+                                        <span className="pol-miscount-law-label">Выбрать · {mode}</span>
+                                        <span className="pol-miscount-law-title">{law.title}</span>
+                                        {law.desc && (
+                                          <span className="pol-miscount-law-desc">{law.desc}</span>
+                                        )}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                            </>
+                          )}
+                        </div>
+                      )}
+
+                      {needsCovertUnveil && (
+                        <div className="pol-covert-reveal-bar">
+                          {canRevealAgenda ? (
+                            <button
+                              type="button"
+                              className="pol-covert-reveal-btn"
+                              onClick={onRevealAgenda}
+                            >
+                              <i className="fa-solid fa-scroll" aria-hidden="true" />
+                              Открыть закон
+                            </button>
+                          ) : (
+                            <p className="pol-covert-reveal-wait">
+                              Голоса собраны — спикер открывает закон…
+                            </p>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  {(currentAgenda.type === 'FOR_AGAINST' || currentAgenda.type === 'PLAYER_CHOICE' || currentAgenda.type === 'OTHER')
+                    && (!isMiscount || miscountReady)
+                    && !isSeatPlayer && (
                     <div className="pol-pc">
-                      {currentAgenda.type === 'OTHER' && canAdmin && (
+                      {currentAgenda.type === 'OTHER' && (canAdmin || isSpeakerSeat) && (
                         <div className="pol-pc-choices-editor">
-                          <h4 className="pol-pc-summary-title">Настройка вариантов</h4>
+                          <h4 className="pol-pc-summary-title">
+                            Настройка вариантов
+                            {miscountReady
+                              ? ` · ${electTargetLabel(currentAgenda.revote?.elect || currentAgenda.elect)}`
+                              : ''}
+                          </h4>
                           <div className="pol-pc-choices-grid">
                             {(currentAgenda.customChoices || []).map((choice, index) => {
                               const letter = String.fromCharCode(65 + (index % 26));
@@ -1107,6 +1429,90 @@ export function PoliticsModal({
                           </div>
                         </div>
                       </div>
+
+                      {needsSpeakerBreak && (
+                        <div className="pol-speaker-break">
+                          <div className="pol-speaker-break-head">
+                            <i className="fa-solid fa-gavel" aria-hidden="true" />
+                            <div>
+                              <div className="pol-speaker-break-title">Решение спикера</div>
+                              <p className="pol-speaker-break-reason">{speakerDecisionReason}</p>
+                            </div>
+                          </div>
+                          {canPickSpeakerDecision ? (
+                            <div className="pol-speaker-break-actions">
+                              {currentAgenda.type === 'FOR_AGAINST' && (
+                                <>
+                                  <button
+                                    type="button"
+                                    className={`pol-speaker-break-btn is-for${currentAgenda.speakerDecision === 'for' ? ' is-on' : ''}`}
+                                    onClick={() => onSpeakerAgendaDecision('for')}
+                                  >
+                                    <i className="fa-solid fa-thumbs-up" aria-hidden="true" />
+                                    За
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className={`pol-speaker-break-btn is-against${currentAgenda.speakerDecision === 'against' ? ' is-on' : ''}`}
+                                    onClick={() => onSpeakerAgendaDecision('against')}
+                                  >
+                                    <i className="fa-solid fa-thumbs-down" aria-hidden="true" />
+                                    Против
+                                  </button>
+                                </>
+                              )}
+                              {currentAgenda.type === 'PLAYER_CHOICE' && activePlayers.map((p) => {
+                                const faction = ALL_FACTIONS.find((f) => f.id === p.factionId);
+                                const on = String(currentAgenda.speakerDecision) === String(p.id);
+                                return (
+                                  <button
+                                    key={p.id}
+                                    type="button"
+                                    className={`pol-speaker-break-btn is-elect${on ? ' is-on' : ''}`}
+                                    onClick={() => onSpeakerAgendaDecision(p.id)}
+                                  >
+                                    {faction?.iconUrl && (
+                                      <img src={faction.iconUrl} alt="" className="pol-speaker-break-ico" />
+                                    )}
+                                    {p.name}
+                                  </button>
+                                );
+                              })}
+                              {currentAgenda.type === 'OTHER' && (currentAgenda.customChoices || []).map((label, index) => {
+                                if (!String(label || '').trim()) return null;
+                                const on = String(currentAgenda.speakerDecision) === String(index);
+                                return (
+                                  <button
+                                    key={index}
+                                    type="button"
+                                    className={`pol-speaker-break-btn is-elect${on ? ' is-on' : ''}`}
+                                    onClick={() => onSpeakerAgendaDecision(index)}
+                                  >
+                                    {label}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          ) : (
+                            <p className="pol-speaker-break-wait">
+                              {speakerDecisionPending
+                                ? 'Ожидание решения спикера…'
+                                : `Выбрано: ${
+                                  currentAgenda.type === 'FOR_AGAINST'
+                                    ? (currentAgenda.speakerDecision === 'for' ? 'За' : 'Против')
+                                    : currentAgenda.type === 'PLAYER_CHOICE'
+                                      ? (activePlayers.find((p) => String(p.id) === String(currentAgenda.speakerDecision))?.name || '—')
+                                      : ((currentAgenda.customChoices || [])[Number(currentAgenda.speakerDecision)] || '—')
+                                }`}
+                            </p>
+                          )}
+                          {canPickSpeakerDecision && !speakerDecisionPending && (
+                            <p className="pol-speaker-break-picked">
+                              Решение принято — можно переходить к следующему закону.
+                            </p>
+                          )}
+                        </div>
+                      )}
 
                       <div className="pol-pc-table-wrap">
                         <table className="pol-pc-table">
@@ -1286,7 +1692,7 @@ export function PoliticsModal({
                     </div>
                   )}
 
-                  {isSeatPlayer && (
+                  {isSeatPlayer && currentAgenda.type && (!isMiscount || miscountReady) && (
                   <div className="space-y-3 pt-4 border-t border-violet-800/30">
                     {orderedForVote.map(p => {
                       const vote = currentAgenda.votes[p.id] || { choice: 'abstain', amount: 0, planets: 0 };
@@ -1421,9 +1827,15 @@ export function PoliticsModal({
                   <button
                     type="button"
                     onClick={() => setPoliticsStep('SPEAKER')}
-                    disabled={completedAgendasCount < 2}
+                    disabled={completedAgendasCount < 2 || speakerDecisionPending}
                     className="col-span-1 bg-emerald-600 hover:bg-emerald-500 text-white font-orbitron font-extrabold py-3 rounded-xl text-sm transition uppercase disabled:bg-slate-800 disabled:text-slate-600 disabled:cursor-not-allowed"
-                    title={completedAgendasCount < 2 ? 'Нужно проголосовать минимум по 2 законам' : 'Перейти к выбору Спикера'}
+                    title={
+                      speakerDecisionPending
+                        ? 'Сначала спикер выбирает исход при ничьей / 0 голосов'
+                        : completedAgendasCount < 2
+                          ? 'Нужно проголосовать минимум по 2 законам'
+                          : 'Перейти к выбору Спикера'
+                    }
                   >
                     Завершить голосование
                   </button>
@@ -1433,8 +1845,23 @@ export function PoliticsModal({
                   <button
                     type="button"
                     onClick={handleNextAgenda}
-                    disabled={!allVotedOnCurrentAgenda}
+                    disabled={
+                      !allVotedOnCurrentAgenda
+                      || needsCovertUnveil
+                      || needsFaceReveal
+                      || miscountNeedsPick
+                      || speakerDecisionPending
+                    }
                     className="col-span-1 bg-purple-600 hover:bg-purple-500 text-white font-orbitron font-extrabold py-3 rounded-xl text-sm transition uppercase disabled:bg-slate-800 disabled:text-slate-600 disabled:cursor-not-allowed"
+                    title={
+                      miscountNeedsPick
+                        ? 'Сначала спикер выбирает закон для пересчёта'
+                        : waitingAgendaReveal
+                          ? 'Сначала спикер должен открыть закон'
+                          : speakerDecisionPending
+                            ? 'Сначала спикер выбирает исход при ничьей / 0 голосов'
+                            : undefined
+                    }
                   >
                     Следующий закон <i className="fa-solid fa-arrow-right" />
                   </button>

@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { ALL_FACTIONS, STRATEGY_CARDS } from '../data/gameData';
+import { agendaEffectText } from '../data/agendas';
 import { formatTime } from '../utils/game';
+import { lawsOwnedByPlayer } from '../game/agendaDeck';
 import { areAllStrategiesPlayed, isStrategyCardPlayed } from '../game/selectors';
 import { FactionGuideSheet } from './FactionGuideSheet';
 import { PhaseHubChips } from './PhaseHubChips';
@@ -83,6 +85,7 @@ export function PlayerMobileConsole({
   onOpenProduction,
   usePok = false,
   useTe = false,
+  activeLaws = [],
   phaseHub = [],
 }) {
   const [tab, setTab] = useState('turn');
@@ -158,6 +161,7 @@ export function PlayerMobileConsole({
             onCombatDefeat={onCombatDefeat}
             onCombatDismissResult={onCombatDismissResult}
             onOpenProduction={onOpenProduction}
+            activeLaws={activeLaws}
           />
         </div>
 
@@ -198,6 +202,7 @@ export function PlayerMobileConsole({
             getPlayerScore={getPlayerScore}
             targetScore={targetScore}
             speakerId={speakerId}
+            activeLaws={activeLaws}
             sortMode={tableSortMode}
             onSortModeChange={setTableSortMode}
             onOpenPlayerTech={(playerId) => setTechSheetPlayerId(playerId)}
@@ -210,6 +215,7 @@ export function PlayerMobileConsole({
           player={players.find(p => p.id === techSheetPlayerId)}
           usePok={usePok}
           useTe={useTe}
+          activeLaws={activeLaws}
           onClose={() => setTechSheetPlayerId(null)}
         />
       )}
@@ -332,6 +338,7 @@ function TurnTab({
   onCombatDefeat,
   onCombatDismissResult,
   onOpenProduction,
+  activeLaws = [],
 }) {
   const [guideFactionId, setGuideFactionId] = useState(null);
   const [guidePlayerName, setGuidePlayerName] = useState(null);
@@ -341,8 +348,12 @@ function TurnTab({
     : null;
 
   const activeAccent = activePlayer?.color || '#f87171';
+  const myLaws = lawsOwnedByPlayer(activeLaws, me?.id);
+  // Always the seated player's cards (not the active seat's) — status stays visible off-turn.
+  const myStrategyCards = [...(me?.cards?.length ? me.cards : strategyCards)]
+    .sort((a, b) => a.id - b.id);
   const resolvingCard = strategyResolutionActive && resolvingCardId != null
-    ? (strategyCards.find(c => c.id === resolvingCardId)
+    ? (myStrategyCards.find(c => c.id === resolvingCardId)
       || STRATEGY_CARDS.find(c => c.id === resolvingCardId))
     : null;
   const passReady = canPlay && allStrategiesPlayed && !strategyResolutionActive;
@@ -458,40 +469,78 @@ function TurnTab({
             <span className="pt-stat-chip-v">{myScore}<small> / {targetScore}</small></span>
           </div>
           <div className="pt-stat-chip is-violet">
-            <i className="fa-solid fa-scroll pt-stat-chip-ico" aria-hidden="true" />
+            <i className="fa-solid fa-user-secret pt-stat-chip-ico" aria-hidden="true" />
             <span className="pt-stat-chip-k">Секреты</span>
             <span className="pt-stat-chip-v">{me.secrets ?? 0}</span>
           </div>
         </div>
       )}
 
-      {isMyTurn && strategyCards.length > 0 && (
+      {me && myLaws.length > 0 && (
+        <div className="pt-laws" aria-label="Ваши законы">
+          <div className="pt-section-head">
+            <span className="pt-kicker is-law">
+              <i className="fa-solid fa-scroll" aria-hidden="true" />
+              {myLaws.length === 1 ? 'Ваш закон' : 'Ваши законы'}
+            </span>
+          </div>
+          <ul className="pt-law-list">
+            {myLaws.map((law) => {
+              const effect = agendaEffectText({
+                voteType: law.elect === 'for_against' ? 'FOR_AGAINST' : 'OTHER',
+                forText: law.forText,
+                againstText: law.againstText,
+                text: law.text || law.desc,
+              });
+              return (
+                <li key={`${law.id}-${law.enactedRound ?? ''}`} className="pt-law-card">
+                  <div className="pt-law-kind">
+                    Закон
+                    {law.enactedRound != null ? ` · раунд ${law.enactedRound}` : ''}
+                  </div>
+                  <div className="pt-law-title">{law.title}</div>
+                  {effect && <p className="pt-law-effect">{effect}</p>}
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
+
+      {me && myStrategyCards.length > 0 && (
         <div className="pt-cards">
           <div className="pt-section-head">
             <span className="pt-kicker is-gold">
-              {strategyCards.length === 1 ? 'Карта стратегии' : 'Карты стратегии'}
+              {myStrategyCards.length === 1 ? 'Ваша карта стратегии' : 'Ваши карты стратегии'}
             </span>
             <i className="fa-solid fa-circle-info pt-section-info" aria-hidden="true" title="Основное и вторичное действие" />
           </div>
-          {strategyCards.map(card => {
-            const livePlayed = isStrategyCardPlayed(activePlayer || me, card.id);
-            const resolving = strategyResolutionActive && resolvingCardId === card.id;
-            const blockedThisTurn = !livePlayed && strategyActionTaken && !resolving;
-            const disabled = !canPlay || livePlayed || blockedThisTurn || resolving;
+          {myStrategyCards.map(card => {
+            const livePlayed = isStrategyCardPlayed(me, card.id);
+            const resolving = isMyTurn
+              && strategyResolutionActive
+              && resolvingCardId === card.id;
+            const blockedThisTurn = isMyTurn && !livePlayed && strategyActionTaken && !resolving;
+            const canTapPlay = isMyTurn && canPlay && !livePlayed && !blockedThisTurn && !resolving;
+            const disabled = !canTapPlay;
             const btnClass = livePlayed
               ? 'is-done'
               : resolving
                 ? 'is-busy'
-                : blockedThisTurn || !canPlay
-                  ? 'is-off'
-                  : 'is-play';
+                : !isMyTurn && !livePlayed
+                  ? 'is-idle'
+                  : blockedThisTurn || !canPlay
+                    ? 'is-off'
+                    : 'is-play';
             const btnLabel = livePlayed
               ? 'Сыграна'
               : resolving
                 ? 'Розыгрыш…'
                 : blockedThisTurn
                   ? 'Позже'
-                  : 'Сыграть карту';
+                  : isMyTurn
+                    ? 'Сыграть карту'
+                    : 'Не сыграна';
             const blurbs = STRATEGY_ABILITY_BLURBS[card.id];
             return (
               <div
@@ -510,6 +559,9 @@ function TurnTab({
                       {' '}
                       {strategyShortName(card)}
                     </div>
+                    <div className={`pt-card-status ${livePlayed ? 'is-done' : resolving ? 'is-busy' : 'is-ready'}`}>
+                      {livePlayed ? 'Сыграна' : resolving ? 'Розыгрыш' : 'Не сыграна'}
+                    </div>
                     {blurbs && (
                       <div className="pt-card-abilities">
                         <div className="pt-ability">
@@ -527,18 +579,25 @@ function TurnTab({
                     )}
                   </div>
                 </div>
-                <button
-                  type="button"
-                  disabled={disabled}
-                  onClick={() => onPlayStrategy(card.id)}
-                  className={`pt-card-btn ${btnClass}`}
-                >
-                  {!livePlayed && !resolving && !blockedThisTurn && canPlay && (
-                    <i className="fa-solid fa-play" aria-hidden="true" />
-                  )}
-                  {livePlayed && <i className="fa-solid fa-check" aria-hidden="true" />}
-                  {btnLabel}
-                </button>
+                {isMyTurn ? (
+                  <button
+                    type="button"
+                    disabled={disabled}
+                    onClick={() => onPlayStrategy(card.id)}
+                    className={`pt-card-btn ${btnClass}`}
+                  >
+                    {canTapPlay && <i className="fa-solid fa-play" aria-hidden="true" />}
+                    {livePlayed && <i className="fa-solid fa-check" aria-hidden="true" />}
+                    {btnLabel}
+                  </button>
+                ) : (
+                  <div className={`pt-card-btn ${btnClass}`} role="status">
+                    {livePlayed
+                      ? <i className="fa-solid fa-check" aria-hidden="true" />
+                      : <i className="fa-solid fa-hourglass-half" aria-hidden="true" />}
+                    {btnLabel}
+                  </div>
+                )}
               </div>
             );
           })}
@@ -629,7 +688,7 @@ function TurnTab({
       {!isMyTurn && me && !passed[me.id] && (
         <div className="pt-hint">
           <i className="fa-solid fa-circle-info" aria-hidden="true" />
-          <span>Когда снова будет ваш ход, здесь появятся карты и действия.</span>
+          <span>Сейчас ход другого игрока — сыграть карту можно, когда снова будет ваш ход.</span>
         </div>
       )}
 
@@ -905,6 +964,7 @@ function TableTab({
   getPlayerScore,
   targetScore,
   speakerId,
+  activeLaws = [],
   sortMode,
   onSortModeChange,
   onOpenPlayerTech,
@@ -980,6 +1040,7 @@ function TableTab({
           const isMe = me?.id === p.id;
           const hasPassed = !!passed[p.id];
           const cardsPlayed = areAllStrategiesPlayed(p);
+          const playerLaws = lawsOwnedByPlayer(activeLaws, p.id);
           const status = hasPassed
             ? 'Пас'
             : isCurrent
@@ -1014,6 +1075,18 @@ function TableTab({
                   <span className="tbl-name">{p.name}</span>
                   {isMe && <span className="tbl-chip is-you">вы</span>}
                   {p.id === speakerId && <span className="tbl-chip is-speaker">спикер</span>}
+                  {playerLaws.length > 0 && (
+                    <span
+                      className={`tbl-chip is-law is-icon${playerLaws.length > 1 ? ' is-multi' : ''}`}
+                      title={playerLaws.map((l) => l.title).filter(Boolean).join(', ') || 'Закон'}
+                      aria-label={playerLaws.length > 1 ? `Законы: ${playerLaws.length}` : 'Закон'}
+                    >
+                      <i className="fa-solid fa-scroll" aria-hidden="true" />
+                      {playerLaws.length > 1 && (
+                        <span className="tbl-chip-count">{playerLaws.length}</span>
+                      )}
+                    </span>
+                  )}
                 </div>
                 <div className="tbl-sub">
                   <span className={`tbl-status ${isCurrent ? 'is-live' : ''} ${hasPassed ? 'is-out' : ''}`}>

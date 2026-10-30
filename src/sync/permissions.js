@@ -83,12 +83,29 @@ export function authorizeAction({ role, seatPlayerId, action, state }) {
       if (!state.round?.strategyResolution?.active) {
         return { ok: false, error: 'resolution-closed' };
       }
-      const status = state.round.strategyResolution.responses?.[seatPlayerId];
+      const res = state.round.strategyResolution;
+      const status = res.responses?.[seatPlayerId];
+      // Primary waits until agenda peek is committed; secondaries may answer during peek.
+      if (status === 'peeking'
+        || (res.phase === 'peek' && String(res.playerId) === String(seatPlayerId))) {
+        return { ok: false, error: 'politics-peek-pending' };
+      }
       if (status == null || status !== 'pending') {
         return { ok: false, error: 'already-resolved' };
       }
       if (action.choice !== 'played' && action.choice !== 'passed') {
         return { ok: false, error: 'invalid-choice' };
+      }
+      return { ok: true };
+    }
+
+    case 'COMMIT_POLITICS_PEEK': {
+      const res = state.round?.strategyResolution;
+      if (!res?.active || res.cardId !== 3 || res.phase !== 'peek') {
+        return { ok: false, error: 'politics-peek-closed' };
+      }
+      if (String(res.playerId) !== String(seatPlayerId)) {
+        return { ok: false, error: 'not-your-politics-peek' };
       }
       return { ok: true };
     }
@@ -111,6 +128,17 @@ export function authorizeAction({ role, seatPlayerId, action, state }) {
     }
 
     case 'FINISH_AGENDA_PHASE': {
+      if (state.politics?.showModal && state.meta.speakerId === seatPlayerId) {
+        return { ok: true };
+      }
+      return { ok: false, error: 'forbidden' };
+    }
+
+    case 'REVEAL_AGENDA':
+    case 'REVEAL_COVERT_AGENDA':
+    case 'SELECT_MISCOUNT_LAW':
+    case 'SET_SPEAKER_AGENDA_DECISION': {
+      // Speaker flips agendas / picks Miscount law / breaks ties.
       if (state.politics?.showModal && state.meta.speakerId === seatPlayerId) {
         return { ok: true };
       }

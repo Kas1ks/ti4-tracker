@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import { ALL_FACTIONS } from '../data/gameData';
 import { formatTime } from '../utils/game';
+import { lawsOwnedByPlayer } from '../game/agendaDeck';
 import { isStrategyCardPlayed } from '../game/selectors';
 import { ObjectivesPanel } from './ObjectivesPanel';
 
@@ -30,6 +31,7 @@ export function GameBoard({
   addCustomObjective,
   targetScore,
   speakerId,
+  activeLaws = [],
   handleAddSecret,
   eliminatePlayer,
   releaseSeat,
@@ -259,6 +261,8 @@ export function GameBoard({
                                                 const heldSupportCount = Object.values(supportHolders).filter(id => id === p.id).length;
                                                 const hasCustodians = custodiansPlayerId === p.id;
                                                 const mecatolShown = (p.extra || 0) + (hasCustodians ? 1 : 0);
+                                                const playerLaws = lawsOwnedByPlayer(activeLaws, p.id);
+                                                const lawTitles = playerLaws.map((l) => l.title).filter(Boolean).join(', ');
 
                                                 return (
                                                     <motion.div
@@ -334,6 +338,18 @@ export function GameBoard({
                                                                                     <span className="sr-only">Хранители</span>
                                                                                 </span>
                                                                             )}
+                                                                            {playerLaws.length > 0 && (
+                                                                                <span
+                                                                                  title={lawTitles ? `Закон: ${lawTitles}` : 'Активный закон на игроке'}
+                                                                                  className={`game-badge is-law${playerLaws.length > 1 ? ' !w-auto !h-6 gap-1 px-1.5' : ''}`}
+                                                                                >
+                                                                                    <i className="fa-solid fa-scroll text-[11px]" aria-hidden="true" />
+                                                                                    {playerLaws.length > 1 && (
+                                                                                      <span className="text-[10px] font-extrabold tabular-nums">{playerLaws.length}</span>
+                                                                                    )}
+                                                                                    <span className="sr-only">Закон</span>
+                                                                                </span>
+                                                                            )}
                                                                             {heldSupportCount > 0 && (() => {
                                                                                 const fromIds = Object.entries(supportHolders)
                                                                                   .filter(([, holderId]) => holderId === p.id)
@@ -343,7 +359,7 @@ export function GameBoard({
                                                                                     title={`Support for the Throne ×${heldSupportCount} (+${heldSupportCount} ПО)`}
                                                                                     className="game-badge is-support !w-auto !h-6 gap-1 pl-1.5 pr-1"
                                                                                   >
-                                                                                    <i className="fa-solid fa-scroll text-[10px]" aria-hidden="true" />
+                                                                                    <i className="fa-solid fa-handshake text-[10px]" aria-hidden="true" />
                                                                                     <span className="inline-flex items-center -space-x-1.5">
                                                                                       {fromIds.map(fromId => {
                                                                                         const donor = players.find(x => x.id === fromId);
@@ -414,8 +430,8 @@ export function GameBoard({
                                                                                         : 'border-slate-700/80 bg-slate-950/70 text-slate-400 hover:text-emerald-300 hover:bg-emerald-950/40'
                                                                                     }`}
                                                                                     title="Support for the Throne"
-                                                                                >
-                                                                                    <i className="fa-solid fa-scroll" />
+                                                                                  >
+                                                                                    <i className="fa-solid fa-handshake" />
                                                                                     <span className="font-semibold">Support{heldSupportCount > 0 ? ` · ${heldSupportCount}` : ''}</span>
                                                                                 </button>
                                                                             )}

@@ -4,6 +4,7 @@ import {
   buildFactionStats,
   buildObjectiveStats,
   buildPlayerStats,
+  buildPoliticsStats,
   buildStrategyStats,
 } from './aggregate';
 import { playerKey, resolveFactionId } from './keys';
@@ -33,8 +34,8 @@ const history = [
       },
     ],
     objectives: [
-      { id: 'o1', title: 'Lead', stage: 1, points: 1, scoredBy: ['Alex'] },
-      { id: 'o2', title: 'Rare', stage: 2, points: 2, scoredBy: [] },
+      { id: 'p1_b01', title: 'Монополизируй рынок', stage: 1, points: 1, scoredBy: ['Alex'] },
+      { id: 'p2_b03', title: 'Покорить галактику', stage: 2, points: 2, scoredBy: [] },
     ],
     strategyPicks: [
       { round: 1, player: 'Alex', cardId: 7 },
@@ -64,8 +65,8 @@ const history = [
       },
     ],
     objectives: [
-      { id: 'o1', title: 'Lead', stage: 1, points: 1, scoredBy: ['Bob', 'alex'] },
-      { id: 'o2', title: 'Rare', stage: 2, points: 2, scoredBy: [] },
+      { id: 'p1_b01', title: 'Монополизируй рынок', stage: 1, points: 1, scoredBy: ['Bob', 'alex'] },
+      { id: 'p2_b03', title: 'Покорить галактику', stage: 2, points: 2, scoredBy: [] },
     ],
     strategyPicks: [
       { round: 1, player: 'Alex', cardId: 1 },
@@ -120,34 +121,102 @@ describe('buildFactionStats', () => {
 });
 
 describe('buildObjectiveStats', () => {
-  it('ranks most and rarely scored objectives', () => {
+  it('ranks by avg player completion per reveal', () => {
     const objectives = buildObjectiveStats(history);
-    expect(objectives.mostScored[0].id).toBe('o1');
-    expect(objectives.mostScored[0].scoreEvents).toBe(3);
-    expect(objectives.rarelyScored[0].id).toBe('o2');
-    expect(objectives.rarelyScored[0].scoreRatePct).toBe(0);
+    // g1: 1/2=50%, g2: 2/2=100% → avg 75%
+    expect(objectives.mostScored[0].id).toBe('p1_b01');
+    expect(objectives.mostScored[0].revealed).toBe(2);
+    expect(objectives.mostScored[0].avgPlayerPct).toBe(75);
+    expect(objectives.mostScored[0].desc).toMatch(/4 планет/i);
+    // never scored when shown → 0%
+    expect(objectives.rarelyScored[0].id).toBe('p2_b03');
+    expect(objectives.rarelyScored[0].revealed).toBe(2);
+    expect(objectives.rarelyScored[0].avgPlayerPct).toBe(0);
+    expect(objectives.rarelyScored[0].desc).toMatch(/11 планет/i);
   });
 });
 
 describe('buildStrategyStats', () => {
-  it('computes pick frequency, avg round and win correlation', () => {
+  it('computes taken-or-not rates per round and overall', () => {
     const strategy = buildStrategyStats(history);
     expect(strategy.gamesWithPicks).toBe(2);
+    expect(strategy.totalPicks).toBe(6);
+    expect(strategy.draftSlots).toBe(3);
+    expect(strategy.rounds).toEqual([1, 2]);
     const tech = strategy.cards.find((c) => c.cardId === 7);
     expect(tech.picks).toBe(3);
-    expect(tech.avgRoundPicked).toBeCloseTo(1.3, 1);
-    // Alex won once with 7, Bob won once with 7 → unique player-games with 7: Alex+Bob in g1, Bob in g2 = 3? 
-    // g1: Alex-7, Bob-7 (round2) → unique Alex and Bob
-    // g2: Bob-7 → Bob already counted in g2
-    // winPicks: Alex win in g1, Bob win in g2 → 2/3
-    expect(tech.uniquePlayerGames).toBe(3);
-    expect(tech.winRateWhenPicked).toBe(67);
+    // Taken in g1r1, g1r2, g2r1 → 3/3 draft slots
+    expect(tech.overallPct).toBe(100);
+    expect(tech.byRound[1].pct).toBe(100);
+    expect(tech.byRound[2].pct).toBe(100);
+    const leadership = strategy.cards.find((c) => c.cardId === 1);
+    // Taken in g1r1, g2r1 → 2/3
+    expect(leadership.overallPct).toBe(67);
+    expect(leadership.byRound[1].pct).toBe(100);
+    expect(leadership.byRound[2].pct).toBe(0);
   });
 
   it('returns empty cards when history has no strategyPicks', () => {
     const strategy = buildStrategyStats([{ id: 1, players: [], objectives: [] }]);
     expect(strategy.gamesWithPicks).toBe(0);
+    expect(strategy.totalPicks).toBe(0);
+    expect(strategy.draftSlots).toBe(0);
+    expect(strategy.rounds).toEqual([]);
     expect(strategy.cards).toEqual([]);
+  });
+});
+
+describe('buildPoliticsStats', () => {
+  it('aggregates lasting laws, speaker breaks and for/against outcomes', () => {
+    const stats = buildPoliticsStats([
+      {
+        winner: 'Alex',
+        politics: {
+          finalSpeaker: 'Alex',
+          oneVoteLaw: true,
+          voteReversed: true,
+          agendaPhasesCompleted: 2,
+          agendas: [{
+            type: 'FOR_AGAINST',
+            outcome: 'for',
+            speakerBreak: true,
+            covert: true,
+          }],
+          activeLaws: [{
+            id: 'minister_of_policy',
+            title: 'Министр политики',
+            owner: 'Bob',
+            ownerPlayerId: 2,
+          }],
+        },
+      },
+      {
+        winner: 'Bob',
+        politics: {
+          finalSpeaker: 'Alex',
+          agendaPhasesCompleted: 1,
+          agendas: [{ type: 'FOR_AGAINST', outcome: 'against' }],
+          activeLaws: [{
+            id: 'minister_of_policy',
+            title: 'Министр политики',
+            owner: 'Alex',
+            ownerPlayerId: 1,
+          }],
+        },
+      },
+    ]);
+    expect(stats.gamesWithPolitics).toBe(2);
+    expect(stats.oneVoteGames).toBe(1);
+    expect(stats.voteReversedGames).toBe(1);
+    expect(stats.avgActiveLaws).toBe(1);
+    expect(stats.speakerBreaks).toBe(1);
+    expect(stats.forOutcomeRate).toBe(50);
+    expect(stats.againstOutcomeRate).toBe(50);
+    expect(stats.covertAgendas).toBe(1);
+    expect(stats.electLawsTotal).toBe(2);
+    expect(stats.topLaws[0].id).toBe('minister_of_policy');
+    expect(stats.topLaws[0].games).toBe(2);
+    expect(stats.speakerWinRate).toBe(50);
   });
 });
 

@@ -1,8 +1,19 @@
 import { patchPlayer, withMeta, withPolitics } from '../stateHelpers';
-import { currentAgenda } from '../selectors';
+import { currentAgenda, activePlayers } from '../selectors';
 import { startNewRound } from './roundLifecycle';
+import {
+  agendaNeedsSpeakerBreak,
+  agendaSpeakerDecisionPending,
+  applyMiscountRevote,
+  drawIntoAgenda,
+  emptyAgenda,
+  isAgendaFaceUp,
+  resolutionEffectCardId,
+  resolveAndDiscardAgenda,
+} from '../agendaDeck';
+import { drawStageObjectiveIgnoringCap } from './statusPhase';
 
-export const emptyAgenda = () => ({ type: null, votes: {}, locked: {} });
+export { emptyAgenda };
 
 /** Under one-vote law, a non-abstain ballot is always amount 1 (no planet bonuses). */
 function coerceAgendaVote(state, vote) {
@@ -34,14 +45,85 @@ function mapCurrentAgenda(state, fn) {
   });
 }
 
-function nextAgenda(state) {
-  const nextIndex = state.politics.currentAgendaIndex + 1;
-  const agendas = state.politics.agendas[nextIndex]
-    ? state.politics.agendas
-    : [...state.politics.agendas, emptyAgenda()];
+function isAgendaFullyVoted(agenda, state) {
+  const seats = activePlayers(state);
+  if (!agenda?.type || !seats.length) return false;
+  return seats.every((p) => !!agenda.locked?.[p.id]);
+}
 
-  // Step is kept as-is: influence is entered once and reused for later agendas.
-  return withPolitics(state, { agendas, currentAgendaIndex: nextIndex });
+/** Ensure current agenda has a drawn card (idempotent). */
+function ensureCurrentAgendaRevealed(state) {
+  const agenda = currentAgenda(state);
+  // Miscount may be face-up with type=null until the speaker picks a law.
+  if (agenda?.cardId) return state;
+  const drawn = drawIntoAgenda(
+    agenda || emptyAgenda(),
+    state.politics.agendaDeck,
+    state.politics.agendaDiscard,
+  );
+  const agendas = [...(state.politics.agendas || [])];
+  const idx = state.politics.currentAgendaIndex || 0;
+  while (agendas.length <= idx) agendas.push(emptyAgenda());
+  agendas[idx] = drawn.agenda;
+  return withPolitics(state, {
+    agendas,
+    agendaDeck: drawn.agendaDeck,
+    agendaDiscard: drawn.agendaDiscard,
+  });
+}
+
+/** Post-vote board effects (Incentive Program → open a public objective, etc.). */
+function applyResolvedAgendaBoardEffects(state, agenda, outcome) {
+  const effectId = resolutionEffectCardId(agenda);
+  if (effectId === 'incentive_program' && (outcome === 'for' || outcome === 'against')) {
+    const stage = outcome === 'for' ? 1 : 2;
+    return drawStageObjectiveIgnoringCap(state, stage).state;
+  }
+  return state;
+}
+
+/**
+ * Close out current agenda: resolve+enact (or skip), then open next slot with a draw.
+ * @param {'resolve'|'skip'} mode
+ */
+function advanceAgenda(state, mode) {
+  const idx = state.politics.currentAgendaIndex || 0;
+  const agenda = state.politics.agendas?.[idx];
+  let activeLaws = state.politics.activeLaws || [];
+  let agendaDiscard = state.politics.agendaDiscard || [];
+  let agendas = [...(state.politics.agendas || [])];
+  let boardState = state;
+
+  if (agenda?.cardId || agenda?.type) {
+    if (mode === 'resolve' && isAgendaFullyVoted(agenda, state)) {
+      // Tie / zero votes: wait for speaker decision before resolving.
+      if (agendaSpeakerDecisionPending(state, agenda)) return state;
+      const resolved = resolveAndDiscardAgenda(state, agenda, activeLaws, agendaDiscard);
+      activeLaws = resolved.activeLaws;
+      agendaDiscard = resolved.agendaDiscard;
+      agendas[idx] = { ...agenda, outcome: resolved.outcome, hiddenRevealed: true };
+      boardState = applyResolvedAgendaBoardEffects(state, agenda, resolved.outcome);
+    } else {
+      // Skip or incomplete: discard card id(s) without enacting.
+      if (agenda?.cardId) agendaDiscard = [...agendaDiscard, agenda.cardId];
+      if (agenda?.covert && agenda.hidden?.cardId) {
+        agendaDiscard = [...agendaDiscard, agenda.hidden.cardId];
+      }
+    }
+  }
+
+  const nextIndex = idx + 1;
+  const drawn = drawIntoAgenda(emptyAgenda(), boardState.politics.agendaDeck, agendaDiscard);
+  while (agendas.length <= nextIndex) agendas.push(emptyAgenda());
+  agendas[nextIndex] = drawn.agenda;
+
+  return withPolitics(boardState, {
+    agendas,
+    currentAgendaIndex: nextIndex,
+    agendaDeck: drawn.agendaDeck,
+    agendaDiscard: drawn.agendaDiscard,
+    activeLaws,
+  });
 }
 
 const POLITICS_ACTIONS = new Set([
@@ -53,14 +135,19 @@ const POLITICS_ACTIONS = new Set([
   'SET_AGENDA_CUSTOM_CHOICES',
   'SET_VOTE',
   'LOCK_VOTE',
+  'REVEAL_AGENDA',
+  'REVEAL_COVERT_AGENDA',
+  'SELECT_MISCOUNT_LAW',
   'TOGGLE_VOTE_REVERSED',
   'SET_VOTE_REVERSED',
   'TOGGLE_ONE_VOTE_LAW',
   'SET_ONE_VOTE_LAW',
   'SET_POLITICS_STEP',
   'NEXT_AGENDA',
+  'SKIP_AGENDA',
   'FINISH_AGENDA_PHASE',
   'SET_POLITICS_VISIBLE',
+  'REMOVE_ACTIVE_LAW',
 ]);
 
 export function reducePoliticsPhase(state, action) {
@@ -98,7 +185,7 @@ export function reducePoliticsPhase(state, action) {
       return mapCurrentAgenda(state, agenda => ({
         ...agenda,
         type: action.agendaType,
-        customChoices: action.agendaType === 'OTHER' ? [''] : undefined,
+        customChoices: action.agendaType === 'OTHER' ? (agenda.customChoices || ['']) : undefined,
       }));
 
     case 'SET_AGENDA_CUSTOM_CHOICES':
@@ -107,6 +194,8 @@ export function reducePoliticsPhase(state, action) {
     case 'SET_VOTE': {
       const agenda = currentAgenda(state);
       if (agenda?.locked?.[action.playerId]) return state;
+      if (agenda?.cardId && !isAgendaFaceUp(agenda)) return state;
+      if (agenda?.miscount && !agenda.miscountRevote) return state;
       const vote = coerceAgendaVote(state, action.vote);
       return mapCurrentAgenda(state, a => ({
         ...a,
@@ -117,7 +206,8 @@ export function reducePoliticsPhase(state, action) {
     case 'LOCK_VOTE': {
       const agenda = currentAgenda(state);
       if (!agenda || agenda.locked?.[action.playerId]) return state;
-      // Optional action.vote: confirm choice+amount in one step (For/Against buttons).
+      if (agenda?.cardId && !isAgendaFaceUp(agenda)) return state;
+      if (agenda?.miscount && !agenda.miscountRevote) return state;
       const prev = action.vote != null
         ? action.vote
         : (agenda.votes?.[action.playerId] || { choice: 'abstain', amount: 0 });
@@ -129,6 +219,60 @@ export function reducePoliticsPhase(state, action) {
       }));
     }
 
+    case 'REVEAL_AGENDA':
+    case 'REVEAL_COVERT_AGENDA': {
+      const agenda = currentAgenda(state);
+      if (!agenda?.cardId) return state;
+      // 1) Speaker flips the drawn agenda face-up for everyone.
+      if (!isAgendaFaceUp(agenda)) {
+        return mapCurrentAgenda(state, a => ({ ...a, revealed: true }));
+      }
+      // 2) Covert Legislation: after voting, unveil the nested agenda.
+      if (
+        agenda.covert
+        && agenda.hidden?.cardId
+        && !agenda.hiddenRevealed
+        && isAgendaFullyVoted(agenda, state)
+      ) {
+        return mapCurrentAgenda(state, a => ({ ...a, hiddenRevealed: true }));
+      }
+      return state;
+    }
+
+    case 'SELECT_MISCOUNT_LAW': {
+      const agenda = currentAgenda(state);
+      if (!agenda?.miscount || agenda.miscountRevote) return state;
+      if (!isAgendaFaceUp(agenda)) return state;
+      const law = (state.politics.activeLaws || []).find(
+        (l) => String(l.id) === String(action.lawId),
+      );
+      if (!law) return state;
+      return mapCurrentAgenda(state, (a) => applyMiscountRevote(a, law));
+    }
+
+    case 'SET_SPEAKER_AGENDA_DECISION': {
+      const agenda = currentAgenda(state);
+      if (!agenda?.type) return state;
+      if (!isAgendaFullyVoted(agenda, state)) return state;
+      if (!agendaNeedsSpeakerBreak(state, agenda)) return state;
+      const choice = action.choice;
+      if (choice == null || choice === '') return state;
+      if (agenda.type === 'FOR_AGAINST') {
+        if (choice !== 'for' && choice !== 'against') return state;
+      } else if (agenda.type === 'PLAYER_CHOICE') {
+        const ok = activePlayers(state).some((p) => String(p.id) === String(choice));
+        if (!ok) return state;
+      } else if (agenda.type === 'OTHER') {
+        const idx = Number(choice);
+        const labels = agenda.customChoices || [];
+        if (!Number.isInteger(idx) || idx < 0 || idx >= labels.length) return state;
+        if (!String(labels[idx] || '').trim()) return state;
+      } else {
+        return state;
+      }
+      return mapCurrentAgenda(state, (a) => ({ ...a, speakerDecision: choice }));
+    }
+
     case 'TOGGLE_VOTE_REVERSED':
       return withPolitics(state, { voteReversed: !state.politics.voteReversed });
 
@@ -138,14 +282,17 @@ export function reducePoliticsPhase(state, action) {
     case 'TOGGLE_ONE_VOTE_LAW': {
       const enabled = !state.politics?.oneVoteLaw;
       const patch = { oneVoteLaw: enabled };
-      // Enabling skips influence entry; disabling returns to SETUP if still in agenda.
       if (enabled && state.politics?.showModal && state.politics.step === 'SETUP') {
         patch.step = 'VOTE';
       }
       if (!enabled && state.politics?.showModal && state.politics.step === 'VOTE') {
         patch.step = 'SETUP';
       }
-      return withPolitics(state, patch);
+      let next = withPolitics(state, patch);
+      if (enabled && next.politics.step === 'VOTE') {
+        next = ensureCurrentAgendaRevealed(next);
+      }
+      return next;
     }
 
     case 'SET_ONE_VOTE_LAW': {
@@ -157,14 +304,50 @@ export function reducePoliticsPhase(state, action) {
       if (!enabled && state.politics?.showModal && state.politics.step === 'VOTE') {
         patch.step = 'SETUP';
       }
-      return withPolitics(state, patch);
+      let next = withPolitics(state, patch);
+      if (enabled && next.politics.step === 'VOTE') {
+        next = ensureCurrentAgendaRevealed(next);
+      }
+      return next;
     }
 
-    case 'SET_POLITICS_STEP':
-      return withPolitics(state, { step: action.step });
+    case 'SET_POLITICS_STEP': {
+      let next = withPolitics(state, { step: action.step });
+      if (action.step === 'VOTE') {
+        next = ensureCurrentAgendaRevealed(next);
+      }
+      if (action.step === 'SPEAKER') {
+        const agenda = currentAgenda(next);
+        if (agenda && isAgendaFullyVoted(agenda, next) && !agenda.outcome) {
+          if (agendaSpeakerDecisionPending(next, agenda)) return state;
+          const resolved = resolveAndDiscardAgenda(
+            next,
+            agenda,
+            next.politics.activeLaws,
+            next.politics.agendaDiscard,
+          );
+          const agendas = [...next.politics.agendas];
+          agendas[next.politics.currentAgendaIndex] = {
+            ...agenda,
+            outcome: resolved.outcome,
+            hiddenRevealed: true,
+          };
+          next = withPolitics(next, {
+            agendas,
+            activeLaws: resolved.activeLaws,
+            agendaDiscard: resolved.agendaDiscard,
+          });
+          next = applyResolvedAgendaBoardEffects(next, agenda, resolved.outcome);
+        }
+      }
+      return next;
+    }
 
     case 'NEXT_AGENDA':
-      return nextAgenda(state);
+      return advanceAgenda(state, 'resolve');
+
+    case 'SKIP_AGENDA':
+      return advanceAgenda(state, 'skip');
 
     case 'FINISH_AGENDA_PHASE': {
       let next = state;
@@ -175,11 +358,27 @@ export function reducePoliticsPhase(state, action) {
         showModal: false,
         influenceLocked: {},
         voteReversed: false,
+        // Keep activeLaws / remaining deck across rounds.
       }));
     }
 
     case 'SET_POLITICS_VISIBLE':
       return withPolitics(state, { showModal: !!action.visible });
+
+    case 'REMOVE_ACTIVE_LAW': {
+      const lawId = action.lawId;
+      if (lawId == null || lawId === '') return state;
+      const activeLaws = state.politics.activeLaws || [];
+      const removed = activeLaws.find((l) => String(l.id) === String(lawId));
+      if (!removed) return state;
+      const nextLaws = activeLaws.filter((l) => String(l.id) !== String(lawId));
+      const discard = [...(state.politics.agendaDiscard || [])];
+      if (removed.id && !discard.includes(removed.id)) discard.push(removed.id);
+      return withPolitics(state, {
+        activeLaws: nextLaws,
+        agendaDiscard: discard,
+      });
+    }
 
     default:
       return null;

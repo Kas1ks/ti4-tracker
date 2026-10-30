@@ -102,7 +102,7 @@ function summarizeAgendaVotes(agenda, players) {
 
   Object.entries(votes).forEach(([playerId, vote]) => {
     if (!agenda?.locked?.[playerId]) return;
-    const seat = players.find((p) => p.id === Number(playerId));
+    const seat = players.find((p) => p.id === Number(playerId) || String(p.id) === String(playerId));
     const name = seat?.name || String(playerId);
     voters.push(name);
     if (vote?.choice === 'for') forCount += 1;
@@ -119,6 +119,47 @@ function summarizeAgendaVotes(agenda, players) {
     spentInfluence,
     voterNames: voters,
   };
+}
+
+function serializeOutcome(outcome) {
+  if (outcome == null) return null;
+  if (outcome === 'for' || outcome === 'against') return outcome;
+  if (typeof outcome === 'object' && outcome.choice != null) {
+    return { choice: String(outcome.choice) };
+  }
+  return null;
+}
+
+function agendaTypeLabel(agenda) {
+  const custom = asArray(agenda?.customChoices).filter(Boolean);
+  if (agenda?.type === 'OTHER' && custom[0]) return String(custom[0]);
+  if (agenda?.type === 'FOR_AGAINST') return 'За / Против';
+  if (agenda?.type === 'PLAYER_CHOICE') return 'Выбор игрока';
+  return agenda?.type || '—';
+}
+
+function outcomeLabel(agenda, players) {
+  const outcome = agenda?.outcome;
+  if (outcome === 'for') return 'За';
+  if (outcome === 'against') return 'Против';
+  const choice = typeof outcome === 'object' && outcome != null
+    ? outcome.choice
+    : (agenda?.speakerDecision != null && agenda?.type !== 'FOR_AGAINST'
+      ? agenda.speakerDecision
+      : null);
+  if (choice == null || choice === '') {
+    if (agenda?.speakerDecision === 'for') return 'За';
+    if (agenda?.speakerDecision === 'against') return 'Против';
+    return null;
+  }
+  const seat = players.find((p) => String(p.id) === String(choice));
+  if (seat) return seat.name;
+  const idx = Number(choice);
+  const custom = asArray(agenda?.customChoices);
+  if (Number.isInteger(idx) && custom[idx] != null && String(custom[idx]).trim()) {
+    return String(custom[idx]);
+  }
+  return String(choice);
 }
 
 /** Politics snapshot from final state + speaker timeline from log. */
@@ -140,21 +181,50 @@ export function extractPolitics(state) {
 
   const agendas = asArray(politicsState.agendas)
     .map((agenda, index) => {
+      if (!agenda?.type && !agenda?.cardId) return null;
       if (!agenda?.type) return null;
       const summary = summarizeAgendaVotes(agenda, players);
-      if (summary.voters === 0 && !agenda.type) return null;
-      const custom = asArray(agenda.customChoices).filter(Boolean);
+      const ownerId = agenda.ownerPlayerId ?? (
+        typeof agenda.outcome === 'object' && agenda.outcome?.choice != null
+        && agenda.type === 'PLAYER_CHOICE'
+          ? agenda.outcome.choice
+          : null
+      );
       return {
         index,
+        cardId: agenda.cardId || null,
+        title: agenda.title || null,
+        kind: agenda.kind === 'directive' ? 'directive' : (agenda.kind === 'law' ? 'law' : null),
         type: agenda.type,
-        label: agenda.type === 'OTHER' && custom[0]
-          ? custom[0]
-          : agenda.type === 'FOR_AGAINST'
-            ? 'За / Против'
-            : agenda.type === 'PLAYER_CHOICE'
-              ? 'Выбор игрока'
-              : agenda.type,
+        label: agenda.title || agendaTypeLabel(agenda),
+        typeLabel: agendaTypeLabel(agenda),
+        outcome: serializeOutcome(agenda.outcome),
+        outcomeLabel: outcomeLabel(agenda, players),
+        speakerBreak: agenda.speakerDecision != null && agenda.speakerDecision !== '',
+        speakerDecision: agenda.speakerDecision ?? null,
+        covert: !!agenda.covert,
+        miscount: !!agenda.miscount,
+        ownerPlayerId: ownerId != null ? ownerId : null,
+        owner: ownerId != null ? playerName(players, ownerId) : null,
         ...summary,
+      };
+    })
+    .filter(Boolean);
+
+  const activeLaws = asArray(politicsState.activeLaws)
+    .map((law) => {
+      if (!law?.id && !law?.title) return null;
+      const ownerId = law.ownerPlayerId ?? null;
+      return {
+        id: law.id != null ? String(law.id) : null,
+        title: law.title || law.id || 'Закон',
+        kind: 'law',
+        elect: law.elect || null,
+        voteType: law.voteType || null,
+        outcome: serializeOutcome(law.outcome),
+        enactedRound: law.enactedRound ?? null,
+        ownerPlayerId: ownerId,
+        owner: ownerId != null ? playerName(players, ownerId) : null,
       };
     })
     .filter(Boolean);
@@ -167,6 +237,7 @@ export function extractPolitics(state) {
     voteReversed: !!politicsState.voteReversed,
     agendaPhasesCompleted,
     agendas,
+    activeLaws,
     speakerTimeline,
   };
 }

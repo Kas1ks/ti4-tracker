@@ -22,6 +22,7 @@ const TABS = [
   { id: 'overview', label: 'Обзор' },
   { id: 'players', label: 'Игроки' },
   { id: 'factions', label: 'Фракции' },
+  { id: 'objectives', label: 'Цели' },
   { id: 'meta', label: 'Мета' },
   { id: 'compare', label: 'Сравнение' },
   { id: 'history', label: 'История' },
@@ -63,6 +64,40 @@ function Section({ title, icon, children, empty }) {
         <p className="stats-muted">{empty}</p>
       ) : children}
     </section>
+  );
+}
+
+function objectiveStageLabel(stage) {
+  if (stage === 1) return 'I';
+  if (stage === 2) return 'II';
+  return null;
+}
+
+/** Title + stage + soft description for public objective stats rows. */
+function ObjectiveStatRow({ title, desc, meta, stage }) {
+  const stageLabel = objectiveStageLabel(stage);
+  return (
+    <li className="stats-list-row stats-obj-row">
+      <div className="stats-obj-copy">
+        <div className="stats-obj-top">
+          <div className="stats-obj-title-row">
+            {stageLabel && (
+              <span
+                className={`stats-obj-stage is-stage${stage}`}
+                title={stage === 1 ? 'Цель I уровня' : 'Цель II уровня'}
+              >
+                {stageLabel}
+              </span>
+            )}
+            <span className="stats-list-main stats-obj-title">{title}</span>
+          </div>
+          {meta != null && meta !== '' && (
+            <span className="stats-list-meta">{meta}</span>
+          )}
+        </div>
+        {desc ? <p className="stats-obj-desc">{desc}</p> : null}
+      </div>
+    </li>
   );
 }
 
@@ -802,7 +837,74 @@ function FactionsPanel({ factions, onOpenFaction }) {
   );
 }
 
-function MetaPanel({ analytics, factionMatrix }) {
+function ObjectivesPanel({ objectives = {}, onGoMeta }) {
+  const all = objectives.all || [];
+  const stage1 = useMemo(() => all.filter((o) => o.stage === 1), [all]);
+  const stage2 = useMemo(() => all.filter((o) => o.stage === 2), [all]);
+  const other = useMemo(
+    () => all.filter((o) => o.stage !== 1 && o.stage !== 2),
+    [all],
+  );
+
+  const renderColumn = (title, list, stageClass) => (
+    <section className={`stats-obj-board-col ${stageClass}`}>
+      <h4 className="stats-obj-board-heading">
+        <span className={`stats-obj-stage ${stageClass}`}>{title}</span>
+        <span className="stats-muted">{list.length}</span>
+      </h4>
+      {list.length === 0 ? (
+        <p className="stats-muted">Нет целей этого уровня.</p>
+      ) : (
+        <ul className="stats-list">
+          {list.map((o) => (
+            <ObjectiveStatRow
+              key={o.id}
+              title={o.title}
+              desc={o.desc}
+              stage={o.stage}
+              meta={`${o.revealed} показ. · ${o.avgPlayerPct ?? o.scoreRatePct}%`}
+            />
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+
+  return (
+    <div className="stats-body stats-stack">
+      <div className="stats-obj-board-toolbar">
+        <p className="stats-note" style={{ margin: 0 }}>
+          Все цели из отфильтрованной истории · {all.length}.
+          Показатель: показы и средний % игроков за столом, выполнивших цель.
+        </p>
+        {typeof onGoMeta === 'function' && (
+          <button type="button" className="stats-chip-btn" onClick={onGoMeta}>
+            Топы в Мете
+            <i className="fa-solid fa-arrow-right" aria-hidden="true" />
+          </button>
+        )}
+      </div>
+
+      {all.length === 0 ? (
+        <p className="stats-muted">Нет данных по целям.</p>
+      ) : (
+        <div className="stats-obj-board">
+          <div className="stats-obj-board-grid">
+            {renderColumn('I', stage1, 'is-stage1')}
+            {renderColumn('II', stage2, 'is-stage2')}
+          </div>
+          {other.length > 0 && (
+            <div className="stats-obj-board-other">
+              {renderColumn('Другие', other, 'is-stage0')}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MetaPanel({ analytics, factionMatrix, onGoObjectives }) {
   const {
     objectives = {},
     strategy = {},
@@ -813,6 +915,13 @@ function MetaPanel({ analytics, factionMatrix }) {
   const mostScored = objectives.mostScored || [];
   const rarelyScored = objectives.rarelyScored || [];
   const strategyCards = strategy.cards || [];
+  const strategyCardsByPct = useMemo(
+    () => [...strategyCards].sort(
+      (a, b) => (b.overallPct ?? 0) - (a.overallPct ?? 0) || a.cardId - b.cardId,
+    ),
+    [strategyCards],
+  );
+  const strategyRounds = strategy.rounds || [];
 
   return (
     <div className="stats-body stats-stack">
@@ -827,13 +936,13 @@ function MetaPanel({ analytics, factionMatrix }) {
           empty={!strategyCards.length ? 'Нет данных о драфте.' : null}
         >
           <BarList
-            items={strategyCards.slice(0, 8).map((c) => ({
+            items={strategyCardsByPct.slice(0, 8).map((c) => ({
               id: c.cardId,
               label: c.name,
-              value: c.picks,
-              right: `WR ${c.winRateWhenPicked}%`,
+              value: c.overallPct,
               color: 'stats-bar-fill',
             }))}
+            suffix="%"
           />
         </Section>
         <Section
@@ -866,39 +975,54 @@ function MetaPanel({ analytics, factionMatrix }) {
 
       <FactionStrategyHeatmap matrix={factionMatrix} />
 
-      <div className="stats-grid-2">
-        <Section
-          title="Цели — чаще всего"
-          icon="fa-bullseye"
-          empty={mostScored.length === 0 ? 'Нет данных по целям.' : null}
-        >
-          <ul className="stats-list">
-            {mostScored.map((o) => (
-              <li key={o.id} className="stats-list-row">
-                <span className="stats-list-main" title={o.title}>{o.title}</span>
-                <span className="stats-list-meta">
-                  {o.scoreEvents}× · {o.scoreRatePct}%
-                </span>
-              </li>
-            ))}
-          </ul>
-        </Section>
-        <Section
-          title="Цели — редко"
-          icon="fa-ghost"
-          empty={rarelyScored.length === 0 ? 'Нет данных по целям.' : null}
-        >
-          <ul className="stats-list">
-            {rarelyScored.map((o) => (
-              <li key={o.id} className="stats-list-row">
-                <span className="stats-list-main" title={o.title}>{o.title}</span>
-                <span className="stats-list-meta">
-                  {o.revealed} показ. · {o.scoreRatePct}%
-                </span>
-              </li>
-            ))}
-          </ul>
-        </Section>
+      <div className="stats-obj-tops">
+        <div className="stats-obj-tops-toolbar">
+          <button
+            type="button"
+            className="stats-chip-btn"
+            disabled={!mostScored.length && !rarelyScored.length}
+            onClick={() => onGoObjectives?.()}
+          >
+            <i className="fa-solid fa-map" aria-hidden="true" />
+            Все цели
+          </button>
+        </div>
+        <div className="stats-grid-2">
+          <Section
+            title="Цели — чаще всего"
+            icon="fa-bullseye"
+            empty={mostScored.length === 0 ? 'Нет данных по целям.' : null}
+          >
+            <ul className="stats-list">
+              {mostScored.map((o) => (
+                <ObjectiveStatRow
+                  key={o.id}
+                  title={o.title}
+                  desc={o.desc}
+                  stage={o.stage}
+                  meta={`${o.revealed} показ. · ${o.avgPlayerPct ?? o.scoreRatePct}%`}
+                />
+              ))}
+            </ul>
+          </Section>
+          <Section
+            title="Цели — редко"
+            icon="fa-ghost"
+            empty={rarelyScored.length === 0 ? 'Нет данных по целям.' : null}
+          >
+            <ul className="stats-list">
+              {rarelyScored.map((o) => (
+                <ObjectiveStatRow
+                  key={o.id}
+                  title={o.title}
+                  desc={o.desc}
+                  stage={o.stage}
+                  meta={`${o.revealed} показ. · ${o.avgPlayerPct ?? o.scoreRatePct}%`}
+                />
+              ))}
+            </ul>
+          </Section>
+        </div>
       </div>
 
       <div className="stats-grid-2">
@@ -912,24 +1036,109 @@ function MetaPanel({ analytics, factionMatrix }) {
           }
         >
           {politics?.gamesWithPolitics > 0 && (
-            <ul className="stats-list">
-              <li className="stats-list-row">
-                <span className="stats-list-main is-muted">Партий с политикой</span>
-                <span className="stats-list-meta mono">{politics.gamesWithPolitics}</span>
-              </li>
-              <li className="stats-list-row">
-                <span className="stats-list-main is-muted">WR спикера = победитель</span>
-                <span className="stats-list-meta is-gold">{politics.speakerWinRate}%</span>
-              </li>
-              <li className="stats-list-row">
-                <span className="stats-list-main is-muted">Ср. законов / партия</span>
-                <span className="stats-list-meta mono">{politics.avgAgendasPerGame}</span>
-              </li>
-              <li className="stats-list-row">
-                <span className="stats-list-main is-muted">Закон «1 голос»</span>
-                <span className="stats-list-meta mono">{politics.oneVoteGames} парт.</span>
-              </li>
-            </ul>
+            <>
+              <ul className="stats-list">
+                <li className="stats-list-row">
+                  <span className="stats-list-main is-muted">Партий с политикой</span>
+                  <span className="stats-list-meta mono">{politics.gamesWithPolitics}</span>
+                </li>
+                <li className="stats-list-row">
+                  <span className="stats-list-main is-muted">Ср. фаз agenda</span>
+                  <span className="stats-list-meta mono">{politics.avgAgendaPhases}</span>
+                </li>
+                <li className="stats-list-row">
+                  <span className="stats-list-main is-muted">Ср. активных законов (конец)</span>
+                  <span className="stats-list-meta mono">{politics.avgActiveLaws}</span>
+                </li>
+                <li className="stats-list-row">
+                  <span className="stats-list-main is-muted">Ср. agenda в посл. фазе</span>
+                  <span className="stats-list-meta mono">{politics.avgAgendasPerGame}</span>
+                </li>
+                <li className="stats-list-row">
+                  <span className="stats-list-main is-muted">WR спикера = победитель</span>
+                  <span className="stats-list-meta is-gold">{politics.speakerWinRate}%</span>
+                </li>
+                <li className="stats-list-row">
+                  <span className="stats-list-main is-muted">Решение спикера (ничья / 0)</span>
+                  <span className="stats-list-meta mono">
+                    {politics.speakerBreaks || 0}
+                    {politics.speakerBreakRate != null ? ` · ${politics.speakerBreakRate}%` : ''}
+                  </span>
+                </li>
+                {politics.faResolved > 0 && (
+                  <li className="stats-list-row">
+                    <span className="stats-list-main is-muted">Исход За / Против</span>
+                    <span className="stats-list-meta mono">
+                      {politics.forOutcomeRate}% / {politics.againstOutcomeRate}%
+                    </span>
+                  </li>
+                )}
+                <li className="stats-list-row">
+                  <span className="stats-list-main is-muted">Закон «1 голос»</span>
+                  <span className="stats-list-meta mono">{politics.oneVoteGames} парт.</span>
+                </li>
+                {(politics.voteReversedGames || 0) > 0 && (
+                  <li className="stats-list-row">
+                    <span className="stats-list-main is-muted">Обратный порядок</span>
+                    <span className="stats-list-meta mono">{politics.voteReversedGames} парт.</span>
+                  </li>
+                )}
+                {(politics.electLawsTotal || 0) > 0 && (
+                  <li className="stats-list-row">
+                    <span className="stats-list-main is-muted">Законы на игроке</span>
+                    <span className="stats-list-meta mono">{politics.electLawsTotal}</span>
+                  </li>
+                )}
+                {(politics.covertAgendas > 0 || politics.miscountAgendas > 0) && (
+                  <li className="stats-list-row">
+                    <span className="stats-list-main is-muted">Covert / Miscount</span>
+                    <span className="stats-list-meta mono">
+                      {politics.covertAgendas || 0} / {politics.miscountAgendas || 0}
+                    </span>
+                  </li>
+                )}
+                {((politics.typeCounts?.FOR_AGAINST || 0)
+                  + (politics.typeCounts?.PLAYER_CHOICE || 0)
+                  + (politics.typeCounts?.OTHER || 0)) > 0 && (
+                  <li className="stats-list-row">
+                    <span className="stats-list-main is-muted">Типы agenda</span>
+                    <span className="stats-list-meta mono">
+                      З/П {politics.typeCounts?.FOR_AGAINST || 0}
+                      {' · '}
+                      Elect {politics.typeCounts?.PLAYER_CHOICE || 0}
+                      {' · '}
+                      Other {politics.typeCounts?.OTHER || 0}
+                    </span>
+                  </li>
+                )}
+              </ul>
+              {(politics.topLaws || []).length > 0 && (
+                <div className="stats-detail-block" style={{ marginTop: '0.75rem' }}>
+                  <div className="stats-detail-label">Частые активные законы</div>
+                  <ul className="stats-list">
+                    {politics.topLaws.slice(0, 5).map((law) => (
+                      <li key={law.id || law.title} className="stats-list-row">
+                        <span className="stats-list-main">{law.title}</span>
+                        <span className="stats-list-meta mono">{law.games} парт.</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {(politics.topElectOwners || []).length > 0 && (
+                <div className="stats-detail-block" style={{ marginTop: '0.55rem' }}>
+                  <div className="stats-detail-label">Кому чаще вешали закон</div>
+                  <ul className="stats-list">
+                    {politics.topElectOwners.map((row) => (
+                      <li key={row.key} className="stats-list-row">
+                        <span className="stats-list-main">{row.name}</span>
+                        <span className="stats-list-meta mono">{row.laws}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </>
           )}
         </Section>
         <Section
@@ -972,26 +1181,36 @@ function MetaPanel({ analytics, factionMatrix }) {
         {strategy.gamesWithPicks > 0 && (
           <div className="stats-scroll">
             <p className="stats-note">
-              На основе {strategy.gamesWithPicks} парт. с историей драфта
+              На основе {strategy.gamesWithPicks} парт.
+              «Все %» / «R n» — в скольких драфтах карту взяли (да/нет), не доля среди других карт.
             </p>
             <table className="stats-table">
               <thead>
                 <tr>
                   <th>Карта</th>
-                  <th className="is-center">Пиков</th>
-                  <th className="is-center">Ср. раунд</th>
-                  <th className="is-right">WR при пике</th>
+                  <th className="is-center">Все %</th>
+                  {strategyRounds.map((round) => (
+                    <th key={round} className="is-center">R{round}</th>
+                  ))}
                 </tr>
               </thead>
               <tbody>
                 {strategyCards.map((c) => (
                   <tr key={c.cardId}>
                     <td className="is-strong">{c.name}</td>
-                    <td className="is-center is-muted">{c.picks}</td>
-                    <td className="is-center">
-                      {c.avgRoundPicked != null ? c.avgRoundPicked : '—'}
-                    </td>
-                    <td className="is-right is-gold">{c.winRateWhenPicked}%</td>
+                    <td className="is-center is-gold">{c.overallPct}%</td>
+                    {strategyRounds.map((round) => {
+                      const cell = c.byRound?.[round];
+                      const value = cell?.pct;
+                      return (
+                        <td
+                          key={round}
+                          className={`is-center${value > 0 ? '' : ' is-muted'}`}
+                        >
+                          {value != null ? `${value}%` : '—'}
+                        </td>
+                      );
+                    })}
                   </tr>
                 ))}
               </tbody>
@@ -1063,10 +1282,13 @@ function GameDetail({ game }) {
           <div className="stats-detail-label">Заскоренные цели</div>
           <ul className="stats-list">
             {scoredObjectives.map((o) => (
-              <li key={o.id} className="stats-list-row">
-                <span className="stats-list-main">{o.title}</span>
-                <span className="stats-list-meta">{(o.scoredBy || []).join(', ')}</span>
-              </li>
+              <ObjectiveStatRow
+                key={o.id}
+                title={o.title}
+                desc={o.desc}
+                stage={o.stage}
+                meta={(o.scoredBy || []).join(', ')}
+              />
             ))}
           </ul>
         </div>
@@ -1105,20 +1327,55 @@ function GameDetail({ game }) {
         </div>
       )}
 
-      {game.politics?.finalSpeaker && (
+      {(game.politics?.finalSpeaker
+        || (game.politics?.activeLaws || []).length > 0
+        || (game.politics?.agendas || []).length > 0) && (
         <div className="stats-detail-block">
           <div className="stats-detail-label">Политика</div>
           <div className="stats-note">
-            Спикер: <strong className="is-gold">{game.politics.finalSpeaker}</strong>
+            {game.politics.finalSpeaker && (
+              <>
+                Спикер: <strong className="is-gold">{game.politics.finalSpeaker}</strong>
+              </>
+            )}
             {game.politics.oneVoteLaw && <span> · закон 1 голос</span>}
+            {game.politics.voteReversed && <span> · обратный порядок</span>}
+            {game.politics.agendaPhasesCompleted > 0 && (
+              <span> · фаз {game.politics.agendaPhasesCompleted}</span>
+            )}
           </div>
-          {(game.politics.agendas || []).length > 0 && (
-            <ul className="stats-list">
-              {game.politics.agendas.map((a) => (
-                <li key={a.index} className="stats-list-row">
-                  <span className="stats-list-main">{a.label}</span>
+          {(game.politics.activeLaws || []).length > 0 && (
+            <ul className="stats-list" style={{ marginTop: '0.45rem' }}>
+              {game.politics.activeLaws.map((law) => (
+                <li key={law.id || law.title} className="stats-list-row">
+                  <span className="stats-list-main">
+                    <i className="fa-solid fa-scroll is-muted" aria-hidden="true" />
+                    {' '}
+                    {law.title}
+                    {law.owner ? ` · ${law.owner}` : ''}
+                  </span>
                   <span className="stats-list-meta mono">
-                    {a.for}/{a.against} · {a.voters} гол.
+                    {law.enactedRound != null ? `R${law.enactedRound}` : 'закон'}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+          {(game.politics.agendas || []).length > 0 && (
+            <ul className="stats-list" style={{ marginTop: '0.45rem' }}>
+              {game.politics.agendas.map((a) => (
+                <li key={`${a.index}-${a.cardId || a.label}`} className="stats-list-row">
+                  <span className="stats-list-main">
+                    {a.label}
+                    {a.speakerBreak ? ' · спикер' : ''}
+                    {a.covert ? ' · covert' : ''}
+                    {a.miscount ? ' · miscount' : ''}
+                  </span>
+                  <span className="stats-list-meta mono">
+                    {a.outcomeLabel
+                      || (a.type === 'FOR_AGAINST' ? `${a.for}/${a.against}` : a.typeLabel || a.type)
+                      || '—'}
+                    {a.voters ? ` · ${a.voters}` : ''}
                   </span>
                 </li>
               ))}
@@ -1485,10 +1742,16 @@ export function StatsPage({
                 factions={analytics.factions}
                 onOpenFaction={openFaction}
               />
+            ) : tab === 'objectives' ? (
+              <ObjectivesPanel
+                objectives={analytics.objectives}
+                onGoMeta={() => goTab('meta')}
+              />
             ) : tab === 'meta' ? (
               <MetaPanel
                 analytics={analytics}
                 factionMatrix={factionMatrix}
+                onGoObjectives={() => goTab('objectives')}
               />
             ) : tab === 'compare' ? (
               <CompareTab

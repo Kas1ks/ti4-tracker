@@ -11,15 +11,25 @@ import {
 } from '../stateHelpers';
 import { activePlayers } from '../selectors';
 import { startNewRound } from './roundLifecycle';
-import { emptyAgenda } from './politicsPhase';
+import { buildShuffledAgendaDeck, drawIntoAgenda, emptyAgenda } from '../agendaDeck';
 
-const STAGE_PUBLIC_MAX = 5;
+export const STAGE_PUBLIC_MAX = 5;
+
+/** Official (non-extra) public objectives for a stage. Host extras do not affect cadence. */
+export function officialStageObjectives(active, stage) {
+  const list = Array.isArray(active) ? active : [];
+  return list.filter((o) => {
+    if (o?.extra) return false;
+    const isII = Number(o.stage) === 2;
+    return stage === 2 ? isII : !isII;
+  });
+}
 
 /** Stage I fills to 5 first, then Stage II (TI4 public objective cadence). */
 function nextRevealStage(state) {
   const active = state.objectives?.active || [];
-  const stage1 = active.filter((o) => Number(o.stage) !== 2).length;
-  const stage2 = active.filter((o) => Number(o.stage) === 2).length;
+  const stage1 = officialStageObjectives(active, 1).length;
+  const stage2 = officialStageObjectives(active, 2).length;
   if (stage1 < STAGE_PUBLIC_MAX) return 1;
   if (stage2 < STAGE_PUBLIC_MAX) return 2;
   return null;
@@ -43,6 +53,26 @@ function revealNextPublicObjective(state) {
   };
 }
 
+/**
+ * Force-draw a stage I/II public objective (Incentive Program etc.).
+ * Always `extra: true` — does not fill the normal 5-per-stage status cadence.
+ */
+export function drawStageObjectiveIgnoringCap(state, stage) {
+  const stageNum = Number(stage) === 2 ? 2 : 1;
+  const deckKey = stageNum === 2 ? 'stage2Deck' : 'stage1Deck';
+  const active = state.objectives?.active || [];
+  const nextCard = (state.objectives?.[deckKey] || []).find(
+    (o) => !active.some((a) => a.id === o.id),
+  );
+  if (!nextCard) return { state, objective: null };
+
+  const objective = { ...nextCard, extra: true };
+  return {
+    state: withObjectives(state, { active: [...active, objective] }),
+    objective,
+  };
+}
+
 function clearStatusReveal(state, patch = {}) {
   return withStatusPhase(state, {
     objectiveRevealed: false,
@@ -61,13 +91,28 @@ function confirmStatusPhase(state) {
   if (!next.meta.isPoliticsActive) return startNewRound(next);
 
   const oneVoteLaw = !!next.politics?.oneVoteLaw;
+  const step = oneVoteLaw ? 'VOTE' : 'SETUP';
+  const agendaDeck = buildShuffledAgendaDeck(!!next.meta?.usePok);
+  let agendas = [emptyAgenda()];
+  let deck = agendaDeck;
+  let discard = [];
+  if (step === 'VOTE') {
+    const drawn = drawIntoAgenda(emptyAgenda(), agendaDeck, []);
+    agendas = [drawn.agenda];
+    deck = drawn.agendaDeck;
+    discard = drawn.agendaDiscard;
+  }
   return withPolitics(withMeta(next, { isAgendaPhasePending: true }), {
     showModal: true,
-    step: oneVoteLaw ? 'VOTE' : 'SETUP',
-    agendas: [emptyAgenda()],
+    step,
+    agendas,
     currentAgendaIndex: 0,
     influenceLocked: {},
     voteReversed: false,
+    agendaDeck: deck,
+    agendaDiscard: discard,
+    // Preserve lasting laws across agenda phases.
+    activeLaws: Array.isArray(next.politics?.activeLaws) ? next.politics.activeLaws : [],
   });
 }
 

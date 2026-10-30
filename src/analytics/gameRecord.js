@@ -1,4 +1,6 @@
-import { ALL_FACTIONS } from '../data/gameData';
+import { ALL_FACTIONS, BASE_OBJECTIVES } from '../data/gameData';
+
+const objectiveById = new Map(BASE_OBJECTIVES.map((o) => [o.id, o]));
 import { finalizeRoundTimes, playerScoreBreakdown } from '../game/selectors';
 import {
   enrichPlayerAnalytics,
@@ -68,6 +70,13 @@ function normalizePlayer(raw) {
   };
 }
 
+function normalizeOutcome(raw) {
+  if (raw == null) return null;
+  if (raw === 'for' || raw === 'against') return raw;
+  if (typeof raw === 'object' && raw.choice != null) return { choice: String(raw.choice) };
+  return null;
+}
+
 function normalizePolitics(raw) {
   if (!raw || typeof raw !== 'object') return null;
   return {
@@ -78,8 +87,20 @@ function normalizePolitics(raw) {
     agendaPhasesCompleted: asNumber(raw.agendaPhasesCompleted, 0),
     agendas: asArray(raw.agendas).map((a) => ({
       index: asNumber(a.index, 0),
+      cardId: a.cardId != null ? String(a.cardId) : null,
+      title: a.title || null,
+      kind: a.kind === 'law' || a.kind === 'directive' ? a.kind : null,
       type: a.type || null,
-      label: a.label || a.type || '—',
+      label: a.label || a.title || a.type || '—',
+      typeLabel: a.typeLabel || null,
+      outcome: normalizeOutcome(a.outcome),
+      outcomeLabel: a.outcomeLabel || null,
+      speakerBreak: !!a.speakerBreak,
+      speakerDecision: a.speakerDecision ?? null,
+      covert: !!a.covert,
+      miscount: !!a.miscount,
+      ownerPlayerId: a.ownerPlayerId ?? null,
+      owner: a.owner || null,
       voters: asNumber(a.voters, 0),
       for: asNumber(a.for, 0),
       against: asNumber(a.against, 0),
@@ -87,6 +108,17 @@ function normalizePolitics(raw) {
       spentInfluence: asNumber(a.spentInfluence, 0),
       voterNames: asArray(a.voterNames).map(String),
     })),
+    activeLaws: asArray(raw.activeLaws).map((law) => ({
+      id: law.id != null ? String(law.id) : null,
+      title: law.title || law.id || 'Закон',
+      kind: 'law',
+      elect: law.elect || null,
+      voteType: law.voteType || null,
+      outcome: normalizeOutcome(law.outcome),
+      enactedRound: law.enactedRound ?? null,
+      ownerPlayerId: law.ownerPlayerId ?? null,
+      owner: law.owner || null,
+    })).filter((law) => law.id || law.title),
     speakerTimeline: asArray(raw.speakerTimeline).map((e) => ({
       round: e.round ?? null,
       playerId: e.playerId ?? null,
@@ -114,11 +146,15 @@ function normalizeStrategyPlay(raw) {
 
 function normalizeObjective(raw) {
   if (!raw || typeof raw !== 'object' || !raw.id) return null;
+  const id = String(raw.id);
+  const catalog = objectiveById.get(id);
+  const desc = String(raw.desc || catalog?.desc || '').trim();
   return {
-    id: String(raw.id),
-    title: raw.title || String(raw.id),
-    stage: raw.stage ?? null,
-    points: raw.points ?? null,
+    id,
+    title: raw.title || catalog?.title || id,
+    desc,
+    stage: raw.stage ?? catalog?.stage ?? null,
+    points: raw.points ?? catalog?.points ?? null,
     scoredBy: asArray(raw.scoredBy).map(String).filter(Boolean),
   };
 }
@@ -253,15 +289,19 @@ export function buildGameRecord(state, winnerPlayer, getPlayerScore) {
       pok: !!meta.usePok,
       te: !!meta.useTe,
     },
-    objectives: asArray(state?.objectives?.active).map((o) => ({
-      id: o.id,
-      title: o.title,
-      stage: o.stage,
-      points: o.points,
-      scoredBy: players
-        .filter((p) => state?.objectives?.completions?.[`${p.id}_${o.id}`])
-        .map((p) => p.name),
-    })),
+    objectives: asArray(state?.objectives?.active).map((o) => {
+      const catalog = objectiveById.get(o.id);
+      return {
+        id: o.id,
+        title: o.title || catalog?.title || o.id,
+        desc: String(o.desc || catalog?.desc || '').trim(),
+        stage: o.stage ?? catalog?.stage ?? null,
+        points: o.points ?? catalog?.points ?? null,
+        scoredBy: players
+          .filter((p) => state?.objectives?.completions?.[`${p.id}_${o.id}`])
+          .map((p) => p.name),
+      };
+    }),
     strategyPicks: asArray(meta.strategyPickHistory).map((pick) => {
       const seat = players.find((p) => p.id === pick.playerId);
       return {

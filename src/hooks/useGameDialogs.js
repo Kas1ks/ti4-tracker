@@ -55,11 +55,27 @@ export function useGameDialogs({ game, dispatch, uiAlert, uiConfirm, uiForm, onN
     dispatch({ type: 'DISCARD_OBJECTIVE', objectiveId });
   };
 
+  const officialCountForStage = (stage) => objectives.filter((o) => {
+    if (o?.extra) return false;
+    const isII = Number(o.stage) === 2;
+    return stage === 2 ? isII : !isII;
+  }).length;
+
+  const remainingDeckForStage = (stage) => {
+    const deck = stage === 2 ? stage2Deck : stage1Deck;
+    const activeIds = new Set(objectives.map((o) => o.id));
+    return (deck || []).filter((o) => !activeIds.has(o.id));
+  };
+
   const addRandomObjective = async (stage) => {
-    const deck = stage === 1 ? stage1Deck : stage2Deck;
-    const nextObjective = deck.find(deckObj =>
-      !objectives.some(activeObj => activeObj.id === deckObj.id),
-    );
+    if (officialCountForStage(stage) >= 5) {
+      await uiAlert(
+        `Уже открыто 5 целей этапа ${stage}. 6-ю можно добавить только через «Ввести цель вручную».`,
+        { title: 'Лимит этапа', variant: 'info' },
+      );
+      return;
+    }
+    const nextObjective = remainingDeckForStage(stage)[0];
     if (!nextObjective) {
       await uiAlert(`Все цели ${stage} этапа уже открыты!`, {
         title: 'Колода пуста',
@@ -70,23 +86,56 @@ export function useGameDialogs({ game, dispatch, uiAlert, uiConfirm, uiForm, onN
     dispatch({ type: 'ADD_OBJECTIVE', objective: { ...nextObjective } });
   };
 
-  const addCustomObjective = async () => {
+  const addCustomObjective = async (stageArg) => {
+    const stage = Number(stageArg) === 2 ? 2 : 1;
+    const asExtra = officialCountForStage(stage) >= 5;
+    const remaining = remainingDeckForStage(stage);
+
+    const sourcePick = await uiForm({
+      title: asExtra ? `Доп. цель этапа ${stage}` : `Добавить цель этапа ${stage}`,
+      message: asExtra
+        ? '6-я и далее — только вручную для учёта. Авто-раскрытие в статусе их не считает.'
+        : 'Выберите источник цели.',
+      fields: [
+        {
+          name: 'source',
+          label: 'Откуда',
+          type: 'select',
+          defaultValue: remaining.length ? 'deck' : 'manual',
+          options: [
+            ...(remaining.length
+              ? [{ value: 'deck', label: `Из колоды (${remaining.length})` }]
+              : []),
+            { value: 'manual', label: 'Ввести вручную' },
+          ],
+        },
+      ],
+      confirmLabel: 'Далее',
+    });
+    if (!sourcePick) return;
+
+    if (sourcePick.source === 'deck') {
+      if (!remaining.length) {
+        await uiAlert('В колоде этого этапа не осталось карт.', {
+          title: 'Колода пуста',
+          variant: 'info',
+        });
+        return;
+      }
+      const chosen = remaining[Math.floor(Math.random() * remaining.length)];
+      dispatch({
+        type: 'ADD_OBJECTIVE',
+        objective: { ...chosen, ...(asExtra ? { extra: true } : {}) },
+      });
+      return;
+    }
+
     const result = await uiForm({
-      title: 'Своя цель',
-      message: 'Заполните название, описание и этап.',
+      title: asExtra ? `Своя доп. цель · этап ${stage}` : `Своя цель · этап ${stage}`,
+      message: 'Заполните название и описание.',
       fields: [
         { name: 'title', label: 'Название', placeholder: 'Название цели' },
         { name: 'desc', label: 'Описание', defaultValue: 'Пользовательская цель' },
-        {
-          name: 'stage',
-          label: 'Этап',
-          type: 'select',
-          defaultValue: '1',
-          options: [
-            { value: '1', label: 'Этап 1 (1 ПО)' },
-            { value: '2', label: 'Этап 2 (2 ПО)' },
-          ],
-        },
       ],
       confirmLabel: 'Добавить',
     });
@@ -96,7 +145,6 @@ export function useGameDialogs({ game, dispatch, uiAlert, uiConfirm, uiForm, onN
       await uiAlert('Нужно указать название цели.', { variant: 'danger', title: 'Пустое название' });
       return;
     }
-    const stage = result.stage === '2' ? 2 : 1;
     dispatch({
       type: 'ADD_OBJECTIVE',
       objective: {
@@ -105,6 +153,7 @@ export function useGameDialogs({ game, dispatch, uiAlert, uiConfirm, uiForm, onN
         desc: result.desc ?? 'Пользовательская цель',
         stage,
         points: stage,
+        ...(asExtra ? { extra: true } : {}),
       },
     });
   };

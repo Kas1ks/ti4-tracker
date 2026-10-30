@@ -52,15 +52,22 @@ const play = (state, actions) => actions.reduce(dispatch, state);
 
 /** Answer every pending seat so PLAY_STRATEGY commits the card. */
 const resolveAllStrategy = (state, choice = 'played') => {
-  const responses = state.round?.strategyResolution?.responses || {};
-  return Object.keys(responses).reduce((next, id) => {
+  let next = state;
+  const res = next.round?.strategyResolution;
+  // Politics: finish agenda peek before played/pass can complete for primary.
+  if (res?.active && res.phase === 'peek') {
+    const placements = (res.peekCards || []).map((cardId) => ({ cardId, dest: 'top' }));
+    next = dispatch(next, { type: 'COMMIT_POLITICS_PEEK', placements });
+  }
+  const responses = next.round?.strategyResolution?.responses || {};
+  return Object.keys(responses).reduce((acc, id) => {
     const playerId = Number(id);
-    if (next.round?.strategyResolution?.responses?.[playerId] !== 'pending'
-      && next.round?.strategyResolution?.responses?.[id] !== 'pending') {
-      return next;
+    if (acc.round?.strategyResolution?.responses?.[playerId] !== 'pending'
+      && acc.round?.strategyResolution?.responses?.[id] !== 'pending') {
+      return acc;
     }
-    return dispatch(next, { type: 'RESOLVE_STRATEGY', playerId, choice });
-  }, state);
+    return dispatch(acc, { type: 'RESOLVE_STRATEGY', playerId, choice });
+  }, next);
 };
 
 const playStrategyFully = (state, cardId, choice = 'played') => {
@@ -605,6 +612,60 @@ describe('round and turn order', () => {
     expect(state.players.find(p => p.id === 3).strategyPlayed).toBe(false);
   });
 
+  it('Politics strategy peeks top 2 agendas then opens played/pass resolution', () => {
+    let state = gameWith([
+      player(1, 'A', { cards: [STRATEGY_CARDS[2]], lastMinInitiative: 1 }),
+      player(2, 'B', { cards: [STRATEGY_CARDS[0]], lastMinInitiative: 2 }),
+    ]);
+    state = {
+      ...state,
+      politics: {
+        ...state.politics,
+        agendaDeck: ['mutiny', 'fleet_regulations', 'arms_reduction'],
+        agendaDiscard: [],
+        activeLaws: [],
+      },
+    };
+    state = dispatch(state, { type: 'START_ROUND' });
+    expect(activePlayer(state).id).toBe(1);
+
+    state = dispatch(state, { type: 'SET_SPEAKER', playerId: 2 });
+    state = dispatch(state, { type: 'PLAY_STRATEGY', cardId: 3 });
+    expect(state.round.strategyResolution.active).toBe(true);
+    expect(state.round.strategyResolution.phase).toBe('peek');
+    expect(state.round.strategyResolution.peekCards).toEqual(['mutiny', 'fleet_regulations']);
+    expect(state.politics.agendaDeck[0]).toBe('arms_reduction');
+    // Secondaries may answer during peek; primary stays on peeking.
+    expect(state.round.strategyResolution.responses[1]).toBe('peeking');
+    expect(state.round.strategyResolution.responses[2]).toBe('pending');
+
+    state = dispatch(state, {
+      type: 'RESOLVE_STRATEGY', playerId: 2, choice: 'passed',
+    });
+    expect(state.round.strategyResolution.responses[2]).toBe('passed');
+    expect(state.round.strategyResolution.active).toBe(true);
+    expect(state.round.strategyResolution.phase).toBe('peek');
+
+    // Primary cannot resolve until peek is committed.
+    expect(dispatch(state, {
+      type: 'RESOLVE_STRATEGY', playerId: 1, choice: 'played',
+    })).toBe(state);
+
+    state = dispatch(state, {
+      type: 'COMMIT_POLITICS_PEEK',
+      placements: [
+        { cardId: 'fleet_regulations', dest: 'bottom' },
+        { cardId: 'mutiny', dest: 'top' },
+      ],
+    });
+    expect(state.round.strategyResolution.phase).toBe('resolve');
+    expect(state.round.strategyResolution.peekCards).toEqual([]);
+    expect(state.politics.agendaDeck[0]).toBe('mutiny');
+    expect(state.politics.agendaDeck[state.politics.agendaDeck.length - 1]).toBe('fleet_regulations');
+    expect(state.round.strategyResolution.responses[1]).toBe('pending');
+    expect(state.round.strategyResolution.responses[2]).toBe('passed');
+  });
+
   it('plays each strategy card separately when a player holds two', () => {
     let state = gameWith([
       player(1, 'A', { cards: [STRATEGY_CARDS[0], STRATEGY_CARDS[3]], lastMinInitiative: 1 }),
@@ -1034,6 +1095,36 @@ describe('status phase', () => {
     expect(stage2After).toBe(stage2Before + 1);
   });
 
+  it('host extra (6th) Stage I objectives do not delay Stage II auto-reveal', () => {
+    let state = atStatusPhase();
+    while (state.objectives.active.filter((o) => Number(o.stage) !== 2 && !o.extra).length < 5) {
+      state = dispatch(state, { type: 'CONFIRM_STATUS_PHASE' });
+      state = dispatch(withAllPassed(state), { type: 'END_ROUND' });
+      state = dispatch(state, { type: 'TOGGLE_STATUS_CHECK', key: 'revealObjective', at: Date.now() });
+    }
+    expect(state.objectives.active.filter((o) => Number(o.stage) !== 2 && !o.extra).length).toBe(5);
+
+    state = dispatch(state, {
+      type: 'ADD_OBJECTIVE',
+      objective: {
+        id: 'host_extra_s1',
+        title: 'Extra',
+        desc: 'Host sixth',
+        stage: 1,
+        points: 1,
+        extra: true,
+      },
+    });
+    expect(state.objectives.active.filter((o) => Number(o.stage) !== 2).length).toBe(6);
+
+    state = dispatch(state, { type: 'CONFIRM_STATUS_PHASE' });
+    state = dispatch(withAllPassed(state), { type: 'END_ROUND' });
+    state = dispatch(state, { type: 'TOGGLE_STATUS_CHECK', key: 'revealObjective', at: Date.now() });
+    const last = state.objectives.active[state.objectives.active.length - 1];
+    expect(Number(last.stage)).toBe(2);
+    expect(last.extra).toBeFalsy();
+  });
+
   it('opens an objective scoring window and completes when everyone responds', () => {
     const objective = BASE_OBJECTIVES[0];
     let state = dispatch(atStatusPhase(), { type: 'ADD_OBJECTIVE', objective });
@@ -1140,6 +1231,8 @@ describe('status phase', () => {
     expect(state.meta.isAgendaPhasePending).toBe(true);
     expect(state.politics).toMatchObject({ showModal: true, step: 'SETUP', currentAgendaIndex: 0 });
     expect(state.politics.agendas).toEqual([{ type: null, votes: {}, locked: {} }]);
+    expect(state.politics.agendaDeck).toHaveLength(50);
+    expect(state.politics.activeLaws).toEqual([]);
   });
 });
 
@@ -1226,6 +1319,7 @@ describe('agenda phase', () => {
     expect(state.politics.oneVoteLaw).toBe(true);
     expect(state.politics.step).toBe('VOTE');
 
+    state = dispatch(state, { type: 'REVEAL_AGENDA' });
     state = dispatch(state, { type: 'SET_AGENDA_TYPE', agendaType: 'FOR_AGAINST' });
     state = dispatch(state, {
       type: 'SET_VOTE',

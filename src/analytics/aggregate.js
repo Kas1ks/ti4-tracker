@@ -1,4 +1,4 @@
-import { STRATEGY_CARDS } from '../data/gameData';
+import { BASE_OBJECTIVES, STRATEGY_CARDS } from '../data/gameData';
 import { techById } from '../data/technologies';
 import {
   avg,
@@ -9,6 +9,15 @@ import {
   resolveFactionId,
 } from './keys';
 import { normalizeHistory } from './gameRecord';
+
+const objectiveCatalog = new Map(BASE_OBJECTIVES.map((o) => [o.id, o]));
+
+function resolveObjectiveDesc(id, fallback = '') {
+  const fromCatalog = objectiveCatalog.get(id)?.desc;
+  if (fromCatalog) return fromCatalog;
+  const text = String(fallback || '').trim();
+  return text || '';
+}
 
 /**
  * @typedef {object} GameRecord
@@ -158,128 +167,185 @@ export function buildFactionStats(history) {
 }
 
 /**
- * OBJECTIVES: most / rarely scored + difficulty (score rate among reveals).
+ * OBJECTIVES: reveal count + avg share of players who scored it per reveal.
+ * mostScored / rarelyScored are opposites of the same completion %.
  * A game "reveals" an objective if it appears in game.objectives[].
  */
 export function buildObjectiveStats(history) {
   const map = new Map();
 
   (history || []).forEach((game) => {
+    const playerCount = Array.isArray(game.players) && game.players.length
+      ? game.players.length
+      : (Number(game.playerCount) || 0);
+
     (game.objectives || []).forEach((obj) => {
       if (!obj?.id) return;
+      const catalog = objectiveCatalog.get(obj.id);
       if (!map.has(obj.id)) {
         map.set(obj.id, {
           id: obj.id,
-          title: obj.title || obj.id,
-          stage: obj.stage ?? null,
-          points: obj.points ?? null,
+          title: obj.title || catalog?.title || obj.id,
+          desc: resolveObjectiveDesc(obj.id, obj.desc),
+          stage: obj.stage ?? catalog?.stage ?? null,
+          points: obj.points ?? catalog?.points ?? null,
           revealed: 0,
           scored: 0,
           scoreEvents: 0,
+          completionSum: 0,
+          completionSamples: 0,
         });
       }
       const row = map.get(obj.id);
       if (obj.title) row.title = obj.title;
+      const desc = resolveObjectiveDesc(obj.id, obj.desc);
+      if (desc) row.desc = desc;
       row.revealed += 1;
       const scorers = Array.isArray(obj.scoredBy) ? obj.scoredBy.filter(Boolean) : [];
       if (scorers.length > 0) {
         row.scored += 1;
         row.scoreEvents += scorers.length;
       }
+      if (playerCount > 0) {
+        row.completionSum += Math.min(scorers.length, playerCount) / playerCount;
+        row.completionSamples += 1;
+      }
     });
   });
 
-  const rows = [...map.values()].map((row) => ({
-    id: row.id,
-    title: row.title,
-    stage: row.stage,
-    points: row.points,
-    revealed: row.revealed,
-    scoredGames: row.scored,
-    scoreEvents: row.scoreEvents,
-    /** 0–1: share of reveals where at least one player scored it. */
-    difficulty: row.revealed ? Math.round((row.scored / row.revealed) * 100) / 100 : 0,
-    scoreRatePct: pct(row.scored, row.revealed),
-  }));
+  const rows = [...map.values()]
+    .filter((row) => row.revealed >= 1)
+    .map((row) => {
+      const avgPlayerPct = row.completionSamples
+        ? Math.round((row.completionSum / row.completionSamples) * 100)
+        : 0;
+      return {
+        id: row.id,
+        title: row.title,
+        desc: row.desc || '',
+        stage: row.stage,
+        points: row.points,
+        revealed: row.revealed,
+        scoredGames: row.scored,
+        scoreEvents: row.scoreEvents,
+        /** Avg % of table that scored the objective when it was revealed. */
+        avgPlayerPct,
+        /** @deprecated alias of avgPlayerPct for older UI bindings */
+        scoreRatePct: avgPlayerPct,
+      };
+    });
 
-  const byScoreEvents = [...rows].sort((a, b) => b.scoreEvents - a.scoreEvents || b.scoredGames - a.scoredGames);
-  const byRarity = [...rows]
-    .filter((r) => r.revealed >= 1)
-    .sort((a, b) => a.scoreRatePct - b.scoreRatePct || b.revealed - a.revealed);
+  const byCompletionDesc = [...rows].sort(
+    (a, b) => b.avgPlayerPct - a.avgPlayerPct || b.revealed - a.revealed || a.title.localeCompare(b.title, 'ru'),
+  );
+  const byCompletionAsc = [...rows].sort(
+    (a, b) => a.avgPlayerPct - b.avgPlayerPct || b.revealed - a.revealed || a.title.localeCompare(b.title, 'ru'),
+  );
 
   return {
-    all: rows.sort((a, b) => a.title.localeCompare(b.title, 'ru')),
-    mostScored: byScoreEvents.slice(0, 10),
-    rarelyScored: byRarity.slice(0, 10),
+    all: [...rows].sort((a, b) => {
+      const stageA = a.stage ?? 99;
+      const stageB = b.stage ?? 99;
+      return stageA - stageB || a.title.localeCompare(b.title, 'ru');
+    }),
+    mostScored: byCompletionDesc.slice(0, 5),
+    rarelyScored: byCompletionAsc.slice(0, 5),
   };
 }
 
 /**
- * STRATEGY CARDS: pick frequency, avg round picked, victory correlation.
+ * STRATEGY CARDS: pick rates as "was this card taken?" (yes/no).
+ * - Rn: share of games with a draft in round n where the card was picked that round.
+ * - Overall: share of (game × round) drafts where the card was picked.
  * Requires game.strategyPicks[]; empty when history has none.
  */
 export function buildStrategyStats(history) {
   const cardMeta = new Map(STRATEGY_CARDS.map((c) => [c.id, c]));
   const map = new Map();
+  /** Games that had at least one pick in this round. */
+  const roundGames = new Map();
+  /** cardId → round → games where the card was picked that round. */
+  const cardRoundGames = new Map();
   let gamesWithPicks = 0;
+  let draftSlots = 0;
+  let totalPicks = 0;
+
+  function ensureCard(cardId) {
+    if (!map.has(cardId)) {
+      const meta = cardMeta.get(cardId);
+      map.set(cardId, {
+        cardId,
+        name: meta?.name || `Карта #${cardId}`,
+        picks: 0,
+        draftHits: 0,
+      });
+      cardRoundGames.set(cardId, new Map());
+    }
+    return map.get(cardId);
+  }
 
   (history || []).forEach((game) => {
     const picks = Array.isArray(game.strategyPicks) ? game.strategyPicks : [];
     if (picks.length === 0) return;
     gamesWithPicks += 1;
 
-    const winners = new Set(
-      (game.players || []).filter((p) => p.isWinner).map((p) => playerKey(p.name)),
-    );
-
-    // Dedupe (player, card) per game for win correlation; keep all picks for freq/round.
-    const seenPair = new Set();
+    /** round → Set(cardId) taken in that round of this game. */
+    const cardsByRound = new Map();
 
     picks.forEach((pick) => {
       const cardId = Number(pick.cardId);
       if (!Number.isFinite(cardId)) return;
-      if (!map.has(cardId)) {
-        const meta = cardMeta.get(cardId);
-        map.set(cardId, {
-          cardId,
-          name: meta?.name || `Карта #${cardId}`,
-          picks: 0,
-          roundSum: 0,
-          winPicks: 0,
-          uniquePlayerGames: 0,
-        });
-      }
-      const row = map.get(cardId);
+      const row = ensureCard(cardId);
       row.picks += 1;
-      if (Number.isFinite(pick.round) && pick.round > 0) {
-        row.roundSum += pick.round;
-      }
+      totalPicks += 1;
 
-      const pKey = playerKey(pick.player);
-      const pairKey = `${pKey}::${cardId}`;
-      if (pKey && !seenPair.has(pairKey)) {
-        seenPair.add(pairKey);
-        row.uniquePlayerGames += 1;
-        if (winners.has(pKey)) row.winPicks += 1;
-      }
+      const round = Number(pick.round);
+      if (!Number.isFinite(round) || round <= 0) return;
+      if (!cardsByRound.has(round)) cardsByRound.set(round, new Set());
+      cardsByRound.get(round).add(cardId);
+    });
+
+    cardsByRound.forEach((cardIds, round) => {
+      roundGames.set(round, (roundGames.get(round) || 0) + 1);
+      draftSlots += 1;
+      cardIds.forEach((cardId) => {
+        const row = ensureCard(cardId);
+        row.draftHits += 1;
+        const byRound = cardRoundGames.get(cardId);
+        byRound.set(round, (byRound.get(round) || 0) + 1);
+      });
     });
   });
 
+  const rounds = [...roundGames.keys()].sort((a, b) => a - b);
+
   const rows = [...map.values()]
-    .map((row) => ({
-      cardId: row.cardId,
-      name: row.name,
-      picks: row.picks,
-      avgRoundPicked: row.picks
-        ? Math.round(avg(row.roundSum, row.picks) * 10) / 10
-        : null,
-      winRateWhenPicked: pct(row.winPicks, row.uniquePlayerGames),
-      uniquePlayerGames: row.uniquePlayerGames,
-    }))
-    .sort((a, b) => b.picks - a.picks || a.cardId - b.cardId);
+    .map((row) => {
+      const hitsByRound = cardRoundGames.get(row.cardId) || new Map();
+      const byRound = {};
+      rounds.forEach((round) => {
+        const hits = hitsByRound.get(round) || 0;
+        const gamesInRound = roundGames.get(round) || 0;
+        byRound[round] = {
+          games: hits,
+          pct: pct(hits, gamesInRound),
+        };
+      });
+      return {
+        cardId: row.cardId,
+        name: row.name,
+        picks: row.picks,
+        overallPct: pct(row.draftHits, draftSlots),
+        byRound,
+      };
+    })
+    .sort((a, b) => a.cardId - b.cardId);
 
   return {
     gamesWithPicks,
+    totalPicks,
+    draftSlots,
+    rounds,
     cards: rows,
   };
 }
@@ -420,39 +486,112 @@ export function buildTechStats(history) {
   };
 }
 
-/** Politics: speaker wins, one-vote law games, avg agendas per game. */
+/** Politics: lasting laws, vote outcomes, speaker breaks, one-vote / reverse. */
 export function buildPoliticsStats(history) {
   let gamesWithPolitics = 0;
   let oneVoteGames = 0;
+  let voteReversedGames = 0;
   let speakerWins = 0;
   let agendaSum = 0;
   let phasesSum = 0;
+  let activeLawsSum = 0;
+  let electLawsSum = 0;
+  let speakerBreaks = 0;
+  let agendasTallied = 0;
+  let forOutcomes = 0;
+  let againstOutcomes = 0;
+  let covertAgendas = 0;
+  let miscountAgendas = 0;
+  const typeCounts = { FOR_AGAINST: 0, PLAYER_CHOICE: 0, OTHER: 0 };
+  const lawMap = new Map();
+  const electOwnerMap = new Map();
 
   (history || []).forEach((game) => {
     const pol = game.politics;
     if (!pol) return;
+    const activeLaws = Array.isArray(pol.activeLaws) ? pol.activeLaws : [];
+    const agendas = Array.isArray(pol.agendas) ? pol.agendas : [];
     const hasData = pol.finalSpeaker
-      || (pol.agendas && pol.agendas.length > 0)
+      || agendas.length > 0
+      || activeLaws.length > 0
       || pol.agendaPhasesCompleted > 0;
     if (!hasData) return;
     gamesWithPolitics += 1;
     if (pol.oneVoteLaw) oneVoteGames += 1;
-    agendaSum += (pol.agendas || []).length;
+    if (pol.voteReversed) voteReversedGames += 1;
+    agendaSum += agendas.length;
     phasesSum += pol.agendaPhasesCompleted || 0;
+    activeLawsSum += activeLaws.length;
     const winnerKey = playerKey(game.winner);
     const speakerKey = playerKey(pol.finalSpeaker);
     if (winnerKey && speakerKey && winnerKey === speakerKey) speakerWins += 1;
+
+    activeLaws.forEach((law) => {
+      const id = law.id != null ? String(law.id) : null;
+      const title = law.title || id || 'Закон';
+      const key = id || title.toLowerCase();
+      const prev = lawMap.get(key) || { id, title, games: 0 };
+      prev.games += 1;
+      if (!prev.title && title) prev.title = title;
+      lawMap.set(key, prev);
+      if (law.ownerPlayerId != null || law.owner) {
+        electLawsSum += 1;
+        const ownerKey = playerKey(law.owner) || String(law.ownerPlayerId);
+        if (ownerKey) {
+          const row = electOwnerMap.get(ownerKey) || {
+            key: ownerKey,
+            name: law.owner || String(law.ownerPlayerId),
+            laws: 0,
+          };
+          row.laws += 1;
+          electOwnerMap.set(ownerKey, row);
+        }
+      }
+    });
+
+    agendas.forEach((agenda) => {
+      agendasTallied += 1;
+      if (agenda.type && typeCounts[agenda.type] != null) typeCounts[agenda.type] += 1;
+      if (agenda.speakerBreak) speakerBreaks += 1;
+      if (agenda.covert) covertAgendas += 1;
+      if (agenda.miscount) miscountAgendas += 1;
+      if (agenda.outcome === 'for') forOutcomes += 1;
+      else if (agenda.outcome === 'against') againstOutcomes += 1;
+    });
   });
+
+  const faResolved = forOutcomes + againstOutcomes;
+  const topLaws = [...lawMap.values()]
+    .sort((a, b) => b.games - a.games || String(a.title).localeCompare(String(b.title), 'ru'))
+    .slice(0, 8);
+  const topElectOwners = [...electOwnerMap.values()]
+    .sort((a, b) => b.laws - a.laws || String(a.name).localeCompare(String(b.name), 'ru'))
+    .slice(0, 5);
 
   return {
     gamesWithPolitics,
     oneVoteGames,
+    voteReversedGames,
     avgAgendasPerGame: gamesWithPolitics
       ? Math.round((agendaSum / gamesWithPolitics) * 10) / 10
       : 0,
     avgAgendaPhases: gamesWithPolitics
       ? Math.round((phasesSum / gamesWithPolitics) * 10) / 10
       : 0,
+    avgActiveLaws: gamesWithPolitics
+      ? Math.round((activeLawsSum / gamesWithPolitics) * 10) / 10
+      : 0,
+    electLawsTotal: electLawsSum,
+    speakerBreaks,
+    speakerBreakRate: pct(speakerBreaks, agendasTallied),
+    forOutcomeRate: pct(forOutcomes, faResolved),
+    againstOutcomeRate: pct(againstOutcomes, faResolved),
+    faResolved,
+    typeCounts,
+    covertAgendas,
+    miscountAgendas,
+    topLaws,
+    topElectOwners,
     speakerWinRate: pct(speakerWins, gamesWithPolitics),
   };
 }

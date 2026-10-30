@@ -44,6 +44,10 @@ export const EMPTY_STRATEGY_RESOLUTION = Object.freeze({
   startedAt: null,
   responses: {},
   resolvedAt: Object.freeze({}),
+  /** Politics (3): 'peek' (look at top 2 agendas) then 'resolve' (played/pass). */
+  phase: null,
+  /** Agenda card ids drawn for Politics primary peek (face-up only to that seat in UI). */
+  peekCards: Object.freeze([]),
 });
 
 /** Imperial (card 8) primary: Mecatol VP or secret, plus one public — applied on confirm. */
@@ -242,6 +246,9 @@ export function createEmptyGameState() {
       voteReversed: false,
       /** Lasting law: each seat casts exactly 1 vote; skip influence SETUP. */
       oneVoteLaw: false,
+      agendaDeck: [],
+      agendaDiscard: [],
+      activeLaws: [],
     },
     statusPhase: {
       show: false,
@@ -332,6 +339,9 @@ function toFlat(raw) {
     influenceLocked: politics.influenceLocked,
     voteReversed: politics.voteReversed,
     oneVoteLaw: politics.oneVoteLaw,
+    agendaDeck: politics.agendaDeck,
+    agendaDiscard: politics.agendaDiscard,
+    activeLaws: politics.activeLaws,
     showStatusPhase: statusPhase.show,
     statusPhaseChecks: statusPhase.checks,
     objectiveScoring: statusPhase.scoring,
@@ -416,6 +426,10 @@ function normalizeStrategyResolution(value) {
   const cardId = Number(raw.cardId);
   const playerId = Number(raw.playerId);
   const startedAt = Number(raw.startedAt);
+  const phase = raw.phase === 'peek' || raw.phase === 'resolve' ? raw.phase : 'resolve';
+  const peekCards = asArray(raw.peekCards, [])
+    .map((id) => String(id))
+    .filter(Boolean);
   return {
     active: true,
     cardId: Number.isFinite(cardId) ? cardId : null,
@@ -423,6 +437,8 @@ function normalizeStrategyResolution(value) {
     startedAt: Number.isFinite(startedAt) ? startedAt : null,
     responses,
     resolvedAt,
+    phase,
+    peekCards,
   };
 }
 
@@ -791,6 +807,9 @@ export function normalizeGameState(raw) {
       influenceLocked: asRecord(flat.influenceLocked),
       voteReversed: !!flat.voteReversed,
       oneVoteLaw: !!flat.oneVoteLaw,
+      agendaDeck: asArray(flat.agendaDeck, []),
+      agendaDiscard: asArray(flat.agendaDiscard, []),
+      activeLaws: asArray(flat.activeLaws, []),
     },
     statusPhase: {
       show: !!flat.showStatusPhase,

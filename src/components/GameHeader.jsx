@@ -123,6 +123,8 @@ export function GameHeader({
   onOpenEventLog,
   onOpenExpedition,
   onOpenTech,
+  onOpenActiveLaws,
+  activeLawsCount = 0,
   onUndoLast,
   canUndo = false,
   onOpenCombat,
@@ -144,8 +146,9 @@ export function GameHeader({
   const canCombat = isAdmin && !victoryLocked;
   const canUndoLast = isAdmin && typeof onUndoLast === 'function';
   const canPushSettings = !!canUsePush && typeof onOpenPushSettings === 'function';
+  const canViewLaws = typeof onOpenActiveLaws === 'function';
 
-  const hasMoreItems = canPhases || canExport || canEndGame || canUndoLast || canPushSettings;
+  const hasMoreItems = canPhases || canExport || canEndGame || canUndoLast || canPushSettings || canViewLaws;
   const leaveButton = typeof onLeaveRoom === 'function' && isViewer ? (
     <button
       type="button"
@@ -273,6 +276,20 @@ export function GameHeader({
                   )
                 )}
 
+                {canViewLaws && (
+                  <button
+                    type="button"
+                    onClick={onOpenActiveLaws}
+                    className={`${CTRL} game-header-btn`}
+                    title="Активные законы"
+                  >
+                    <i className="fa-solid fa-scroll" aria-hidden="true" />
+                    <span className="max-md:hidden">Законы</span>
+                    {activeLawsCount > 0 && (
+                      <span className="game-header-laws-count">{activeLawsCount}</span>
+                    )}
+                  </button>
+                )}
                 {hasMoreItems && (
                   <HeaderMoreMenu
                     canPhases={canPhases}
@@ -280,6 +297,7 @@ export function GameHeader({
                     canEndGame={canEndGame}
                     canCombat={canCombat}
                     canPushSettings={canPushSettings}
+                    canViewLaws={canViewLaws}
                     isPoliticsActive={isPoliticsActive}
                     onTogglePolitics={onTogglePolitics}
                     onExport={onExport}
@@ -289,6 +307,8 @@ export function GameHeader({
                     onOpenExpedition={onOpenExpedition}
                     onOpenCombat={onOpenCombat}
                     onOpenStats={onOpenStats}
+                    onOpenActiveLaws={onOpenActiveLaws}
+                    activeLawsCount={activeLawsCount}
                     onOpenPushSettings={onOpenPushSettings}
                   />
                 )}
@@ -369,6 +389,20 @@ export function GameHeader({
                     </button>
                   )
                 )}
+                {canViewLaws && (
+                  <button
+                    type="button"
+                    onClick={onOpenActiveLaws}
+                    className={`${CTRL} game-header-btn !px-2.5`}
+                    title="Активные законы"
+                    aria-label="Активные законы"
+                  >
+                    <i className="fa-solid fa-scroll" aria-hidden="true" />
+                    {activeLawsCount > 0 && (
+                      <span className="game-header-laws-count">{activeLawsCount}</span>
+                    )}
+                  </button>
+                )}
                 <HeaderMoreMenu
                   compact
                   canPhases={canPhases}
@@ -376,6 +410,7 @@ export function GameHeader({
                   canEndGame={canEndGame}
                   canCombat={canCombat}
                   canPushSettings={canPushSettings}
+                  canViewLaws={canViewLaws}
                   isPoliticsActive={isPoliticsActive}
                   onTogglePolitics={onTogglePolitics}
                   onExport={onExport}
@@ -385,6 +420,8 @@ export function GameHeader({
                   onOpenExpedition={onOpenExpedition}
                   onOpenCombat={onOpenCombat}
                   onOpenStats={onOpenStats}
+                  onOpenActiveLaws={onOpenActiveLaws}
+                  activeLawsCount={activeLawsCount}
                   onOpenPushSettings={onOpenPushSettings}
                 />
               </div>
@@ -420,6 +457,7 @@ function HeaderMoreMenu({
   canEndGame,
   canCombat = false,
   canPushSettings = false,
+  canViewLaws = false,
   isPoliticsActive,
   onTogglePolitics,
   onExport,
@@ -429,6 +467,8 @@ function HeaderMoreMenu({
   onOpenExpedition,
   onOpenCombat,
   onOpenStats,
+  onOpenActiveLaws,
+  activeLawsCount = 0,
   onOpenPushSettings,
 }) {
   const [open, setOpen] = useState(false);
@@ -503,6 +543,26 @@ function HeaderMoreMenu({
                 <span className="hdr-more-switch-knob" />
               </button>
             </div>
+          )}
+
+          {canViewLaws && (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={runAndClose(onOpenActiveLaws)}
+              className="hdr-more-item"
+            >
+              <span className="hdr-more-ico is-gold" aria-hidden="true">
+                <i className="fa-solid fa-scroll" />
+              </span>
+              <div className="hdr-more-copy">
+                <span className="hdr-more-title">Активные законы</span>
+                <span className="hdr-more-desc">
+                  {activeLawsCount > 0 ? `${activeLawsCount} в игре` : 'Пока пусто'}
+                </span>
+              </div>
+              <i className="fa-solid fa-chevron-right hdr-more-chev" aria-hidden="true" />
+            </button>
           )}
 
           {canExport && (

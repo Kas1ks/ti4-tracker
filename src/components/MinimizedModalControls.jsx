@@ -6,6 +6,7 @@ export function MinimizedModalControls({
   showStatusPhaseModal,
   scoringActive = false,
   strategyResolutionActive = false,
+  politicsPeekActive = false,
   imperialClaimActive = false,
   techResearchActive = false,
   expeditionActive = false,
@@ -23,6 +24,13 @@ export function MinimizedModalControls({
       label: 'Розыгрыш стратегии',
       icon: 'fa-clone',
       className: 'bg-slate-800 border border-amber-500 text-amber-300',
+    },
+    {
+      id: 'politicsPeek',
+      show: politicsPeekActive,
+      label: 'Просмотр колоды',
+      icon: 'fa-eye',
+      className: 'bg-slate-800 border border-yellow-600 text-yellow-300',
     },
     {
       id: 'startingTechDraft',

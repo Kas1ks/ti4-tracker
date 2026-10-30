@@ -38,17 +38,37 @@ describe('extractStrategyPlays', () => {
 });
 
 describe('extractPolitics', () => {
-  it('snapshots agendas and speaker', () => {
+  it('snapshots agendas, active laws and speaker', () => {
     const state = {
-      players: [{ id: 1, name: 'Spk' }],
+      players: [
+        { id: 1, name: 'Spk' },
+        { id: 2, name: 'Bob' },
+      ],
       meta: { speakerId: 1, roundNumber: 3 },
       politics: {
         oneVoteLaw: true,
-        voteReversed: false,
+        voteReversed: true,
         agendas: [{
+          cardId: 'fleet_regulations',
+          title: 'Регулирование флота',
+          kind: 'law',
           type: 'FOR_AGAINST',
-          votes: { 1: { choice: 'for', amount: 2 } },
-          locked: { 1: true },
+          outcome: 'for',
+          speakerDecision: 'for',
+          votes: {
+            1: { choice: 'for', amount: 1 },
+            2: { choice: 'against', amount: 1 },
+          },
+          locked: { 1: true, 2: true },
+        }],
+        activeLaws: [{
+          id: 'minister_of_policy',
+          title: 'Министр политики',
+          elect: 'player',
+          voteType: 'PLAYER_CHOICE',
+          ownerPlayerId: 2,
+          outcome: { choice: '2' },
+          enactedRound: 2,
         }],
       },
       log: { events: [{ type: 'AGENDA_PHASE_FINISHED', roundNumber: 3 }] },
@@ -56,7 +76,14 @@ describe('extractPolitics', () => {
     const pol = extractPolitics(state);
     expect(pol.finalSpeaker).toBe('Spk');
     expect(pol.oneVoteLaw).toBe(true);
+    expect(pol.voteReversed).toBe(true);
     expect(pol.agendas).toHaveLength(1);
+    expect(pol.agendas[0].title).toBe('Регулирование флота');
+    expect(pol.agendas[0].outcome).toBe('for');
+    expect(pol.agendas[0].outcomeLabel).toBe('За');
+    expect(pol.agendas[0].speakerBreak).toBe(true);
+    expect(pol.activeLaws).toHaveLength(1);
+    expect(pol.activeLaws[0].owner).toBe('Bob');
     expect(pol.agendaPhasesCompleted).toBe(1);
   });
 });

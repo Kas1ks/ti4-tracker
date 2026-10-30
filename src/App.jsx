@@ -45,6 +45,8 @@ const ObjectiveScoringModal = lazy(() => import('./components/ObjectiveScoringMo
 const EndGameModal = lazy(() => import('./components/EndGameModal').then(m => ({ default: m.EndGameModal })));
 const DraftModal = lazy(() => import('./components/DraftModal').then(m => ({ default: m.DraftModal })));
 const PoliticsModal = lazy(() => import('./components/PoliticsModal').then(m => ({ default: m.PoliticsModal })));
+const ActiveLawsSheet = lazy(() => import('./components/ActiveLawsSheet').then(m => ({ default: m.ActiveLawsSheet })));
+const PoliticsPeekModal = lazy(() => import('./components/PoliticsPeekModal').then(m => ({ default: m.PoliticsPeekModal })));
 const CombatModal = lazy(() => import('./components/CombatModal').then(m => ({ default: m.CombatModal })));
 const SpeakerSelectionModal = lazy(() => import('./components/SpeakerSelectionModal').then(m => ({ default: m.SpeakerSelectionModal })));
 const StrategyResolutionModal = lazy(() => import('./components/StrategyResolutionModal').then(m => ({ default: m.StrategyResolutionModal })));
@@ -130,6 +132,15 @@ function App() {
     combat,
   } = game.round;
   const combatActive = !!combat?.active;
+  const isPoliticsPeekActor = strategyResolution?.phase === 'peek'
+    && (
+      roomStatus === 'solo'
+      || (perms?.seatPlayerId != null
+        && String(perms.seatPlayerId) === String(strategyResolution.playerId))
+    );
+  // Host never auto-opens peek; only after dock restore in this peek session.
+  const [hostPoliticsPeekRestored, setHostPoliticsPeekRestored] = useState(false);
+  const hostPoliticsPeekOpen = perms?.role === ROLES.ADMIN && hostPoliticsPeekRestored;
   const roundStartedAt = game.round?.roundStartedAt ?? null;
   const {
     queue: draftQueue, assignments: draftAssignments, currentQueueIndex,
@@ -138,8 +149,9 @@ function App() {
   } = game.draft;
   const {
     showModal: showPoliticsModal, step: politicsStep, agendas, currentAgendaIndex,
-    influenceLocked, voteReversed, oneVoteLaw,
+    influenceLocked, voteReversed, oneVoteLaw, activeLaws = [],
   } = game.politics;
+  const [showActiveLaws, setShowActiveLaws] = useState(false);
   const {
     show: showStatusPhaseModal,
     checks: statusPhaseChecks,
@@ -372,10 +384,28 @@ function App() {
   }, [statusRevealShow?.at, statusRevealShow?.objectiveId, showStatusPhaseModal, objectiveScoring?.active]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    if (strategyResolution?.active) {
+    if (!strategyResolution?.active) {
+      setHostPoliticsPeekRestored(false);
+      return;
+    }
+    if (strategyResolution.phase === 'peek') {
+      const isPeekActor = roomStatus === 'solo'
+        || (perms?.seatPlayerId != null
+          && String(perms.seatPlayerId) === String(strategyResolution.playerId));
+      // Politics seat: peek first. Host: main played/pass window; peek stays docked.
+      setHostPoliticsPeekRestored(false);
+      if (isPeekActor) ui.focusBlockingModal('politicsPeek');
+      else if (!isPlayerClient && !isViewerClient) {
+        ui.ensureMinimized('politicsPeek');
+        ui.focusBlockingModal('strategyResolution');
+      }
+      return;
+    }
+    setHostPoliticsPeekRestored(false);
+    if (!isPlayerClient && !isViewerClient) {
       ui.focusBlockingModal('strategyResolution');
     }
-  }, [strategyResolution?.active]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [strategyResolution?.active, strategyResolution?.phase, strategyResolution?.playerId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (showStartingTechHostModal) {
@@ -744,6 +774,8 @@ function App() {
           onOpenEndGame={() => ui.setShowEndGameModal(true)}
           onOpenStats={openStatsTab}
           onOpenEventLog={() => ui.setShowEventLog(true)}
+          onOpenActiveLaws={() => setShowActiveLaws(true)}
+          activeLawsCount={(activeLaws || []).length}
           onOpenExpedition={useTe ? openExpeditionPanel : undefined}
           onOpenTech={isViewerClient ? undefined : () => {
             ui.setTechViewPlayerId(perms?.seatPlayerId ?? activePlayer?.id ?? players[0]?.id ?? null);
@@ -951,6 +983,7 @@ function App() {
                   getPlayerScore={getPlayerScore}
                   targetScore={targetScore}
                   speakerId={speakerId}
+                  activeLaws={activeLaws || []}
                   objectives={objectives}
                   completions={completions}
                   scoring={objectiveScoring}
@@ -1050,6 +1083,7 @@ function App() {
                   getPlayerScore={getPlayerScore}
                   targetScore={targetScore}
                   speakerId={speakerId}
+                  activeLaws={activeLaws || []}
                   objectives={objectives}
                   completions={completions}
                   scoring={objectiveScoring}
@@ -1101,6 +1135,7 @@ function App() {
                 addCustomObjective={dialogs.addCustomObjective}
                 targetScore={targetScore}
                 speakerId={speakerId}
+                activeLaws={activeLaws || []}
                 handleAddSecret={dialogs.handleAddSecret}
                 eliminatePlayer={dialogs.eliminatePlayer}
                 setSpeaker={
@@ -1311,7 +1346,15 @@ function App() {
             onToggleVoteReversed={() => dispatch({ type: 'TOGGLE_VOTE_REVERSED' })}
             onSetSpeaker={(playerId) => dispatch({ type: 'SET_SPEAKER', playerId })}
             onNextAgenda={() => dispatch({ type: 'NEXT_AGENDA' })}
+            onSkipAgenda={() => dispatch({ type: 'SKIP_AGENDA' })}
+            onRevealAgenda={() => dispatch({ type: 'REVEAL_AGENDA' })}
+            onSelectMiscountLaw={(lawId) => dispatch({ type: 'SELECT_MISCOUNT_LAW', lawId })}
+            onSpeakerAgendaDecision={(choice) => dispatch({
+              type: 'SET_SPEAKER_AGENDA_DECISION',
+              choice,
+            })}
             onFinish={(playerId) => dispatch({ type: 'FINISH_AGENDA_PHASE', playerId })}
+            activeLaws={activeLaws || []}
             voteOrder={select.votingOrder(game)}
             currentVoterId={select.currentVoterId(game)}
             influenceLocked={influenceLocked || {}}
@@ -1322,6 +1365,26 @@ function App() {
             perms={perms}
             readOnly={perms.role === 'viewer'}
             game={game}
+          />
+        </LazyWhen>
+
+        <LazyWhen active={showActiveLaws}>
+          <ActiveLawsSheet
+            show={showActiveLaws}
+            onClose={() => setShowActiveLaws(false)}
+            laws={activeLaws || []}
+            players={players}
+            canAdmin={isHostClient}
+            onRemoveLaw={async (lawId) => {
+              const law = (activeLaws || []).find((l) => String(l.id) === String(lawId));
+              if (!law) return;
+              const ok = await uiConfirm(
+                `Убрать закон «${law.title}» из игры?`,
+                { title: 'Удалить закон?', confirmLabel: 'Удалить', variant: 'danger' },
+              );
+              if (!ok) return;
+              dispatch({ type: 'REMOVE_ACTIVE_LAW', lawId });
+            }}
           />
         </LazyWhen>
 
@@ -1423,6 +1486,29 @@ function App() {
           />
         </LazyWhen>
 
+        <LazyWhen active={!!strategyResolution?.active && strategyResolution.phase === 'peek' && !victoryLocked}>
+          <PoliticsPeekModal
+            show={
+              !!strategyResolution?.active
+              && strategyResolution.phase === 'peek'
+              && !victoryLocked
+              && (isPoliticsPeekActor || hostPoliticsPeekOpen)
+            }
+            minimized={isPoliticsPeekActor ? !!ui.minimizedModals.politicsPeek : false}
+            cardIds={strategyResolution?.peekCards || []}
+            canAct={isPoliticsPeekActor || perms?.role === ROLES.ADMIN}
+            onConfirm={(placements) => dispatch({ type: 'COMMIT_POLITICS_PEEK', placements })}
+            onMinimize={() => {
+              setHostPoliticsPeekRestored(false);
+              ui.ensureMinimized('politicsPeek');
+            }}
+            onClose={() => {
+              setHostPoliticsPeekRestored(false);
+              ui.ensureMinimized('politicsPeek');
+            }}
+          />
+        </LazyWhen>
+
         <LazyWhen active={!!strategyResolution?.active && !victoryLocked && !isPlayerClient && !isViewerClient}>
           <StrategyResolutionModal
             show={!!strategyResolution?.active && !victoryLocked && !isPlayerClient && !isViewerClient}
@@ -1477,7 +1563,13 @@ function App() {
 
         {isPlayerClient && perms?.seatPlayerId != null && (
           <StrategyResolutionBanner
-            show={!!strategyResolution?.active && !victoryLocked && strategyResolution.cardId !== 7}
+            show={
+              !!strategyResolution?.active
+              && !victoryLocked
+              && strategyResolution.cardId !== 7
+              // Politics primary answers only after peek; secondaries as soon as peek opens.
+              && strategyResolution.responses?.[perms.seatPlayerId] === 'pending'
+            }
             cardId={strategyResolution?.cardId}
             myStatus={strategyResolution?.responses?.[perms.seatPlayerId]}
             startedAt={strategyResolution?.startedAt}
@@ -1583,13 +1675,23 @@ function App() {
         }
         showStatusPhaseModal={showStatusPhaseModal && !isViewerClient}
         scoringActive={!!objectiveScoring?.active && !isViewerClient}
-        strategyResolutionActive={!!strategyResolution?.active && !isPlayerClient && !isViewerClient}
+        strategyResolutionActive={
+          !!strategyResolution?.active
+          && !isPlayerClient
+          && !isViewerClient
+        }
+        politicsPeekActive={
+          !!strategyResolution?.active
+          && strategyResolution.phase === 'peek'
+          && (isPoliticsPeekActor || perms?.role === ROLES.ADMIN)
+        }
         imperialClaimActive={showImperialClaimModal}
         techResearchActive={showTechResearchModal}
         expeditionActive={false}
         startingTechDraftActive={showStartingTechHostModal}
         startingTechPlayerActive={startingTechPlayerPending}
         onRestore={(id) => {
+          if (id === 'politicsPeek') setHostPoliticsPeekRestored(true);
           ui.focusBlockingModal(id);
         }}
       />

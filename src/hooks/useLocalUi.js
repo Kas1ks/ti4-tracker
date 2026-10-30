@@ -8,6 +8,7 @@ export const BLOCKING_MODAL_IDS = [
   'statusPhase',
   'objectiveScoring',
   'strategyResolution',
+  'politicsPeek',
   'imperialClaim',
   'techResearch',
   'expedition',

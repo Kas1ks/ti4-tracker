@@ -20,6 +20,7 @@ const CARD_GLOW = {
 function statusLabel(status) {
   if (status === 'played') return 'Сыграно';
   if (status === 'passed') return 'Пас';
+  if (status === 'peeking') return 'Просмотр колоды';
   return 'Ожидание';
 }
 
@@ -158,7 +159,7 @@ export function StrategyResolutionModal({
   const seats = (players || []).filter((p) => !p.eliminated && resolution?.responses?.[p.id] != null);
   const anyPending = seats.some((p) => {
     const s = resolution?.responses?.[p.id];
-    return s !== 'played' && s !== 'passed';
+    return s === 'pending' || s === 'peeking';
   });
   const liveSecs = useElapsedSeconds(
     resolution?.startedAt,
@@ -248,7 +249,9 @@ export function StrategyResolutionModal({
                 const status = resolution?.responses?.[p.id] || 'pending';
                 const played = status === 'played';
                 const passed = status === 'passed';
+                const peeking = status === 'peeking';
                 const done = played || passed;
+                const canMark = canResolveAny && !done && !peeking;
                 const isPrimary = p.id === resolution?.playerId;
                 const secs = resolutionSecsFor(resolution, p.id, liveSecs);
                 const faction = factionOf(p);
@@ -262,7 +265,9 @@ export function StrategyResolutionModal({
                           ? 'is-played'
                           : passed
                             ? 'is-passed'
-                            : ''
+                            : peeking
+                              ? 'is-primary'
+                              : ''
                     }`}
                   >
                     <span className="sr-seat-idx">{idx + 1}</span>
@@ -290,7 +295,7 @@ export function StrategyResolutionModal({
                       <div className={`sr-seat-state is-${status}`}>{statusLabel(status)}</div>
                     </div>
 
-                    {canResolveAny && !done ? (
+                    {canMark ? (
                       <div className="sr-seat-actions">
                         <button
                           type="button"

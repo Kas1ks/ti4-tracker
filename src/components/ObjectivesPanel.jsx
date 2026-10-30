@@ -66,6 +66,8 @@ export function ObjectivesPanel({
 
   const renderStageColumn = (stage, title) => {
     const stageObjectives = objectives.filter((o) => o.stage === stage);
+    const officialCount = stageObjectives.filter((o) => !o.extra).length;
+    const extraCount = stageObjectives.length - officialCount;
     return (
       <div className={`game-obj-col ${stage === 1 ? 'is-stage1' : 'is-stage2'}`}>
         <div className="space-y-4">
@@ -75,7 +77,8 @@ export function ObjectivesPanel({
               <span>{title}</span>
             </h2>
             <span className="game-obj-count">
-              {stageObjectives.length} / 5
+              {officialCount} / 5
+              {extraCount > 0 ? ` · +${extraCount}` : ''}
             </span>
           </div>
 
@@ -118,6 +121,11 @@ export function ObjectivesPanel({
                             : 'text-slate-100'
                         }`}
                       >
+                        {obj.extra && (
+                          <span className="game-obj-extra-tag" title="Дополнительная цель хоста">
+                            доп.
+                          </span>
+                        )}
                         {obj.desc}
                       </p>
                     </div>
@@ -162,7 +170,7 @@ export function ObjectivesPanel({
 
         {canAdminBoard && (
           <div className="mt-auto pt-4 space-y-2">
-            {stageObjectives.length < 5 && (
+            {officialCount < 5 && (
               <button
                 type="button"
                 onClick={() => addRandomObjective(stage)}
@@ -176,10 +184,10 @@ export function ObjectivesPanel({
             )}
             <button
               type="button"
-              onClick={addCustomObjective}
+              onClick={() => addCustomObjective(stage)}
               className="game-obj-manual w-full py-2 bg-transparent text-xs font-semibold transition"
             >
-              + Ввести свою цель вручную
+              + Ввести цель вручную
             </button>
           </div>
         )}
