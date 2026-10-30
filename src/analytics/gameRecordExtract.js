@@ -270,6 +270,7 @@ export function enrichPlayerAnalytics(state, playerRow, playerId) {
     ...playerRow,
     secretsHeld: Number(player.secrets) || 0,
     secretsScoredVp: playerRow.scoreBreakdown?.secrets ?? 0,
+    secretsScored: asArray(player.secretScored).map(String).filter(Boolean),
     objectiveScoringTurns: scoringPasses,
   };
 }

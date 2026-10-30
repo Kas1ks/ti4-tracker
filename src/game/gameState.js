@@ -161,8 +161,18 @@ export function decksForExpansions({ usePok = false, useTe = false } = {}) {
 /** Named VP outside secrets / public objs / free-form `extra` (Мек). */
 export const EMPTY_VP_TRACK = Object.freeze({
   custodiansPlayerId: null,
+  /** Transferable Mecatol Rex control token (secret exchange ability). */
+  mecatolControllerId: null,
   /** fromPlayerId → holderPlayerId (who holds that seat's Support for the Throne). */
   supportHolders: Object.freeze({}),
+});
+
+/** Secret objectives deck + start draft gate for public objectives. */
+export const EMPTY_SECRET_OBJECTIVES = Object.freeze({
+  deck: Object.freeze([]),
+  scored: Object.freeze([]),
+  dealStarted: false,
+  draftPending: false,
 });
 
 const emptyAgendas = () => [{ type: null, votes: {}, locked: {} }];
@@ -207,7 +217,16 @@ export function createEmptyGameState() {
     },
     vpTrack: {
       custodiansPlayerId: null,
+      mecatolControllerId: null,
       supportHolders: {},
+    },
+    secretObjectives: {
+      deck: [],
+      scored: [],
+      dealStarted: false,
+      draftPending: false,
+      pendingReveals: {},
+      overflows: {},
     },
     round: {
       active: false,
@@ -220,6 +239,7 @@ export function createEmptyGameState() {
       roundStartedAt: null,
       turnPausedAccum: 0,
       strategyActionTaken: false,
+      secretExchangeUsed: false,
       expeditionClaimedThisTurn: false,
       expeditionClaimedSliceId: null,
       strategyResolution: { ...EMPTY_STRATEGY_RESOLUTION },
@@ -309,6 +329,7 @@ function toFlat(raw) {
     stage1Deck: objectives.stage1Deck,
     stage2Deck: objectives.stage2Deck,
     vpTrack: raw.vpTrack,
+    secretObjectives: raw.secretObjectives,
     roundActive: round.active,
     turnOrderIds: round.turnOrderIds,
     activeTurnIdx: round.activeTurnIdx,
@@ -318,6 +339,7 @@ function toFlat(raw) {
     roundStartedAt: round.roundStartedAt,
     turnPausedAccum: round.turnPausedAccum,
     strategyActionTaken: round.strategyActionTaken,
+    secretExchangeUsed: !!round.secretExchangeUsed,
     expeditionClaimedThisTurn: !!round.expeditionClaimedThisTurn,
     expeditionClaimedSliceId: round.expeditionClaimedSliceId ?? null,
     strategyResolution: round.strategyResolution,
@@ -385,6 +407,7 @@ function normalizeObjectiveScoring(value) {
       status,
       publicId: typeof r.publicId === 'string' ? r.publicId : null,
       secret: !!r.secret,
+      secretId: typeof r.secretId === 'string' ? r.secretId : null,
     };
   });
   const orderIds = asArray(raw.orderIds)
@@ -630,6 +653,13 @@ function normalizePlayer(player) {
   const eliminated = !!player.eliminated;
   const elimRound = Number(player.eliminatedRound);
   const votePlanets = Math.max(0, asNumber(player.votePlanets, 0));
+  const secretHand = asArray(player.secretHand).filter(id => typeof id === 'string');
+  const secretScored = asArray(player.secretScored).filter(id => typeof id === 'string');
+  const secretDraftRaw = player.secretDraft;
+  const secretDraft = Array.isArray(secretDraftRaw)
+    ? secretDraftRaw.filter(id => typeof id === 'string')
+    : null;
+  const secretCap = Number(player.secretCap) === 4 ? 4 : 3;
   return {
     ...player,
     cards,
@@ -641,6 +671,10 @@ function normalizePlayer(player) {
     techIds,
     startingTechIds,
     votePlanets,
+    secretHand,
+    secretScored,
+    secretDraft,
+    secretCap,
   };
 }
 
@@ -678,6 +712,14 @@ function normalizeVpTrack(value) {
   const custodiansPlayerId = custodiansRaw == null || custodiansRaw === ''
     ? null
     : (Number.isFinite(Number(custodiansRaw)) ? Number(custodiansRaw) : null);
+  const controllerRaw = raw.mecatolControllerId;
+  let mecatolControllerId = controllerRaw == null || controllerRaw === ''
+    ? null
+    : (Number.isFinite(Number(controllerRaw)) ? Number(controllerRaw) : null);
+  // Legacy saves: controller follows the custodians VP seat until split.
+  if (mecatolControllerId == null && custodiansPlayerId != null) {
+    mecatolControllerId = custodiansPlayerId;
+  }
   const supportHolders = {};
   Object.entries(asRecord(raw.supportHolders)).forEach(([fromId, holderId]) => {
     const from = Number(fromId);
@@ -686,7 +728,54 @@ function normalizeVpTrack(value) {
     if (from === holder) return;
     supportHolders[from] = holder;
   });
-  return { custodiansPlayerId, supportHolders };
+  return { custodiansPlayerId, mecatolControllerId, supportHolders };
+}
+
+function normalizeSecretPendingReveals(raw) {
+  const out = {};
+  const map = asRecord(raw?.pendingReveals);
+  Object.entries(map).forEach(([key, cardId]) => {
+    if (typeof cardId !== 'string' || !cardId) return;
+    out[String(key)] = cardId;
+  });
+  // Legacy single pendingReveal → map
+  const legacy = asRecord(raw?.pendingReveal);
+  if (legacy?.playerId != null && typeof legacy.cardId === 'string' && legacy.cardId) {
+    const id = Number(legacy.playerId);
+    if (Number.isFinite(id)) out[String(id)] = legacy.cardId;
+  }
+  return out;
+}
+
+function normalizeSecretOverflows(raw) {
+  const out = {};
+  const map = asRecord(raw?.overflows);
+  Object.entries(map).forEach(([key, entry]) => {
+    const rec = asRecord(entry);
+    if (!rec) return;
+    out[String(key)] = { resolveStrategy: !!rec.resolveStrategy };
+  });
+  // Legacy single overflow → map
+  const legacy = asRecord(raw?.overflow);
+  if (legacy?.playerId != null) {
+    const id = Number(legacy.playerId);
+    if (Number.isFinite(id)) {
+      out[String(id)] = { resolveStrategy: !!legacy.resolveStrategy };
+    }
+  }
+  return out;
+}
+
+function normalizeSecretObjectives(value) {
+  const raw = asRecord(value);
+  return {
+    deck: asArray(raw.deck).filter(id => typeof id === 'string'),
+    scored: asArray(raw.scored).filter(id => typeof id === 'string'),
+    dealStarted: !!raw.dealStarted,
+    draftPending: !!raw.draftPending,
+    pendingReveals: normalizeSecretPendingReveals(raw),
+    overflows: normalizeSecretOverflows(raw),
+  };
 }
 
 function normalizeGameEvents(value) {
@@ -769,6 +858,7 @@ export function normalizeGameState(raw) {
       }),
     },
     vpTrack: normalizeVpTrack(flat.vpTrack),
+    secretObjectives: normalizeSecretObjectives(flat.secretObjectives),
     round: {
       active: !!flat.roundActive,
       turnOrderIds: normalizeTurnOrderIds(flat, players),
@@ -779,6 +869,7 @@ export function normalizeGameState(raw) {
       roundStartedAt: Number.isFinite(flat.roundStartedAt) ? flat.roundStartedAt : null,
       turnPausedAccum: Math.max(0, asNumber(flat.turnPausedAccum, 0)),
       strategyActionTaken: !!flat.strategyActionTaken,
+      secretExchangeUsed: !!flat.secretExchangeUsed,
       expeditionClaimedThisTurn: !!flat.expeditionClaimedThisTurn,
       expeditionClaimedSliceId: flat.expeditionClaimedSliceId ?? null,
       strategyResolution: normalizeStrategyResolution(flat.strategyResolution),

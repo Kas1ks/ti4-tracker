@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import {
   canConfirmStartingTech,
   isStartingTechWaveAReady,
@@ -17,8 +18,20 @@ export function StartingTechPlayerModal({
   onConfirm,
   onMinimize,
 }) {
+  const [entered, setEntered] = useState(false);
+
   useEscapeKey(onMinimize, show);
   useBodyScrollLock(show);
+
+  useEffect(() => {
+    if (!show) {
+      setEntered(false);
+      return undefined;
+    }
+    const id = requestAnimationFrame(() => setEntered(true));
+    return () => cancelAnimationFrame(id);
+  }, [show]);
+
   if (!show || !player) return null;
 
   const choice = startingTechChoice(player.factionId);
@@ -41,71 +54,74 @@ export function StartingTechPlayerModal({
       ])]
       : startingTechOptions(player.factionId, game, { playerId: player.id });
   const canConfirm = canConfirmStartingTech(player, game);
-  const title = choice?.kind === 'research'
-    ? 'Исследуйте стартовые технологии'
-    : 'Выберите стартовые технологии';
+  const eyebrow = choice?.kind === 'research'
+    ? 'Стартовые технологии · Исследование'
+    : 'Стартовые технологии · Выбор';
+  const hint = lockedWave
+    ? 'Keleres выбирает после того, как остальные подтвердят стартовые технологии.'
+    : choice?.kind === 'research'
+      ? `Исследуйте ${choice.pick} (вторая может опираться на первую)`
+      : choice?.kind === 'fromOthers'
+        ? `2 технологии, которые уже есть у других`
+        : choice?.options
+          ? `Выберите ${choice.pick} из ${choice.options.length}`
+          : `Выберите ${choice?.pick || 1}`;
 
   return (
     <div
-      className="fixed inset-0 z-[58] bg-black/85 backdrop-blur-md flex items-stretch md:items-center justify-center md:p-4 modal-overlay"
+      className={`fixed inset-0 z-[58] bg-black/85 backdrop-blur-md flex items-center justify-center p-3 md:p-4 modal-overlay tech-overlay ${show ? 'is-open' : ''}`}
       role="presentation"
     >
       <div
-        className="relative w-full max-w-lg max-md:h-full md:max-h-[92vh] bg-slate-950 border border-cyan-700/60 md:rounded-2xl shadow-2xl flex flex-col overflow-hidden"
         role="dialog"
         aria-modal="true"
         aria-labelledby="starting-tech-player-title"
+        className={`tech-shell flex flex-col w-full max-h-[min(92dvh,900px)] md:max-h-[90vh] md:max-w-2xl overflow-hidden ${entered || show ? 'is-open' : ''}`}
       >
-        <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-slate-800 bg-slate-900/80">
-          <div className="min-w-0">
-            <h2 id="starting-tech-player-title" className="font-orbitron font-black text-base text-cyan-300 uppercase tracking-wide truncate">
-              {title}
+        <header className="tech-shell-head flex-shrink-0">
+          <div className="tech-shell-head-main min-w-0">
+            <div className="tech-shell-eyebrow">{eyebrow}</div>
+            <h2 id="starting-tech-player-title" className="tech-shell-title truncate">
+              {player.name}
             </h2>
-            <p className="text-xs text-slate-400 mt-0.5 truncate">{player.name}</p>
+            <p className="tech-shell-sub">{hint}</p>
           </div>
           {onMinimize && (
             <button
               type="button"
               onClick={onMinimize}
-              className="flex-shrink-0 w-10 h-10 rounded-xl bg-slate-900 border border-slate-700 text-slate-300"
+              className="tech-icon-btn"
               aria-label="Свернуть"
             >
               <i className="fa-solid fa-window-minimize" aria-hidden="true" />
             </button>
           )}
-        </div>
+        </header>
 
-        <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        <div className="tech-shell-body min-h-0 flex-1 overflow-y-auto overscroll-y-contain modal-scroll">
           {lockedWave ? (
-            <p className="text-sm text-slate-400">
-              Keleres выбирает после того, как остальные подтвердят стартовые технологии.
-            </p>
+            <p className="tech-empty">{hint}</p>
           ) : (
             <StartingTechChoice
               options={options}
               selected={picks}
               pickCount={choice?.pick || 1}
-              hint={
-                choice?.kind === 'research'
-                  ? `Исследуйте ${choice.pick} (вторая может опираться на первую)`
-                  : choice?.kind === 'fromOthers'
-                    ? `2 технологии, которые уже есть у других`
-                    : choice?.options
-                      ? `Выберите ${choice.pick} из ${choice.options.length}`
-                      : `Выберите ${choice?.pick || 1}`
-              }
+              hint={null}
               onChange={(next) => onSetPicks?.(player.id, next)}
             />
           )}
+        </div>
+
+        <footer className="tech-shell-foot flex-shrink-0">
           <button
             type="button"
             disabled={!canConfirm}
             onClick={() => onConfirm?.(player.id)}
-            className="w-full min-h-[48px] rounded-xl bg-cyan-500 hover:bg-cyan-400 disabled:bg-slate-800 disabled:text-slate-500 text-black font-extrabold text-sm border border-cyan-300 disabled:border-slate-700"
+            className="tech-foot-btn tech-foot-btn-primary"
           >
             Подтвердить
           </button>
-        </div>
+        </footer>
       </div>
     </div>
   );

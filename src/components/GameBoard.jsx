@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import { ALL_FACTIONS } from '../data/gameData';
+import { secretObjectiveById } from '../data/secretObjectives';
 import { formatTime } from '../utils/game';
 import { lawsOwnedByPlayer } from '../game/agendaDeck';
 import { isStrategyCardPlayed } from '../game/selectors';
 import { ObjectivesPanel } from './ObjectivesPanel';
+import secretCardBack from '../assets/secret-card-back.png';
 
 export function GameBoard({
   turnOrder,
@@ -13,10 +15,10 @@ export function GameBoard({
   sortedPlayersForBoard,
   getPlayerScore,
   players,
-  adjustSecrets,
   adjustMecatol,
   vpTrack,
   setCustodians,
+  setMecatolController,
   setSupport,
   objectives,
   completions,
@@ -40,6 +42,10 @@ export function GameBoard({
   claimedSeats = [],
   isGameActive,
   perms,
+  canRevealPublic = true,
+  onRaiseSecretCap,
+  onShowPlayerSecrets,
+  uiConfirm,
 }) {
   const canAdminBoard = !perms || perms.can('secrets');
   const canEliminate = !perms || perms.can('eliminate');
@@ -53,9 +59,11 @@ export function GameBoard({
   const [playerActionsId, setPlayerActionsId] = useState(null);
   const [supportPickOpen, setSupportPickOpen] = useState(false);
   const [custodiansNotice, setCustodiansNotice] = useState(null);
+  const [secretsSheet, setSecretsSheet] = useState(null);
   const playerActionsRef = useRef(null);
 
   const custodiansPlayerId = vpTrack?.custodiansPlayerId ?? null;
+  const mecatolControllerId = vpTrack?.mecatolControllerId ?? custodiansPlayerId;
   const supportHolders = vpTrack?.supportHolders || {};
 
   useEffect(() => {
@@ -86,7 +94,7 @@ export function GameBoard({
     if (custodiansPlayerId != null) return false;
     if (!player || player.eliminated) return false;
     setCustodians(player.id);
-    setCustodiansNotice({ playerName: player.name });
+    setCustodiansNotice({ playerName: player.name, firstClaim: true });
     return true;
   };
 
@@ -96,6 +104,40 @@ export function GameBoard({
       return;
     }
     adjustMecatol(player.id, 1);
+  };
+
+  /** Manual Mecatol Rex control token (name menu). First claim also awards custodians VP. */
+  const assignMecatolControl = (player) => {
+    if (!canAdminBoard || !player || player.eliminated) return;
+    const hasControl = mecatolControllerId === player.id;
+    if (hasControl) {
+      if (typeof setMecatolController === 'function') setMecatolController(null);
+      return;
+    }
+    if (custodiansPlayerId == null && typeof setCustodians === 'function') {
+      claimCustodiansFor(player);
+      return;
+    }
+    if (typeof setMecatolController === 'function') setMecatolController(player.id);
+  };
+
+  const revealPlayerSecrets = async (player) => {
+    if (!canAdminBoard || !player) return;
+    const ok = typeof uiConfirm === 'function'
+      ? await uiConfirm(`Показать секретные цели игрока ${player.name}?`, {
+        title: 'Секреты игрока',
+        confirmLabel: 'Показать',
+      })
+      : true;
+    if (!ok) return;
+    if (typeof onShowPlayerSecrets === 'function') {
+      onShowPlayerSecrets(player.id);
+      return;
+    }
+    setSecretsSheet({
+      name: player.name,
+      hand: Array.isArray(player.secretHand) ? player.secretHand : [],
+    });
   };
 
   const canToggleFor = (playerId) => {
@@ -132,7 +174,9 @@ export function GameBoard({
                                       </div>
                                       <p className="text-sm text-[var(--game-text)] leading-relaxed">
                                         <span className="font-bold text-white">{custodiansNotice.playerName}</span>
-                                        {' '}получил токен Хранителей. Очко учтено в счёте; у игрока появится значок планеты.
+                                        {' '}получил контроль Мекатол Рекс
+                                        {custodiansNotice.firstClaim ? ' и +1 ПО хранителей (балл остаётся у первого претендента)' : ''}
+                                        . Жетон контроля переходящий.
                                       </p>
                                       <button
                                         type="button"
@@ -256,11 +300,20 @@ export function GameBoard({
                                                 const showSetSpeaker = canSetSpeaker && !p.eliminated && p.id !== speakerId;
                                                 const showOpenTech = canOpenTech && !p.eliminated;
                                                 const showVpEdit = canAdminBoard && !p.eliminated && typeof setSupport === 'function';
-                                                const hasPlayerActions = showEliminate || showRelease || showSetSpeaker || showOpenTech || showVpEdit;
+                                                const showSecretHost = canAdminBoard && !p.eliminated;
+                                                const showMecatolControl = canAdminBoard
+                                                  && !p.eliminated
+                                                  && (typeof setMecatolController === 'function' || typeof setCustodians === 'function');
+                                                const hasPlayerActions = showEliminate || showRelease || showSetSpeaker || showOpenTech || showVpEdit || showSecretHost || showMecatolControl;
                                                 const actionsOpen = playerActionsId === p.id;
                                                 const heldSupportCount = Object.values(supportHolders).filter(id => id === p.id).length;
-                                                const hasCustodians = custodiansPlayerId === p.id;
-                                                const mecatolShown = (p.extra || 0) + (hasCustodians ? 1 : 0);
+                                                const hasCustodiansVp = custodiansPlayerId === p.id;
+                                                const hasMecatolControl = mecatolControllerId === p.id;
+                                                const mecatolShown = (p.extra || 0) + (hasCustodiansVp ? 1 : 0);
+                                                const handCount = Array.isArray(p.secretHand) && p.secretHand.length > 0
+                                                  ? p.secretHand.length
+                                                  : (typeof p.secretHandCount === 'number' ? p.secretHandCount : 0);
+                                                const secretCap = Number(p.secretCap) === 4 ? 4 : 3;
                                                 const playerLaws = lawsOwnedByPlayer(activeLaws, p.id);
                                                 const lawTitles = playerLaws.map((l) => l.title).filter(Boolean).join(', ');
 
@@ -329,13 +382,24 @@ export function GameBoard({
                                                                                     <span className="sr-only">Спикер</span>
                                                                                 </span>
                                                                             )}
-                                                                            {hasCustodians && (
+                                                                            {hasMecatolControl && (
                                                                                 <span
-                                                                                  title="Хранители Мекатола (+1 ПО за захват)"
+                                                                                  title={hasCustodiansVp
+                                                                                    ? 'Контроль Мекатол Рекс (+1 ПО хранителей)'
+                                                                                    : 'Контроль Мекатол Рекс (жетон)'}
                                                                                   className="game-badge is-custodians"
                                                                                 >
                                                                                     <i className="fa-solid fa-globe text-[11px]" aria-hidden="true" />
-                                                                                    <span className="sr-only">Хранители</span>
+                                                                                    <span className="sr-only">Мекатол</span>
+                                                                                </span>
+                                                                            )}
+                                                                            {hasCustodiansVp && !hasMecatolControl && (
+                                                                                <span
+                                                                                  title="Первый балл хранителей Мекатола (+1 ПО)"
+                                                                                  className="game-badge is-custodians opacity-70"
+                                                                                >
+                                                                                    <i className="fa-solid fa-star text-[10px]" aria-hidden="true" />
+                                                                                    <span className="sr-only">Хранители VP</span>
                                                                                 </span>
                                                                             )}
                                                                             {playerLaws.length > 0 && (
@@ -390,6 +454,50 @@ export function GameBoard({
                                                                     {hasPlayerActions && actionsOpen && (
                                                                         <div className="mt-1.5 space-y-1.5">
                                                                           <div className="flex flex-wrap items-center gap-1">
+                                                                            {showSecretHost && (
+                                                                                <button
+                                                                                    type="button"
+                                                                                    onClick={() => {
+                                                                                        setSupportPickOpen(false);
+                                                                                        revealPlayerSecrets(p);
+                                                                                    }}
+                                                                                    className="text-slate-400 hover:text-violet-300 text-[11px] px-2 py-1 rounded-lg border border-slate-700/80 bg-slate-950/70 hover:bg-violet-950/40 transition inline-flex items-center gap-1.5"
+                                                                                    title={`Показать секреты: ${p.name}`}
+                                                                                >
+                                                                                    <i className="fa-solid fa-user-secret" />
+                                                                                    Секреты
+                                                                                </button>
+                                                                            )}
+                                                                            {showSecretHost && typeof handleAddSecret === 'function' && (
+                                                                                <button
+                                                                                    type="button"
+                                                                                    onClick={() => {
+                                                                                        setPlayerActionsId(null);
+                                                                                        setSupportPickOpen(false);
+                                                                                        handleAddSecret(p.id);
+                                                                                    }}
+                                                                                    className="text-slate-400 hover:text-cyan-300 text-[11px] px-2 py-1 rounded-lg border border-slate-700/80 bg-slate-950/70 hover:bg-cyan-950/40 transition inline-flex items-center gap-1.5"
+                                                                                    title={`Выдать секретную цель: ${p.name}`}
+                                                                                >
+                                                                                    <i className="fa-solid fa-plus" />
+                                                                                    Добавить секретку
+                                                                                </button>
+                                                                            )}
+                                                                            {showSecretHost && secretCap < 4 && typeof onRaiseSecretCap === 'function' && (
+                                                                                <button
+                                                                                    type="button"
+                                                                                    onClick={() => {
+                                                                                        setPlayerActionsId(null);
+                                                                                        setSupportPickOpen(false);
+                                                                                        onRaiseSecretCap(p.id);
+                                                                                    }}
+                                                                                    className="text-slate-400 hover:text-amber-300 text-[11px] px-2 py-1 rounded-lg border border-slate-700/80 bg-slate-950/70 hover:bg-amber-950/40 transition inline-flex items-center gap-1.5"
+                                                                                    title="Разрешить 4-ю секретную"
+                                                                                >
+                                                                                    <i className="fa-solid fa-unlock" />
+                                                                                    Лимит 4
+                                                                                </button>
+                                                                            )}
                                                                             {showOpenTech && (
                                                                                 <button
                                                                                     type="button"
@@ -418,6 +526,33 @@ export function GameBoard({
                                                                                 >
                                                                                     <i className="fa-solid fa-gavel" />
                                                                                     <span className="font-semibold">Спикер</span>
+                                                                                </button>
+                                                                            )}
+                                                                            {showMecatolControl && (
+                                                                                <button
+                                                                                    type="button"
+                                                                                    onClick={() => {
+                                                                                        setPlayerActionsId(null);
+                                                                                        setSupportPickOpen(false);
+                                                                                        assignMecatolControl(p);
+                                                                                    }}
+                                                                                    className={`text-[11px] px-2 py-1 rounded-lg border transition inline-flex items-center gap-1.5 ${
+                                                                                      hasMecatolControl
+                                                                                        ? 'border-cyan-600 bg-cyan-950/50 text-cyan-300'
+                                                                                        : 'border-slate-700/80 bg-slate-950/70 text-slate-400 hover:text-cyan-300 hover:bg-cyan-950/40'
+                                                                                    }`}
+                                                                                    title={
+                                                                                      hasMecatolControl
+                                                                                        ? 'Снять контроль Мекатол Рекс'
+                                                                                        : custodiansPlayerId == null
+                                                                                          ? 'Первый захват Мекатола (контроль + ПО хранителей)'
+                                                                                          : 'Передать контроль Мекатол Рекс'
+                                                                                    }
+                                                                                >
+                                                                                    <i className="fa-solid fa-globe" />
+                                                                                    <span className="font-semibold">
+                                                                                      {hasMecatolControl ? 'Мекатол ✓' : 'Мекатол'}
+                                                                                    </span>
                                                                                 </button>
                                                                             )}
                                                                             {showVpEdit && typeof setSupport === 'function' && (
@@ -547,54 +682,48 @@ export function GameBoard({
                                                                 {score}
                                                             </div>
 
-                                                            <div className="flex flex-col gap-1.5 w-[115px] max-md:flex-row max-md:w-auto max-md:flex-wrap">
-                                                                <div className="game-player-stat flex items-center justify-between px-2.5 py-1 w-[125px] max-md:w-auto max-md:min-w-[110px]">
-                                                                    <div className="text-[10px] font-bold text-slate-300 uppercase flex items-center justify-between w-[45px] flex-shrink-0">
-                                                                        <span>Секр</span>
-                                                                        <span className="w-3 text-center">
-                                                                            {p.secrets === 3 && <span title="Базовый лимит (3)" className="text-amber-400">🔒</span>}
-                                                                            {p.secrets >= 4 && <span title="Сверхлимит (4)" className="text-purple-400">👑</span>}
-                                                                        </span>
+                                                            <div className={`game-player-vp-stack ${canAdminBoard ? 'is-admin' : ''}`}>
+                                                                <div
+                                                                  className="game-player-stat game-player-vp-row is-secrets"
+                                                                  title={`В руке ${handCount} · достигнуто ${p.secrets}`}
+                                                                >
+                                                                    <div className="game-player-vp-label">
+                                                                      <span className="game-player-vp-kicker">Секр</span>
+                                                                      <img
+                                                                        src={secretCardBack}
+                                                                        alt=""
+                                                                        draggable={false}
+                                                                        className="game-player-vp-card"
+                                                                        aria-hidden="true"
+                                                                      />
+                                                                      <span className="game-player-vp-hand">{handCount}</span>
+                                                                      {(p.secrets + handCount) >= secretCap && secretCap === 3 && (
+                                                                        <span title="Базовый лимит (3)" className="game-player-vp-cap">🔒</span>
+                                                                      )}
+                                                                      {secretCap >= 4 && (
+                                                                        <span title="Лимит 4" className="game-player-vp-cap is-raised">👑</span>
+                                                                      )}
                                                                     </div>
-
-                                                                    <div className="flex items-center gap-1">
-                                                                        {canAdminBoard ? (
-                                                                          <>
-                                                                        <button
-                                                                            onClick={() => adjustSecrets(p.id, -1)}
-                                                                            className="w-5 h-5 max-md:w-8 max-md:h-8 bg-slate-800 hover:bg-slate-700 active:bg-slate-600 text-slate-200 font-bold rounded flex items-center justify-center transition border border-slate-700"
-                                                                        >–</button>
-
-                                                                        <span className="font-sans font-extrabold w-4 text-center text-sm text-slate-200">
-                                                                            {p.secrets}
-                                                                        </span>
-
-                                                                        <button
-                                                                            onClick={() => handleAddSecret(p.id)}
-                                                                            className="w-5 h-5 max-md:w-8 max-md:h-8 bg-slate-800 hover:bg-slate-700 active:bg-slate-600 text-cyan-400 font-bold rounded flex items-center justify-center transition border border-slate-700"
-                                                                        >+</button>
-                                                                          </>
-                                                                        ) : (
-                                                                        <span className="font-sans font-extrabold w-4 text-center text-sm text-slate-200">
-                                                                            {p.secrets}
-                                                                        </span>
-                                                                        )}
-                                                                    </div>
+                                                                    {/* ✓ above Мек «−», scored above Мек «0» */}
+                                                                    <span className="game-player-vp-check" aria-hidden="true">
+                                                                      <i className="fa-solid fa-check" />
+                                                                    </span>
+                                                                    <span className="game-player-vp-value">{p.secrets}</span>
+                                                                    {canAdminBoard && <span className="game-player-vp-side" aria-hidden="true" />}
                                                                 </div>
 
-                                                                <div className="game-player-stat flex items-center justify-between px-2.5 py-1 w-[125px] max-md:w-auto max-md:min-w-[110px]">
-                                                                    <div className="text-[10px] font-bold text-slate-300 uppercase w-[45px] flex-shrink-0">
-                                                                        Мек
+                                                                <div className="game-player-stat game-player-vp-row">
+                                                                    <div className="game-player-vp-label">
+                                                                      <span className="game-player-vp-kicker">Мек</span>
                                                                     </div>
-
-                                                                    <div className="flex items-center gap-1 flex-shrink-0">
-                                                                        {canAdminBoard ? (
-                                                                          <>
+                                                                    {canAdminBoard ? (
+                                                                      <>
                                                                         <button
                                                                             type="button"
                                                                             onClick={() => adjustMecatol(p.id, -1)}
                                                                             disabled={p.extra <= 0}
-                                                                            className="w-5 h-5 max-md:w-8 max-md:h-8 bg-slate-800 hover:bg-slate-700 active:bg-slate-600 text-slate-200 font-bold rounded flex items-center justify-center transition border border-slate-700 disabled:opacity-40"
+                                                                            className="game-player-vp-side is-btn"
+                                                                            aria-label="Мекатол −1"
                                                                         >–</button>
                                                                         <button
                                                                             type="button"
@@ -604,18 +733,18 @@ export function GameBoard({
                                                                               }
                                                                             }}
                                                                             title={
-                                                                              hasCustodians
-                                                                                ? 'Хранители Мекатола получены'
+                                                                              hasMecatolControl
+                                                                                ? 'Контроль Мекатол Рекс'
                                                                                 : custodiansPlayerId == null
                                                                                   ? 'Нажмите: отметить захват Мекатола (Хранители)'
                                                                                   : 'Счётчик Мекатола'
                                                                             }
-                                                                            className={`font-sans font-extrabold w-4 h-5 max-md:h-8 flex-shrink-0 text-center text-sm transition p-0 ${
-                                                                              hasCustodians
-                                                                                ? 'text-cyan-300'
+                                                                            className={`game-player-vp-value is-mek ${
+                                                                              hasMecatolControl
+                                                                                ? 'is-control'
                                                                                 : custodiansPlayerId == null
-                                                                                  ? 'text-purple-300 hover:text-cyan-300 cursor-pointer'
-                                                                                  : 'text-purple-300 cursor-default'
+                                                                                  ? 'is-claimable'
+                                                                                  : ''
                                                                             }`}
                                                                         >
                                                                             {mecatolShown}
@@ -623,15 +752,15 @@ export function GameBoard({
                                                                         <button
                                                                             type="button"
                                                                             onClick={() => onMecatolPlus(p)}
-                                                                            className="w-5 h-5 max-md:w-8 max-md:h-8 bg-slate-800 hover:bg-slate-700 active:bg-slate-600 text-cyan-400 font-bold rounded flex items-center justify-center transition border border-slate-700"
+                                                                            className="game-player-vp-side is-btn is-plus"
+                                                                            aria-label="Мекатол +1"
                                                                         >+</button>
-                                                                          </>
-                                                                        ) : (
-                                                                        <span className={`font-sans font-extrabold w-4 text-center text-sm ${hasCustodians ? 'text-cyan-300' : 'text-purple-300'}`}>
-                                                                            {mecatolShown}
-                                                                        </span>
-                                                                        )}
-                                                                    </div>
+                                                                      </>
+                                                                    ) : (
+                                                                      <span className={`game-player-vp-value is-mek ${hasMecatolControl ? 'is-control' : ''}`}>
+                                                                          {mecatolShown}
+                                                                      </span>
+                                                                    )}
                                                                 </div>
                                                             </div>
                                                         </div>
@@ -656,9 +785,46 @@ export function GameBoard({
                                         onObjectiveClick={onObjectiveClick}
                                         spotlightObjectiveId={spotlightObjectiveId}
                                         spotlightReady={spotlightReady}
+                                        canRevealPublic={canRevealPublic}
                                     />
 
                                 </div>
+
+                                {secretsSheet && (
+                                  <div className="fixed inset-0 z-[80] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4" role="presentation">
+                                    <div
+                                      role="dialog"
+                                      aria-modal="true"
+                                      className="game-modal-panel max-w-md w-full p-5 space-y-3"
+                                    >
+                                      <h3 className="game-modal-title text-sm uppercase">
+                                        Секреты: {secretsSheet.name}
+                                      </h3>
+                                      {secretsSheet.hand.length === 0 ? (
+                                        <p className="text-sm text-[var(--game-muted)]">В руке пусто.</p>
+                                      ) : (
+                                        <ul className="space-y-2">
+                                          {secretsSheet.hand.map((id) => {
+                                            const card = secretObjectiveById.get(id);
+                                            return (
+                                              <li key={id} className="rounded-xl border border-violet-700/50 bg-violet-950/20 px-3 py-2 text-sm text-slate-200 space-y-1">
+                                                <div className="font-bold text-white">{card?.title || id}</div>
+                                                {card?.desc && <p className="text-xs text-slate-400">{card.desc}</p>}
+                                              </li>
+                                            );
+                                          })}
+                                        </ul>
+                                      )}
+                                      <button
+                                        type="button"
+                                        className="game-btn-primary w-full"
+                                        onClick={() => setSecretsSheet(null)}
+                                      >
+                                        Закрыть
+                                      </button>
+                                    </div>
+                                  </div>
+                                )}
                             </div>
   );
 }

@@ -47,6 +47,7 @@ import {
   activePlayer,
   activePlayers,
   areAllStrategiesPlayed,
+  canMarkStrategyPlayed,
   nextSpeakerAfter,
   playersNotPassed,
   turnOrder,
@@ -55,7 +56,13 @@ import { reduceDraftPhase } from './reducers/draftPhase';
 import { reduceDevTools } from './reducers/devTools';
 import { reducePoliticsPhase } from './reducers/politicsPhase';
 import { reduceStatusPhase } from './reducers/statusPhase';
+import { reduceSecretObjectives } from './reducers/secretObjectives';
 import { buildShuffledAgendaDeck } from './agendaDeck';
+import {
+  canRevealPublicObjectives,
+  overflowForPlayer,
+  secretCapOf,
+} from './secretDeck';
 
 /** Naalu always goes last-to-act first, then lowest strategy card, then seat order. */
 function sortedForTurnOrder(players) {
@@ -166,6 +173,7 @@ function startRound(state, at = Date.now()) {
     roundStartedAt: at,
     turnPausedAccum: 0,
     strategyActionTaken: false,
+    secretExchangeUsed: false,
     expeditionClaimedThisTurn: false,
     expeditionClaimedSliceId: null,
     strategyResolution: { ...EMPTY_STRATEGY_RESOLUTION },
@@ -1106,13 +1114,15 @@ function beginStrategyPlay(state, cardId, at = Date.now()) {
   }
 
   if (resolvedCardId === 8) {
+    // Primary is automatic: Mecatol VP if controlling Mecatol, otherwise a secret.
+    const controlsMecatol = state.vpTrack?.mecatolControllerId === player.id;
     return withRound(state, {
       imperialClaim: {
         active: true,
         playerId: player.id,
         publicId: null,
-        mecatol: false,
-        secret: false,
+        mecatol: controlsMecatol,
+        secret: !controlsMecatol,
       },
     });
   }
@@ -1169,10 +1179,15 @@ function resolveStrategyResponse(state, playerId, choice, at = Date.now()) {
   if (!resolution.active) return state;
   if (choice !== 'played' && choice !== 'passed') return state;
 
-  const current = resolution.responses?.[playerId];
+  const current = resolution.responses?.[playerId] ?? resolution.responses?.[String(playerId)];
   // Primary cannot answer while still peeking the agenda deck.
   if (current === 'peeking' || current == null || current !== 'pending') return state;
   if (resolution.phase === 'peek' && String(playerId) === String(resolution.playerId)) {
+    return state;
+  }
+
+  // Imperial secondary: Сыграно only clockwise after speaker; Пас anytime.
+  if (choice === 'played' && !canMarkStrategyPlayed(state, playerId)) {
     return state;
   }
 
@@ -1187,13 +1202,50 @@ function resolveStrategyResponse(state, playerId, choice, at = Date.now()) {
     next = patchPlayer(next, playerId, p => ({ totalTime: (p.totalTime || 0) + secs }));
   }
 
-  const responses = { ...resolution.responses, [playerId]: choice };
+  let finalChoice = choice;
+  // Imperial secondary: Сыграно draws a secret; over-cap gates "played" until discard.
+  if (
+    choice === 'played'
+    && resolution.cardId === 8
+    && String(playerId) !== String(resolution.playerId)
+  ) {
+    const drawn = reduceSecretObjectives(next, {
+      type: 'DRAW_SECRET',
+      playerId,
+      resolveStrategy: true,
+    });
+    if (drawn) next = drawn;
+    if (overflowForPlayer(next.secretObjectives, playerId)) {
+      finalChoice = 'discarding';
+    }
+  }
+
+  const responses = { ...resolution.responses, [playerId]: finalChoice };
   const resolvedAt = { ...(resolution.resolvedAt || {}), [playerId]: at };
   next = withRound(next, {
     strategyResolution: { ...resolution, responses, resolvedAt },
   });
 
   // Never finish Politics while the agenda peek is still open.
+  // "discarding" is not done — wait for DISCARD_SECRET.
+  const allDone = resolution.phase !== 'peek'
+    && Object.values(responses).every(s => s === 'played' || s === 'passed');
+  if (allDone) next = commitStrategyPlay(next, at);
+  return next;
+}
+
+/** After over-cap discard from Imperial secondary, mark Сыграно and maybe commit. */
+function completeStrategyDiscardPlayed(state, playerId, at = Date.now()) {
+  const resolution = strategyResolutionOf(state);
+  if (!resolution.active) return state;
+  const current = resolution.responses?.[playerId] ?? resolution.responses?.[String(playerId)];
+  if (current !== 'discarding') return state;
+
+  const responses = { ...resolution.responses, [playerId]: 'played' };
+  const resolvedAt = { ...(resolution.resolvedAt || {}), [playerId]: at };
+  let next = withRound(state, {
+    strategyResolution: { ...resolution, responses, resolvedAt },
+  });
   const allDone = resolution.phase !== 'peek'
     && Object.values(responses).every(s => s === 'played' || s === 'passed');
   if (allDone) next = commitStrategyPlay(next, at);
@@ -1256,14 +1308,32 @@ function applyImperialClaim(state, claim) {
     }
   }
 
+  // Controller already owns Mecatol — Imperial primary only awards +1 VP (no re-claim).
   if (claim.mecatol) {
     next = patchPlayer(next, playerId, p => ({
       extra: (p.extra || 0) + 1,
     }));
   }
-  // claim.secret is only a reminder to draw a secret objective card — no VP.
+  if (claim.secret) {
+    const drawn = reduceSecretObjectives(next, { type: 'DRAW_SECRET', playerId });
+    if (drawn) next = drawn;
+  }
 
   return next;
+}
+
+/** Mark card played on the player without clearing an open strategy resolution. */
+function stampStrategyCardPlayed(state, playerId, cardId) {
+  const player = state.players.find(p => p.id === playerId);
+  if (!player || cardId == null) return state;
+  if (!player.cards?.some(c => c.id === cardId)) return state;
+  const already = new Set(
+    Array.isArray(player.playedCardIds) ? player.playedCardIds : [],
+  );
+  if (already.has(cardId)) return state;
+  const playedCardIds = [...already, cardId];
+  const strategyPlayed = player.cards.every(c => playedCardIds.includes(c.id));
+  return patchPlayer(state, player.id, () => ({ playedCardIds, strategyPlayed }));
 }
 
 function selectImperialPublic(state, playerId, objectiveId) {
@@ -1308,8 +1378,22 @@ function toggleImperialSecret(state, playerId) {
 function confirmImperialClaim(state, playerId, at = Date.now()) {
   const claim = imperialClaimOf(state);
   if (!claim.active || claim.playerId !== playerId) return state;
-  const next = clearImperialClaim(applyImperialClaim(state, claim));
-  return startStrategyResolution(next, 8, at);
+  let next = clearImperialClaim(applyImperialClaim(state, claim));
+  next = startStrategyResolution(next, 8, at);
+  const resolution = strategyResolutionOf(next);
+  if (!resolution.active) {
+    return stampStrategyCardPlayed(next, playerId, 8);
+  }
+  // Primary is marked Сыграно immediately (even while viewing a new secret).
+  const responses = { ...resolution.responses, [playerId]: 'played' };
+  const resolvedAt = { ...(resolution.resolvedAt || {}), [playerId]: at };
+  next = withRound(next, {
+    strategyResolution: { ...resolution, responses, resolvedAt },
+  });
+  next = stampStrategyCardPlayed(next, playerId, 8);
+  const allDone = Object.values(responses).every(s => s === 'played' || s === 'passed');
+  if (allDone) next = commitStrategyPlay(next, at);
+  return next;
 }
 
 function passImperialClaim(state, playerId, at = Date.now()) {
@@ -1538,6 +1622,25 @@ export function gameReducer(state, action) {
   const statusResult = reduceStatusPhase(state, action);
   if (statusResult != null) return statusResult;
 
+  const secretResult = reduceSecretObjectives(state, action);
+  if (secretResult != null) {
+    if (action.type === 'DISCARD_SECRET') {
+      const hadOverflow = overflowForPlayer(state.secretObjectives, action.playerId);
+      const stillOverflow = overflowForPlayer(
+        secretResult.secretObjectives,
+        action.playerId,
+      );
+      if (hadOverflow && !stillOverflow && hadOverflow.resolveStrategy) {
+        return completeStrategyDiscardPlayed(
+          secretResult,
+          action.playerId,
+          actionAt(action),
+        );
+      }
+    }
+    return secretResult;
+  }
+
   const isPassBlocked = (s) => (
     !!combatOf(s).active
     || !!s.round?.strategyResolution?.active
@@ -1587,6 +1690,10 @@ export function gameReducer(state, action) {
           factionId: action.factionId,
           color: '',
           secrets: 0,
+          secretHand: [],
+          secretScored: [],
+          secretDraft: null,
+          secretCap: 3,
           extra: 0,
           totalTime: 0,
           damageDealt: 0,
@@ -1639,7 +1746,14 @@ export function gameReducer(state, action) {
         },
         vpTrack: {
           custodiansPlayerId: null,
+          mecatolControllerId: null,
           supportHolders: {},
+        },
+        secretObjectives: {
+          deck: [],
+          scored: [],
+          dealStarted: false,
+          draftPending: false,
         },
         expedition: {
           slices: emptyExpeditionSlices(),
@@ -1652,6 +1766,10 @@ export function gameReducer(state, action) {
           ...p,
           breakthrough: p.factionId === 'crimson',
           techIds: resolveStartingTechIds(p),
+          secretHand: [],
+          secretScored: [],
+          secretDraft: null,
+          secretCap: 3,
         })),
         startingTechDraft: needers.length > 0
           ? { needed: true, active: false, responses: {} }
@@ -1733,14 +1851,34 @@ export function gameReducer(state, action) {
 
     // --- Scoring ---
     case 'ADJUST_SECRETS':
-      return patchPlayer(state, action.playerId, player => ({
-        secrets: Math.min(4, Math.max(0, player.secrets + action.delta)),
-      }));
+      return patchPlayer(state, action.playerId, player => {
+        const cap = secretCapOf(player);
+        return {
+          secrets: Math.min(cap, Math.max(0, player.secrets + action.delta)),
+        };
+      });
 
-    case 'ADJUST_MECATOL':
-      return patchPlayer(state, action.playerId, player => ({
-        extra: Math.max(0, player.extra + action.delta),
+    case 'ADJUST_MECATOL': {
+      const playerId = action.playerId;
+      const delta = Number(action.delta) || 0;
+      let next = patchPlayer(state, playerId, player => ({
+        extra: Math.max(0, player.extra + delta),
       }));
+      // Gaining Mecatol points transfers the control token (VP custodians stay).
+      if (delta > 0) {
+        const track = next.vpTrack || {};
+        next = {
+          ...next,
+          vpTrack: {
+            ...track,
+            custodiansPlayerId: track.custodiansPlayerId ?? null,
+            mecatolControllerId: playerId,
+            supportHolders: { ...(track.supportHolders || {}) },
+          },
+        };
+      }
+      return next;
+    }
 
     case 'SET_CUSTODIANS': {
       if (!state.isGameActive) return state;
@@ -1748,17 +1886,57 @@ export function gameReducer(state, action) {
       if (playerId != null && !state.players.some(p => p.id === playerId && !p.eliminated)) {
         return state;
       }
-      const current = state.vpTrack?.custodiansPlayerId ?? null;
-      // Toggle off when claiming the same seat again.
-      const nextId = (playerId != null && current === playerId && action.force !== true)
-        ? null
-        : playerId;
+      const track = state.vpTrack || { supportHolders: {} };
+      const currentVp = track.custodiansPlayerId ?? null;
+      // First claim: award VP + control. Later / same-seat toggle: control only
+      // (VP never moves once awarded; host can clear VP by toggling first holder off).
+      if (currentVp == null) {
+        return {
+          ...state,
+          vpTrack: {
+            ...track,
+            custodiansPlayerId: playerId,
+            mecatolControllerId: playerId,
+            supportHolders: { ...(track.supportHolders || {}) },
+          },
+        };
+      }
+      if (playerId != null && currentVp === playerId && action.force !== true) {
+        // Legacy toggle-off of the original claim clears VP; control follows.
+        return {
+          ...state,
+          vpTrack: {
+            ...track,
+            custodiansPlayerId: null,
+            mecatolControllerId: null,
+            supportHolders: { ...(track.supportHolders || {}) },
+          },
+        };
+      }
       return {
         ...state,
         vpTrack: {
-          ...(state.vpTrack || { supportHolders: {} }),
-          custodiansPlayerId: nextId,
-          supportHolders: { ...(state.vpTrack?.supportHolders || {}) },
+          ...track,
+          mecatolControllerId: playerId,
+          supportHolders: { ...(track.supportHolders || {}) },
+        },
+      };
+    }
+
+    case 'SET_MECATOL_CONTROLLER': {
+      if (!state.isGameActive) return state;
+      const playerId = action.playerId == null ? null : Number(action.playerId);
+      if (playerId != null && !state.players.some(p => p.id === playerId && !p.eliminated)) {
+        return state;
+      }
+      const track = state.vpTrack || { supportHolders: {} };
+      return {
+        ...state,
+        vpTrack: {
+          ...track,
+          custodiansPlayerId: track.custodiansPlayerId ?? null,
+          mecatolControllerId: playerId,
+          supportHolders: { ...(track.supportHolders || {}) },
         },
       };
     }
@@ -1783,6 +1961,7 @@ export function gameReducer(state, action) {
         ...state,
         vpTrack: {
           custodiansPlayerId: state.vpTrack?.custodiansPlayerId ?? null,
+          mecatolControllerId: state.vpTrack?.mecatolControllerId ?? null,
           supportHolders,
         },
       };
@@ -1837,6 +2016,7 @@ export function gameReducer(state, action) {
     }
 
     case 'ADD_OBJECTIVE':
+      if (!canRevealPublicObjectives(state)) return state;
       return withObjectives(state, { active: [...state.objectives.active, action.objective] });
 
     case 'REMOVE_OBJECTIVE':
@@ -1922,7 +2102,7 @@ export function gameReducer(state, action) {
       return toggleTech(state, action.playerId, action.techId);
 
     case 'CLAIM_EXPEDITION_SLICE':
-      return claimExpeditionSlice(state, action.playerId, action.sliceId);
+      return claimExpeditionSlice(state, action.playerId, action.sliceId, action.cardId);
 
     case 'SET_EXPEDITION_SLICE':
       return setExpeditionSlice(state, action.sliceId, action.playerId);

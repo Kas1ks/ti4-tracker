@@ -1,4 +1,5 @@
-import { patchPlayer, withMeta, withPolitics } from '../stateHelpers';
+import { secretObjectiveById } from '../../data/secretObjectives';
+import { patchPlayer, withMeta, withObjectives, withPolitics } from '../stateHelpers';
 import { currentAgenda, activePlayers } from '../selectors';
 import { startNewRound } from './roundLifecycle';
 import {
@@ -10,10 +11,85 @@ import {
   isAgendaFaceUp,
   resolutionEffectCardId,
   resolveAndDiscardAgenda,
+  scoredSecretIdFromElectChoice,
 } from '../agendaDeck';
+import { drawSecretsForPlayer } from './secretObjectives';
 import { drawStageObjectiveIgnoringCap } from './statusPhase';
 
 export { emptyAgenda };
+
+const SEARCH_WARRANT_ID = 'search_warrant';
+
+/** Sync player.secretsRevealed from active Search Warrant ownership. */
+export function syncSecretsRevealedFromLaws(state) {
+  const laws = state?.politics?.activeLaws || [];
+  const revealed = new Set(
+    laws
+      .filter((l) => l?.id === SEARCH_WARRANT_ID && l.ownerPlayerId != null)
+      .map((l) => String(l.ownerPlayerId)),
+  );
+  let changed = false;
+  const players = (state.players || []).map((p) => {
+    const next = revealed.has(String(p.id));
+    if (!!p.secretsRevealed === next) return p;
+    changed = true;
+    return { ...p, secretsRevealed: next };
+  });
+  return changed ? { ...state, players } : state;
+}
+
+function electPlayerId(outcome) {
+  if (!outcome || typeof outcome !== 'object' || outcome.choice == null) return null;
+  const n = Number(outcome.choice);
+  return Number.isFinite(n) ? n : outcome.choice;
+}
+
+/** Move elected scored secret into the public objective area (CDL). */
+function promoteElectedSecretToPublic(state, outcome) {
+  if (!outcome || typeof outcome !== 'object' || outcome.choice == null) return state;
+  const cardId = scoredSecretIdFromElectChoice(state, outcome.choice);
+  if (!cardId) return state;
+  const card = secretObjectiveById.get(cardId);
+  if (!card) return state;
+
+  let ownerId = null;
+  for (const p of state.players || []) {
+    if ((p.secretScored || []).includes(cardId)) {
+      ownerId = p.id;
+      break;
+    }
+  }
+  if (ownerId == null) return state;
+
+  const pubId = `public_secret_${cardId}`;
+  const active = state.objectives?.active || [];
+  if (active.some((o) => o.id === pubId || o.secretId === cardId)) return state;
+
+  let next = patchPlayer(state, ownerId, (p) => ({
+    secretScored: (p.secretScored || []).filter((id) => id !== cardId),
+  }));
+  const scored = (next.secretObjectives?.scored || []).filter((id) => id !== cardId);
+  next = {
+    ...next,
+    secretObjectives: {
+      ...(next.secretObjectives || {}),
+      scored,
+    },
+  };
+
+  const objective = {
+    id: pubId,
+    stage: Number(card.points) === 2 ? 2 : 1,
+    points: Number(card.points) || 1,
+    title: card.title,
+    desc: card.desc || '',
+    exp: card.exp || 'base',
+    fromSecret: true,
+    secretId: cardId,
+    extra: true,
+  };
+  return withObjectives(next, { active: [...active, objective] });
+}
 
 /** Under one-vote law, a non-abstain ballot is always amount 1 (no planet bonuses). */
 function coerceAgendaVote(state, vote) {
@@ -60,6 +136,7 @@ function ensureCurrentAgendaRevealed(state) {
     agenda || emptyAgenda(),
     state.politics.agendaDeck,
     state.politics.agendaDiscard,
+    { state },
   );
   const agendas = [...(state.politics.agendas || [])];
   const idx = state.politics.currentAgendaIndex || 0;
@@ -72,14 +149,31 @@ function ensureCurrentAgendaRevealed(state) {
   });
 }
 
-/** Post-vote board effects (Incentive Program → open a public objective, etc.). */
+/** Post-vote board effects (Incentive Program, secret agendas, etc.). */
 function applyResolvedAgendaBoardEffects(state, agenda, outcome) {
   const effectId = resolutionEffectCardId(agenda);
+  let next = state;
+
   if (effectId === 'incentive_program' && (outcome === 'for' || outcome === 'against')) {
     const stage = outcome === 'for' ? 1 : 2;
-    return drawStageObjectiveIgnoringCap(state, stage).state;
+    next = drawStageObjectiveIgnoringCap(next, stage).state;
   }
-  return state;
+
+  if (effectId === 'archived_secret') {
+    const pid = electPlayerId(outcome);
+    if (pid != null) next = drawSecretsForPlayer(next, pid, 1);
+  }
+
+  if (effectId === 'search_warrant') {
+    const pid = electPlayerId(outcome);
+    if (pid != null) next = drawSecretsForPlayer(next, pid, 2);
+  }
+
+  if (effectId === 'classified_document_leaks') {
+    next = promoteElectedSecretToPublic(next, outcome);
+  }
+
+  return syncSecretsRevealedFromLaws(next);
 }
 
 /**
@@ -102,7 +196,15 @@ function advanceAgenda(state, mode) {
       activeLaws = resolved.activeLaws;
       agendaDiscard = resolved.agendaDiscard;
       agendas[idx] = { ...agenda, outcome: resolved.outcome, hiddenRevealed: true };
-      boardState = applyResolvedAgendaBoardEffects(state, agenda, resolved.outcome);
+      boardState = withPolitics(state, {
+        agendas,
+        activeLaws,
+        agendaDiscard,
+      });
+      boardState = applyResolvedAgendaBoardEffects(boardState, agenda, resolved.outcome);
+      activeLaws = boardState.politics?.activeLaws || activeLaws;
+      agendaDiscard = boardState.politics?.agendaDiscard || agendaDiscard;
+      agendas = [...(boardState.politics?.agendas || agendas)];
     } else {
       // Skip or incomplete: discard card id(s) without enacting.
       if (agenda?.cardId) agendaDiscard = [...agendaDiscard, agenda.cardId];
@@ -113,17 +215,22 @@ function advanceAgenda(state, mode) {
   }
 
   const nextIndex = idx + 1;
-  const drawn = drawIntoAgenda(emptyAgenda(), boardState.politics.agendaDeck, agendaDiscard);
+  const drawn = drawIntoAgenda(
+    emptyAgenda(),
+    boardState.politics.agendaDeck,
+    agendaDiscard,
+    { state: boardState },
+  );
   while (agendas.length <= nextIndex) agendas.push(emptyAgenda());
   agendas[nextIndex] = drawn.agenda;
 
-  return withPolitics(boardState, {
+  return syncSecretsRevealedFromLaws(withPolitics(boardState, {
     agendas,
     currentAgendaIndex: nextIndex,
     agendaDeck: drawn.agendaDeck,
     agendaDiscard: drawn.agendaDiscard,
     activeLaws,
-  });
+  }));
 }
 
 const POLITICS_ACTIONS = new Set([
@@ -340,7 +447,7 @@ export function reducePoliticsPhase(state, action) {
           next = applyResolvedAgendaBoardEffects(next, agenda, resolved.outcome);
         }
       }
-      return next;
+      return syncSecretsRevealedFromLaws(next);
     }
 
     case 'NEXT_AGENDA':
@@ -374,10 +481,10 @@ export function reducePoliticsPhase(state, action) {
       const nextLaws = activeLaws.filter((l) => String(l.id) !== String(lawId));
       const discard = [...(state.politics.agendaDiscard || [])];
       if (removed.id && !discard.includes(removed.id)) discard.push(removed.id);
-      return withPolitics(state, {
+      return syncSecretsRevealedFromLaws(withPolitics(state, {
         activeLaws: nextLaws,
         agendaDiscard: discard,
-      });
+      }));
     }
 
     default:

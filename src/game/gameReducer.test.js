@@ -13,6 +13,7 @@ import {
   effectiveVoteAmount,
   playerScore,
   playersForBoard,
+  speakerClockwiseOrder,
   turnOrder,
   votingOrder,
 } from './selectors';
@@ -28,6 +29,13 @@ const gameWith = (players, overrides = {}) => normalizeGameState({
   isGameActive: true,
   players,
   meta: { ...createEmptyGameState().meta, speakerId: players[0]?.id ?? null },
+  // Most scoring/objective tests assume public objectives may be opened.
+  secretObjectives: {
+    deck: [],
+    scored: [],
+    dealStarted: true,
+    draftPending: false,
+  },
   ...overrides,
 });
 
@@ -58,6 +66,24 @@ const resolveAllStrategy = (state, choice = 'played') => {
   if (res?.active && res.phase === 'peek') {
     const placements = (res.peekCards || []).map((cardId) => ({ cardId, dest: 'top' }));
     next = dispatch(next, { type: 'COMMIT_POLITICS_PEEK', placements });
+  }
+  // Imperial: Сыграно must follow speaker-clockwise order.
+  if (choice === 'played' && next.round?.strategyResolution?.cardId === 8) {
+    let guard = 24;
+    while (guard > 0) {
+      guard -= 1;
+      const resolution = next.round?.strategyResolution;
+      if (!resolution?.active) break;
+      const nextSeat = speakerClockwiseOrder(next).find((p) => {
+        const s = resolution.responses?.[p.id] ?? resolution.responses?.[String(p.id)];
+        return s === 'pending';
+      });
+      if (!nextSeat) break;
+      next = dispatch(next, { type: 'RESOLVE_STRATEGY', playerId: nextSeat.id, choice: 'played' });
+      const after = next.round?.strategyResolution?.responses?.[nextSeat.id];
+      if (after === 'discarding') break;
+    }
+    return next;
   }
   const responses = next.round?.strategyResolution?.responses || {};
   return Object.keys(responses).reduce((acc, id) => {
@@ -150,8 +176,11 @@ describe('scoring', () => {
     expect(playerScore(state, 1)).toBe(2);
   });
 
-  it('clamps secrets to 0..4 and mecatol points to 0', () => {
-    let state = gameWith([player(1, 'A', { secrets: 4, extra: 0 })]);
+  it('clamps secrets to secretCap (default 3, raised 4) and mecatol points to 0', () => {
+    let state = gameWith([player(1, 'A', { secrets: 3, extra: 0, secretCap: 3 })]);
+    state = dispatch(state, { type: 'ADJUST_SECRETS', playerId: 1, delta: 1 });
+    expect(state.players[0].secrets).toBe(3);
+    state = dispatch(state, { type: 'RAISE_SECRET_CAP', playerId: 1 });
     state = dispatch(state, { type: 'ADJUST_SECRETS', playerId: 1, delta: 1 });
     expect(state.players[0].secrets).toBe(4);
 
@@ -707,7 +736,7 @@ describe('round and turn order', () => {
     expect(activePlayer(state).id).toBe(3);
   });
 
-  it('opens Imperial claim before strategy 8 resolution', () => {
+  it('opens Imperial claim before strategy 8 resolution; Mecatol control auto-awards VP', () => {
     let state = gameWith([
       player(1, 'Imp', { cards: [STRATEGY_CARDS[7]], lastMinInitiative: 1 }),
       player(2, 'B', { cards: [STRATEGY_CARDS[0]], lastMinInitiative: 2 }),
@@ -716,6 +745,11 @@ describe('round and turn order', () => {
     state = {
       ...state,
       objectives: { ...state.objectives, active: [objective] },
+      vpTrack: {
+        custodiansPlayerId: 1,
+        mecatolControllerId: 1,
+        supportHolders: {},
+      },
     };
     state = dispatch(state, { type: 'START_ROUND' });
     expect(activePlayer(state).id).toBe(1);
@@ -725,15 +759,13 @@ describe('round and turn order', () => {
       active: true,
       playerId: 1,
       publicId: null,
-      mecatol: false,
+      mecatol: true,
       secret: false,
     });
     expect(state.round.strategyResolution.active).toBe(false);
     expect(dispatch(state, { type: 'NEXT_TURN' })).toBe(state);
 
-    state = dispatch(state, { type: 'TOGGLE_IMPERIAL_MECATOL', playerId: 1 });
     expect(state.players.find(p => p.id === 1).extra).toBe(0);
-    expect(state.round.imperialClaim.mecatol).toBe(true);
 
     state = dispatch(state, { type: 'SELECT_IMPERIAL_PUBLIC', playerId: 1, objectiveId: objective.id });
     expect(state.objectives.completions[`1_${objective.id}`]).toBeFalsy();
@@ -745,6 +777,8 @@ describe('round and turn order', () => {
     expect(state.objectives.completions[`1_${objective.id}`]).toBe(true);
     expect(state.round.strategyResolution.active).toBe(true);
     expect(state.round.strategyResolution.cardId).toBe(8);
+    expect(state.round.strategyResolution.responses[1]).toBe('played');
+    expect(state.players.find(p => p.id === 1).playedCardIds).toEqual([8]);
 
     state = resolveAllStrategy(state);
     expect(state.round.strategyResolution.active).toBe(false);
@@ -760,10 +794,15 @@ describe('round and turn order', () => {
     state = {
       ...state,
       objectives: { ...state.objectives, active: [objective] },
+      vpTrack: {
+        custodiansPlayerId: 1,
+        mecatolControllerId: 1,
+        supportHolders: {},
+      },
     };
     state = dispatch(state, { type: 'START_ROUND' });
     state = dispatch(state, { type: 'PLAY_STRATEGY', cardId: 8 });
-    state = dispatch(state, { type: 'TOGGLE_IMPERIAL_MECATOL', playerId: 1 });
+    expect(state.round.imperialClaim.mecatol).toBe(true);
     state = dispatch(state, { type: 'SELECT_IMPERIAL_PUBLIC', playerId: 1, objectiveId: objective.id });
     state = dispatch(state, { type: 'PASS_IMPERIAL_CLAIM', playerId: 1 });
 
@@ -772,28 +811,164 @@ describe('round and turn order', () => {
     expect(state.objectives.completions[`1_${objective.id}`]).toBeFalsy();
     expect(state.round.strategyResolution.active).toBe(true);
     expect(state.round.strategyResolution.cardId).toBe(8);
+    expect(state.round.strategyResolution.responses[1]).toBe('pending');
   });
 
-  it('Imperial secret is a draw reminder and does not award secret VP', () => {
+  it('Imperial without Mecatol auto-draws a secret (no secret VP)', () => {
     let state = gameWith([
-      player(1, 'Imp', { cards: [STRATEGY_CARDS[7]], lastMinInitiative: 1, secrets: 1 }),
+      player(1, 'Imp', {
+        cards: [STRATEGY_CARDS[7]],
+        lastMinInitiative: 1,
+        secrets: 0,
+        secretHand: [],
+        secretCap: 3,
+      }),
       player(2, 'B', { cards: [STRATEGY_CARDS[0]], lastMinInitiative: 2 }),
     ]);
+    state = {
+      ...state,
+      secretObjectives: {
+        deck: ['so_test_a', 'so_test_b'],
+        scored: [],
+        dealStarted: true,
+        draftPending: false,
+        pendingReveal: null,
+        overflow: null,
+      },
+    };
     state = dispatch(state, { type: 'START_ROUND' });
     state = dispatch(state, { type: 'PLAY_STRATEGY', cardId: 8 });
+    expect(state.round.imperialClaim).toMatchObject({ mecatol: false, secret: true });
 
-    state = dispatch(state, { type: 'TOGGLE_IMPERIAL_SECRET', playerId: 1 });
-    expect(state.round.imperialClaim.secret).toBe(true);
-    expect(state.players.find(p => p.id === 1).secrets).toBe(1);
-
-    state = dispatch(state, { type: 'TOGGLE_IMPERIAL_MECATOL', playerId: 1 });
-    expect(state.round.imperialClaim).toMatchObject({ mecatol: true, secret: false });
-
-    state = dispatch(state, { type: 'TOGGLE_IMPERIAL_MECATOL', playerId: 1 });
-    state = dispatch(state, { type: 'TOGGLE_IMPERIAL_SECRET', playerId: 1 });
     state = dispatch(state, { type: 'CONFIRM_IMPERIAL_CLAIM', playerId: 1 });
-    expect(state.players.find(p => p.id === 1).secrets).toBe(1);
+    expect(state.players.find(p => p.id === 1).secrets).toBe(0);
     expect(state.players.find(p => p.id === 1).extra).toBe(0);
+    expect(state.players.find(p => p.id === 1).secretHand).toEqual(['so_test_a']);
+    expect(state.secretObjectives.pendingReveals?.['1']).toBe('so_test_a');
+    expect(state.round.strategyResolution.responses[1]).toBe('played');
+    expect(state.players.find(p => p.id === 1).playedCardIds).toEqual([8]);
+  });
+
+  it('Imperial secondary Сыграно is sequential clockwise after speaker; Пас anytime', () => {
+    let state = gameWith([
+      player(1, 'Speaker', { cards: [STRATEGY_CARDS[0]], lastMinInitiative: 1 }),
+      player(2, 'Imp', { cards: [STRATEGY_CARDS[7]], lastMinInitiative: 2 }),
+      player(3, 'C', {
+        cards: [STRATEGY_CARDS[1]],
+        lastMinInitiative: 3,
+        secretHand: [],
+        secretCap: 3,
+      }),
+      player(4, 'D', {
+        cards: [STRATEGY_CARDS[2]],
+        lastMinInitiative: 4,
+        secretHand: [],
+        secretCap: 3,
+      }),
+    ]);
+    state = {
+      ...state,
+      meta: { ...state.meta, speakerId: 1 },
+      vpTrack: {
+        custodiansPlayerId: 2,
+        mecatolControllerId: 2,
+        supportHolders: {},
+      },
+      secretObjectives: {
+        deck: ['so_a', 'so_b', 'so_c', 'so_d'],
+        scored: [],
+        dealStarted: true,
+        draftPending: false,
+        pendingReveal: null,
+        overflow: null,
+      },
+    };
+    state = dispatch(state, { type: 'START_ROUND' });
+    // Turn order by initiative: 1 → 2 → 3 → 4; advance to Imperial holder.
+    state = dispatch(state, { type: 'NEXT_TURN' });
+    expect(activePlayer(state).id).toBe(2);
+
+    state = dispatch(state, { type: 'PLAY_STRATEGY', cardId: 8 });
+    state = dispatch(state, { type: 'CONFIRM_IMPERIAL_CLAIM', playerId: 2 });
+    expect(state.round.strategyResolution.responses[2]).toBe('played');
+    // Clockwise after speaker 1: 2 (already played), 3, 4, 1
+    expect(speakerClockwiseOrder(state).map((p) => p.id)).toEqual([2, 3, 4, 1]);
+
+    // Seat 4 cannot Сыграно before 3
+    const blocked = dispatch(state, { type: 'RESOLVE_STRATEGY', playerId: 4, choice: 'played' });
+    expect(blocked).toBe(state);
+    expect(state.round.strategyResolution.responses[4]).toBe('pending');
+
+    // Пас out of order is fine
+    state = dispatch(state, { type: 'RESOLVE_STRATEGY', playerId: 4, choice: 'passed' });
+    expect(state.round.strategyResolution.responses[4]).toBe('passed');
+
+    // Still cannot skip 3 for seat 1
+    const stillBlocked = dispatch(state, { type: 'RESOLVE_STRATEGY', playerId: 1, choice: 'played' });
+    expect(stillBlocked).toBe(state);
+
+    state = dispatch(state, { type: 'RESOLVE_STRATEGY', playerId: 3, choice: 'played' });
+    expect(state.round.strategyResolution.responses[3]).toBe('played');
+    expect(state.players.find((p) => p.id === 3).secretHand).toContain('so_a');
+
+    state = dispatch(state, { type: 'RESOLVE_STRATEGY', playerId: 1, choice: 'passed' });
+    expect(state.round.strategyResolution.active).toBe(false);
+  });
+
+  it('Imperial secondary Сыграно draws secret; over-cap gates played until discard', () => {
+    let state = gameWith([
+      player(1, 'Imp', {
+        cards: [STRATEGY_CARDS[7]],
+        lastMinInitiative: 1,
+        secretHand: [],
+        secretCap: 3,
+      }),
+      player(2, 'B', {
+        cards: [STRATEGY_CARDS[0]],
+        lastMinInitiative: 2,
+        secretHand: ['so_h1', 'so_h2', 'so_h3'],
+        secretCap: 3,
+        secrets: 0,
+      }),
+    ]);
+    state = {
+      ...state,
+      vpTrack: {
+        custodiansPlayerId: 1,
+        mecatolControllerId: 1,
+        supportHolders: {},
+      },
+      secretObjectives: {
+        deck: ['so_new'],
+        scored: [],
+        dealStarted: true,
+        draftPending: false,
+        pendingReveal: null,
+        overflow: null,
+      },
+    };
+    state = dispatch(state, { type: 'START_ROUND' });
+    state = dispatch(state, { type: 'PLAY_STRATEGY', cardId: 8 });
+    state = dispatch(state, { type: 'CONFIRM_IMPERIAL_CLAIM', playerId: 1 });
+    expect(state.round.strategyResolution.responses[1]).toBe('played');
+
+    state = dispatch(state, { type: 'RESOLVE_STRATEGY', playerId: 2, choice: 'played' });
+    expect(state.players.find(p => p.id === 2).secretHand).toHaveLength(4);
+    expect(state.round.strategyResolution.responses[2]).toBe('discarding');
+    expect(state.round.strategyResolution.active).toBe(true);
+    expect(state.secretObjectives.overflows?.['2']).toMatchObject({
+      resolveStrategy: true,
+    });
+
+    state = dispatch(state, {
+      type: 'DISCARD_SECRET',
+      playerId: 2,
+      cardId: 'so_new',
+    });
+    expect(state.players.find(p => p.id === 2).secretHand).toHaveLength(3);
+    expect(state.secretObjectives.overflows?.['2']).toBeUndefined();
+    expect(state.round.strategyResolution.active).toBe(false);
+    expect(state.players.find(p => p.id === 1).playedCardIds).toEqual([8]);
   });
 
   it('banks wall-clock elapsed into totalTime on NEXT_TURN', () => {
@@ -1614,7 +1789,12 @@ describe("Thunder's Edge expedition", () => {
   const withTe = (players, extra = {}) => normalizeGameState({
     ...createEmptyGameState(),
     isGameActive: true,
-    players,
+    players: players.map((p) => ({
+      ...p,
+      secretHand: Array.isArray(p.secretHand)
+        ? p.secretHand
+        : [`exp_secret_${p.id}`],
+    })),
     meta: {
       ...createEmptyGameState().meta,
       speakerId: players[0]?.id ?? null,
@@ -1629,6 +1809,13 @@ describe("Thunder's Edge expedition", () => {
       passed: {},
       ...(extra.round || {}),
     },
+    secretObjectives: {
+      deck: ['exp_deck_spare'],
+      scored: [],
+      dealStarted: true,
+      draftPending: false,
+      ...(extra.secretObjectives || {}),
+    },
     expedition: extra.expedition,
   });
 
@@ -1642,35 +1829,75 @@ describe("Thunder's Edge expedition", () => {
     },
   });
 
+  const claim = (state, playerId, sliceId) => {
+    const payload = { type: 'CLAIM_EXPEDITION_SLICE', playerId, sliceId };
+    if (sliceId === 'secret') {
+      payload.cardId = state.players.find((p) => p.id === playerId)?.secretHand?.[0];
+    }
+    return dispatch(state, payload);
+  };
+
   const slices = ['resources', 'actionCards', 'influence', 'secret', 'techPlanet', 'tradeGoods'];
 
   it('grants breakthrough on first claim and allows only one claim per turn', () => {
     let state = withTe([player(1, 'A'), player(2, 'B')]);
-    state = dispatch(state, { type: 'CLAIM_EXPEDITION_SLICE', playerId: 1, sliceId: 'resources' });
+    state = claim(state, 1, 'resources');
     expect(state.expedition.slices.resources).toBe(1);
     expect(state.players.find(p => p.id === 1).breakthrough).toBe(true);
     expect(state.round.expeditionClaimedThisTurn).toBe(true);
 
-    const again = dispatch(state, { type: 'CLAIM_EXPEDITION_SLICE', playerId: 1, sliceId: 'resources' });
+    const again = claim(state, 1, 'resources');
     expect(again).toBe(state);
 
-    const secondSlot = dispatch(state, { type: 'CLAIM_EXPEDITION_SLICE', playerId: 1, sliceId: 'influence' });
+    const secondSlot = claim(state, 1, 'influence');
     expect(secondSlot).toBe(state);
 
     state = asTurn(state, 2);
     expect(state.round.expeditionClaimedThisTurn).toBe(false);
-    state = dispatch(state, { type: 'CLAIM_EXPEDITION_SLICE', playerId: 2, sliceId: 'influence' });
+    state = claim(state, 2, 'influence');
     expect(state.expedition.slices.influence).toBe(2);
   });
 
   it('rejects claims off-turn or without TE', () => {
     const noTe = withTe([player(1, 'A'), player(2, 'B')], { meta: { useTe: false } });
-    expect(dispatch(noTe, { type: 'CLAIM_EXPEDITION_SLICE', playerId: 1, sliceId: 'resources' }))
-      .toBe(noTe);
+    expect(claim(noTe, 1, 'resources')).toBe(noTe);
 
     const state = withTe([player(1, 'A'), player(2, 'B')]);
-    expect(dispatch(state, { type: 'CLAIM_EXPEDITION_SLICE', playerId: 2, sliceId: 'resources' }))
-      .toBe(state);
+    expect(claim(state, 2, 'resources')).toBe(state);
+  });
+
+  it('requires a secret in hand and discards it for the secret slice', () => {
+    let state = withTe([
+      player(1, 'A', { secretHand: [] }),
+      player(2, 'B'),
+    ]);
+    const blocked = claim(state, 1, 'secret');
+    expect(blocked).toBe(state);
+
+    state = withTe([
+      player(1, 'A', { secretHand: ['become_the_gatekeeper', 'control_the_region'] }),
+      player(2, 'B'),
+    ]);
+    const withoutCard = dispatch(state, {
+      type: 'CLAIM_EXPEDITION_SLICE',
+      playerId: 1,
+      sliceId: 'secret',
+    });
+    expect(withoutCard).toBe(state);
+
+    state = withTe([
+      player(1, 'A', { secretHand: ['become_the_gatekeeper'] }),
+      player(2, 'B'),
+    ]);
+    // Single card may be discarded without explicit cardId.
+    state = dispatch(state, {
+      type: 'CLAIM_EXPEDITION_SLICE',
+      playerId: 1,
+      sliceId: 'secret',
+    });
+    expect(state.expedition.slices.secret).toBe(1);
+    expect(state.players.find((p) => p.id === 1).secretHand).toEqual([]);
+    expect(state.secretObjectives.deck.at(-1)).toBe('become_the_gatekeeper');
   });
 
   it('auto-assigns controller when one player leads after 6th slice', () => {
@@ -1678,7 +1905,7 @@ describe("Thunder's Edge expedition", () => {
     const owners = [1, 1, 1, 1, 2, 1];
     owners.forEach((pid, i) => {
       state = asTurn(state, pid);
-      state = dispatch(state, { type: 'CLAIM_EXPEDITION_SLICE', playerId: pid, sliceId: slices[i] });
+      state = claim(state, pid, slices[i]);
     });
     expect(state.expedition.completed).toBe(true);
     expect(state.expedition.controllerId).toBe(1);
@@ -1691,7 +1918,7 @@ describe("Thunder's Edge expedition", () => {
     const owners = [1, 2, 1, 2, 1, 2];
     owners.forEach((pid, i) => {
       state = asTurn(state, pid);
-      state = dispatch(state, { type: 'CLAIM_EXPEDITION_SLICE', playerId: pid, sliceId: slices[i] });
+      state = claim(state, pid, slices[i]);
     });
     expect(state.expedition.awaitingControlPick).toBe(true);
     expect(state.expedition.placedById).toBe(2);
@@ -1755,7 +1982,7 @@ describe("Thunder's Edge expedition", () => {
   it('restores the per-turn expedition claim when host clears that claim', () => {
     let state = withTe([player(1, 'A'), player(2, 'B')]);
     state = asTurn(state, 1);
-    state = dispatch(state, { type: 'CLAIM_EXPEDITION_SLICE', playerId: 1, sliceId: 'resources' });
+    state = claim(state, 1, 'resources');
     expect(state.round.expeditionClaimedThisTurn).toBe(true);
     expect(state.round.expeditionClaimedSliceId).toBe('resources');
     expect(state.players.find(p => p.id === 1).breakthrough).toBe(true);
@@ -1766,7 +1993,7 @@ describe("Thunder's Edge expedition", () => {
     expect(state.round.expeditionClaimedSliceId).toBeNull();
     expect(state.players.find(p => p.id === 1).breakthrough).toBe(false);
 
-    state = dispatch(state, { type: 'CLAIM_EXPEDITION_SLICE', playerId: 1, sliceId: 'influence' });
+    state = claim(state, 1, 'influence');
     expect(state.expedition.slices.influence).toBe(1);
     expect(state.round.expeditionClaimedThisTurn).toBe(true);
   });
@@ -1776,7 +2003,7 @@ describe("Thunder's Edge expedition", () => {
     const owners = [1, 1, 1, 1, 2, 1];
     owners.forEach((pid, i) => {
       state = asTurn(state, pid);
-      state = dispatch(state, { type: 'CLAIM_EXPEDITION_SLICE', playerId: pid, sliceId: slices[i] });
+      state = claim(state, pid, slices[i]);
     });
     expect(state.expedition.completed).toBe(true);
 

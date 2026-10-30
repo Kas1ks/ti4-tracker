@@ -1,4 +1,5 @@
 import { BASE_OBJECTIVES, STRATEGY_CARDS } from '../data/gameData';
+import { secretObjectiveById } from '../data/secretObjectives';
 import { techById } from '../data/technologies';
 import {
   avg,
@@ -250,6 +251,86 @@ export function buildObjectiveStats(history) {
     }),
     mostScored: byCompletionDesc.slice(0, 5),
     rarelyScored: byCompletionAsc.slice(0, 5),
+  };
+}
+
+/**
+ * SECRET OBJECTIVES (schema v4+): which secrets get scored across company history.
+ * Only games with at least one player.secretsScored[] entry are counted.
+ * Rate = share of those games where the secret was scored by someone.
+ */
+export function buildSecretStats(history) {
+  const map = new Map();
+  let gamesWithSecrets = 0;
+  let scoreEvents = 0;
+
+  (history || []).forEach((game) => {
+    const seenInGame = new Set();
+    (game.players || []).forEach((p) => {
+      const ids = Array.isArray(p.secretsScored) ? p.secretsScored : [];
+      ids.forEach((rawId) => {
+        const id = String(rawId || '').trim();
+        if (!id) return;
+        scoreEvents += 1;
+        seenInGame.add(id);
+        const catalog = secretObjectiveById.get(id);
+        if (!map.has(id)) {
+          map.set(id, {
+            id,
+            title: catalog?.title || id,
+            desc: catalog?.desc || '',
+            phase: catalog?.phase || null,
+            points: catalog?.points ?? 1,
+            scoredGames: 0,
+            scoreEvents: 0,
+          });
+        }
+        const row = map.get(id);
+        row.scoreEvents += 1;
+        if (catalog?.title) row.title = catalog.title;
+      });
+    });
+    if (seenInGame.size === 0) return;
+    gamesWithSecrets += 1;
+    seenInGame.forEach((id) => {
+      const row = map.get(id);
+      if (row) row.scoredGames += 1;
+    });
+  });
+
+  const rows = [...map.values()].map((row) => {
+    const gameRatePct = gamesWithSecrets
+      ? Math.round((row.scoredGames / gamesWithSecrets) * 100)
+      : 0;
+    return {
+      id: row.id,
+      title: row.title,
+      desc: row.desc || '',
+      phase: row.phase,
+      points: row.points,
+      scoredGames: row.scoredGames,
+      scoreEvents: row.scoreEvents,
+      gameRatePct,
+    };
+  });
+
+  const byRateDesc = [...rows].sort(
+    (a, b) => b.gameRatePct - a.gameRatePct
+      || b.scoredGames - a.scoredGames
+      || a.title.localeCompare(b.title, 'ru'),
+  );
+  const byRateAsc = [...rows].sort(
+    (a, b) => a.gameRatePct - b.gameRatePct
+      || a.scoredGames - b.scoredGames
+      || a.title.localeCompare(b.title, 'ru'),
+  );
+
+  return {
+    gamesWithSecrets,
+    scoreEvents,
+    all: [...rows].sort((a, b) => a.title.localeCompare(b.title, 'ru')),
+    mostScored: byRateDesc.slice(0, 5),
+    rarelyScored: byRateAsc.slice(0, 5),
   };
 }
 
@@ -648,6 +729,7 @@ export function buildAnalytics(history) {
     players: buildPlayerStats(list),
     factions: buildFactionStats(list),
     objectives: buildObjectiveStats(list),
+    secrets: buildSecretStats(list),
     strategy: buildStrategyStats(list),
     vpSources: buildVpSourceStats(list),
     techs: buildTechStats(list),

@@ -1,6 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import { STRATEGY_CARDS } from '../data/gameData';
+import { secretObjectiveById } from '../data/secretObjectives';
 import { formatTime } from '../utils/game';
+
+function secretTitle(id) {
+  if (!id) return '';
+  return secretObjectiveById.get(id)?.title || String(id);
+}
 import { isCloudConfigured } from '../config';
 import { useEscapeKey } from '../hooks/useEscapeKey';
 import { buildAnalytics } from '../analytics/aggregate';
@@ -904,9 +910,17 @@ function ObjectivesPanel({ objectives = {}, onGoMeta }) {
   );
 }
 
+function secretPhaseShort(phase) {
+  if (phase === 'action') return 'Действие';
+  if (phase === 'agenda') return 'Политика';
+  if (phase === 'status') return 'Статус';
+  return null;
+}
+
 function MetaPanel({ analytics, factionMatrix, onGoObjectives }) {
   const {
     objectives = {},
+    secrets = {},
     strategy = {},
     techs,
     politics,
@@ -914,6 +928,8 @@ function MetaPanel({ analytics, factionMatrix, onGoObjectives }) {
   } = analytics;
   const mostScored = objectives.mostScored || [];
   const rarelyScored = objectives.rarelyScored || [];
+  const mostSecrets = secrets.mostScored || [];
+  const rareSecrets = secrets.rarelyScored || [];
   const strategyCards = strategy.cards || [];
   const strategyCardsByPct = useMemo(
     () => [...strategyCards].sort(
@@ -926,7 +942,7 @@ function MetaPanel({ analytics, factionMatrix, onGoObjectives }) {
   return (
     <div className="stats-body stats-stack">
       <p className="stats-note">
-        Глубже по метаигре: стратегии, цели, технологии и политика. Для людей и фракций — вкладки выше.
+        Глубже по метаигре: стратегии, цели, секреты, технологии и политика. Для людей и фракций — вкладки выше.
       </p>
 
       <div className="stats-grid-2">
@@ -1018,6 +1034,48 @@ function MetaPanel({ analytics, factionMatrix, onGoObjectives }) {
                   desc={o.desc}
                   stage={o.stage}
                   meta={`${o.revealed} показ. · ${o.avgPlayerPct ?? o.scoreRatePct}%`}
+                />
+              ))}
+            </ul>
+          </Section>
+        </div>
+      </div>
+
+      <div className="stats-obj-tops">
+        <p className="stats-note" style={{ marginBottom: '0.5rem' }}>
+          {secrets.gamesWithSecrets
+            ? `Секреты по ${secrets.gamesWithSecrets} парт. со схемой v4+ (ids заскоренных).`
+            : 'Секреты появятся после партий со схемой v4 (список заскоренных ids).'}
+        </p>
+        <div className="stats-grid-2">
+          <Section
+            title="Секреты — чаще"
+            icon="fa-user-secret"
+            empty={!mostSecrets.length ? 'Нет данных по секретам.' : null}
+          >
+            <ul className="stats-list">
+              {mostSecrets.map((s) => (
+                <ObjectiveStatRow
+                  key={s.id}
+                  title={s.title}
+                  desc={s.desc}
+                  meta={`${secretPhaseShort(s.phase) ? `${secretPhaseShort(s.phase)} · ` : ''}${s.scoredGames} парт. · ${s.gameRatePct}%`}
+                />
+              ))}
+            </ul>
+          </Section>
+          <Section
+            title="Секреты — редко"
+            icon="fa-mask"
+            empty={!rareSecrets.length ? 'Нет данных по секретам.' : null}
+          >
+            <ul className="stats-list">
+              {rareSecrets.map((s) => (
+                <ObjectiveStatRow
+                  key={s.id}
+                  title={s.title}
+                  desc={s.desc}
+                  meta={`${secretPhaseShort(s.phase) ? `${secretPhaseShort(s.phase)} · ` : ''}${s.scoredGames} парт. · ${s.gameRatePct}%`}
                 />
               ))}
             </ul>
@@ -1263,7 +1321,11 @@ function GameDetail({ game }) {
                   <td className="is-muted">{p.faction || '—'}</td>
                   <td className="is-center is-gold">{p.score}</td>
                   <td><ScoreBreakdownInline breakdown={p.scoreBreakdown} /></td>
-                  <td className="is-center mono">
+                  <td className="is-center mono" title={
+                    Array.isArray(p.secretsScored) && p.secretsScored.length
+                      ? p.secretsScored.map(secretTitle).join(', ')
+                      : undefined
+                  }>
                     {p.secretsScoredVp > 0 || p.secretsHeld > 0
                       ? `${p.secretsScoredVp ?? 0}/${p.secretsHeld ?? 0}`
                       : '—'}
@@ -1276,6 +1338,23 @@ function GameDetail({ game }) {
           </tbody>
         </table>
       </div>
+
+      {(game.players || []).some((p) => Array.isArray(p.secretsScored) && p.secretsScored.length > 0) && (
+        <div className="stats-detail-block">
+          <div className="stats-detail-label">Заскоренные секреты</div>
+          <ul className="stats-list">
+            {(game.players || [])
+              .filter((p) => Array.isArray(p.secretsScored) && p.secretsScored.length > 0)
+              .map((p) => (
+                <li key={`sec-${p.name}`}>
+                  <span className="is-strong">{p.name}</span>
+                  {': '}
+                  {p.secretsScored.map(secretTitle).join(', ')}
+                </li>
+              ))}
+          </ul>
+        </div>
+      )}
 
       {scoredObjectives.length > 0 && (
         <div className="stats-detail-block">

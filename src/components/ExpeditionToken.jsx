@@ -347,7 +347,9 @@ export function ExpeditionToken({
             {EXPEDITION_SLICES.map((slice, index) => {
               const ownerId = slices[slice.id];
               const free = ownerId == null && !locked;
-              const claimable = free && canClaim && activePlayer;
+              const secretHand = Array.isArray(activePlayer?.secretHand) ? activePlayer.secretHand : [];
+              const secretBlocked = slice.id === 'secret' && secretHand.length === 0;
+              const claimable = free && canClaim && activePlayer && !secretBlocked;
               return (
                 <path
                   key={slice.id}
@@ -361,11 +363,13 @@ export function ExpeditionToken({
                   }}
                 >
                   <title>
-                    {claimable
-                      ? `Занять: ${slice.hint}`
-                      : ownerId != null
-                        ? `${slice.label} — ${playerById(ownerId)?.name || ''}`
-                        : slice.hint}
+                    {secretBlocked && free
+                      ? 'Нужна секретная цель в руке'
+                      : claimable
+                        ? `Занять: ${slice.hint}`
+                        : ownerId != null
+                          ? `${slice.label} — ${playerById(ownerId)?.name || ''}`
+                          : slice.hint}
                   </title>
                 </path>
               );

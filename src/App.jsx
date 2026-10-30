@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import * as select from './game/selectors';
 import { useSyncedGame } from './sync/useSyncedGame';
@@ -9,7 +9,7 @@ import { usePushNotifications } from './hooks/usePushNotifications';
 import { useVisualViewportShell } from './hooks/useVisualViewportShell';
 import { useAppDialog } from './hooks/useAppDialog';
 import { useCloudGame } from './hooks/useCloudGame';
-import { useLocalUi } from './hooks/useLocalUi';
+import { BLOCKING_MODAL_IDS, useLocalUi } from './hooks/useLocalUi';
 import { useGameDialogs } from './hooks/useGameDialogs';
 import { AppDialog } from './components/AppDialog';
 import { GameHeader } from './components/GameHeader';
@@ -23,6 +23,8 @@ import { SetupScreen } from './components/SetupScreen';
 import { HubCosmosBackdrop } from './components/HubCosmosBackdrop';
 import { StrategyResolutionBanner } from './components/StrategyResolutionBanner';
 import { StartingTechDraftBanner } from './components/StartingTechDraftBanner';
+import { SecretDealBanner } from './components/SecretDealBanner';
+import { canStartSecretDraft, nextSecretReceiveSeat } from './game/secretDeck';
 import { SyncStatusBanner } from './components/SyncStatusBanner';
 import { PushNotificationsSheet } from './components/PushNotificationsSheet';
 import { VictoryLockBanner } from './components/VictoryLockBanner';
@@ -31,6 +33,7 @@ import { playersNeedingStartingTechDraft } from './data/technologies';
 import { getTechSession } from './hooks/useTechSession';
 import { isVictoryReached, victoryWinners } from './game/victory';
 import { buildPhaseHub } from './app/phaseHub';
+import { secretObjectiveById } from './data/secretObjectives';
 
 const GameBoard = lazy(() => import('./components/GameBoard').then(m => ({ default: m.GameBoard })));
 const PlayerMobileConsole = lazy(() => import('./components/PlayerMobileConsole').then(m => ({ default: m.PlayerMobileConsole })));
@@ -46,12 +49,15 @@ const EndGameModal = lazy(() => import('./components/EndGameModal').then(m => ({
 const DraftModal = lazy(() => import('./components/DraftModal').then(m => ({ default: m.DraftModal })));
 const PoliticsModal = lazy(() => import('./components/PoliticsModal').then(m => ({ default: m.PoliticsModal })));
 const ActiveLawsSheet = lazy(() => import('./components/ActiveLawsSheet').then(m => ({ default: m.ActiveLawsSheet })));
+const ScoredSecretsModal = lazy(() => import('./components/ScoredSecretsBoard').then(m => ({ default: m.ScoredSecretsModal })));
 const PoliticsPeekModal = lazy(() => import('./components/PoliticsPeekModal').then(m => ({ default: m.PoliticsPeekModal })));
 const CombatModal = lazy(() => import('./components/CombatModal').then(m => ({ default: m.CombatModal })));
 const SpeakerSelectionModal = lazy(() => import('./components/SpeakerSelectionModal').then(m => ({ default: m.SpeakerSelectionModal })));
 const StrategyResolutionModal = lazy(() => import('./components/StrategyResolutionModal').then(m => ({ default: m.StrategyResolutionModal })));
 const StartingTechDraftModal = lazy(() => import('./components/StartingTechDraftModal').then(m => ({ default: m.StartingTechDraftModal })));
 const StartingTechPlayerModal = lazy(() => import('./components/StartingTechPlayerModal').then(m => ({ default: m.StartingTechPlayerModal })));
+const SecretDraftModal = lazy(() => import('./components/SecretDraftModal').then(m => ({ default: m.SecretDraftModal })));
+const SecretReceiveModal = lazy(() => import('./components/SecretReceiveModal').then(m => ({ default: m.SecretReceiveModal })));
 const ImperialClaimModal = lazy(() => import('./components/ImperialClaimModal').then(m => ({ default: m.ImperialClaimModal })));
 const TechModal = lazy(() => import('./components/TechModal').then(m => ({ default: m.TechModal })));
 const ProductionCalculatorModal = lazy(() => import('./components/ProductionCalculatorModal').then(m => ({ default: m.ProductionCalculatorModal })));
@@ -92,6 +98,7 @@ function App() {
     startHostRoom,
     promoteMiltyToSetup,
     joinRoomById,
+    claimHostByKey,
     releaseSeatById,
     claimHostSeatById,
     leaveRoom,
@@ -126,6 +133,7 @@ function App() {
     turnStartedAt,
     turnPausedAccum,
     strategyActionTaken,
+    secretExchangeUsed,
     strategyResolution,
     imperialClaim,
     techResearch,
@@ -152,6 +160,7 @@ function App() {
     influenceLocked, voteReversed, oneVoteLaw, activeLaws = [],
   } = game.politics;
   const [showActiveLaws, setShowActiveLaws] = useState(false);
+  const [showScoredSecrets, setShowScoredSecrets] = useState(false);
   const {
     show: showStatusPhaseModal,
     checks: statusPhaseChecks,
@@ -194,8 +203,9 @@ function App() {
   const isLive = roomStatus === 'live' && !!room?.roomId;
   const isConnecting = roomStatus === 'connecting';
   const hasRoomSession = isLive || isConnecting || !!room?.roomId;
-  // Until snapshot arrives, phase/milty/isGameActive may be stale — don't flash wrong screens.
-  const roomBooting = isConnecting && !!room?.roomId;
+  // Any connecting state (fresh join before roomId is set, or refresh restore).
+  // Previously required roomId and left a blank black frame on mobile join.
+  const roomBooting = isConnecting;
   const miltyDrafting = !roomBooting && hasRoomSession && (
     room?.phase === 'milty' || room?.milty?.status === 'drafting'
   );
@@ -254,7 +264,8 @@ function App() {
     && !strategyResolution?.active
     && !imperialClaim?.active
     && !techResearch?.active
-    && (perms?.role === ROLES.ADMIN || perms?.seatPlayerId === activePlayer.id)
+    && (perms?.role === ROLES.ADMIN
+      || String(perms?.seatPlayerId) === String(activePlayer.id))
   );
   const canPickTeController = !!(
     useTe
@@ -281,6 +292,58 @@ function App() {
   );
   const showStartingTechPlayerModal = startingTechPlayerPending
     && !ui.minimizedModals.startingTechPlayer;
+  const showSecretDealBanner = !!(
+    isGameActive
+    && !victoryLocked
+    && canStartSecretDraft(game)
+    && !showStartingTechBanner
+    && !startingTechDraft?.active
+    && (perms?.role === ROLES.ADMIN || roomStatus === 'solo')
+  );
+  const secretDraftPending = !!game.secretObjectives?.draftPending;
+  const mySecretDraft = mySeatPlayer && Array.isArray(mySeatPlayer.secretDraft)
+    ? mySeatPlayer.secretDraft
+    : [];
+  const showSecretDraftPlayerModal = !!(
+    secretDraftPending
+    && mySeatPlayer
+    && mySecretDraft.length > 0
+    && !ui.minimizedModals.secretDraft
+  );
+  const showSecretDraftHostModal = !!(
+    secretDraftPending
+    && (perms?.role === ROLES.ADMIN || roomStatus === 'solo')
+    && !showSecretDraftPlayerModal
+    && !ui.minimizedModals.secretDraftHost
+  );
+  // Per-seat pending receives: each phone shows only its own; solo queues one at a time.
+  const secretReceiveSeat = nextSecretReceiveSeat(
+    game.secretObjectives,
+    roomStatus === 'solo' ? null : (perms?.seatPlayerId ?? null),
+  );
+  const secretReceivePlayerId = secretReceiveSeat?.playerId ?? null;
+  const secretPendingReveal = secretReceiveSeat?.cardId
+    ? { playerId: secretReceivePlayerId, cardId: secretReceiveSeat.cardId }
+    : null;
+  const secretOverflow = secretReceiveSeat?.overflow
+    ? {
+      playerId: secretReceivePlayerId,
+      resolveStrategy: !!secretReceiveSeat.resolveStrategy,
+    }
+    : null;
+  const secretReceivePlayer = secretReceivePlayerId != null
+    ? players.find(p => String(p.id) === String(secretReceivePlayerId))
+    : null;
+  const showSecretReceiveModal = !!(
+    !victoryLocked
+    && secretReceivePlayer
+    && secretReceiveSeat
+    && (
+      (perms?.seatPlayerId != null
+        && String(perms.seatPlayerId) === String(secretReceivePlayerId))
+      || roomStatus === 'solo'
+    )
+  );
   const isMyTurn = !!(
     isGameActive
     && mySeatPlayer
@@ -289,6 +352,41 @@ function App() {
     && !passed[mySeatPlayer.id]
   );
   useYourTurnAlert({ enabled: isPlayerClient && isGameActive, isYourTurn: isMyTurn });
+
+  const [secretScoreNotice, setSecretScoreNotice] = useState(null);
+  const secretLogSeenLenRef = useRef(null);
+  useEffect(() => {
+    if (!isHostClient || !isGameActive) {
+      secretLogSeenLenRef.current = null;
+      return;
+    }
+    const events = Array.isArray(game.log?.events) ? game.log.events : [];
+    if (secretLogSeenLenRef.current == null) {
+      secretLogSeenLenRef.current = events.length;
+      return;
+    }
+    if (events.length < secretLogSeenLenRef.current) {
+      secretLogSeenLenRef.current = events.length;
+      return;
+    }
+    if (events.length === secretLogSeenLenRef.current) return;
+    const fresh = events.slice(secretLogSeenLenRef.current);
+    secretLogSeenLenRef.current = events.length;
+    // Host toast only for mid-phase action/politics secrets — not status scoring.
+    const scored = [...fresh].reverse().find((ev) => {
+      if (ev?.type !== 'SECRET_SCORED' || ev.scoringWindow) return false;
+      const phase = ev.phase
+        || (ev.cardId ? secretObjectiveById.get(ev.cardId)?.phase : null);
+      return phase === 'action' || phase === 'agenda';
+    });
+    if (!scored) return;
+    const player = players.find((p) => p.id === scored.playerId);
+    const card = scored.cardId ? secretObjectiveById.get(scored.cardId) : null;
+    setSecretScoreNotice({
+      playerName: player?.name || (scored.playerId != null ? `#${scored.playerId}` : 'Игрок'),
+      cardTitle: card?.title || 'Секретная цель',
+    });
+  }, [game.log?.events, isHostClient, isGameActive, players]);
 
   const pushNotify = usePushNotifications({
     roomId: room?.roomId || null,
@@ -327,6 +425,7 @@ function App() {
   const mobileShell = (isPlayerClient || isViewerClient) && showActiveGame;
   useVisualViewportShell(mobileShell);
 
+  // Keep cinematic body tokens during the live game (setup/hub screens set this themselves).
   useEffect(() => {
     if (!isGameActive) return undefined;
     document.body.classList.add('hub-cinematic');
@@ -418,6 +517,15 @@ function App() {
       ui.focusBlockingModal('startingTechPlayer');
     }
   }, [startingTechDraft?.active, mySeatPlayer?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!secretDraftPending) return;
+    if (isPlayerClient && mySecretDraft.length > 0) {
+      ui.focusBlockingModal('secretDraft');
+    } else if (perms?.role === ROLES.ADMIN || roomStatus === 'solo') {
+      ui.focusBlockingModal('secretDraftHost');
+    }
+  }, [secretDraftPending]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (showImperialClaimModal) {
@@ -611,6 +719,31 @@ function App() {
     }
   };
 
+  const handleClaimHost = async (roomId, hostKey) => {
+    setSoloSetup(false);
+    try {
+      const claimed = await claimHostByKey(roomId, hostKey);
+      await uiAlert(
+        claimed?.reclaimed
+          ? 'Вы снова хост на этом устройстве. Старое устройство отключено.'
+          : 'Вы хост на этом устройстве.',
+        { title: 'Хост перенесён', variant: 'success' },
+      );
+      return claimed;
+    } catch (err) {
+      const codeErr = String(err.message || err);
+      const message = codeErr === 'bad-host-key'
+        ? 'Неверный код хоста.'
+        : codeErr === 'party-ended'
+          ? 'Партия уже завершена.'
+          : codeErr === 'not-found'
+            ? 'Комната не найдена.'
+            : `Не удалось стать хостом: ${codeErr}`;
+      await uiAlert(message, { title: 'Ошибка', variant: 'danger' });
+      throw err;
+    }
+  };
+
   const handleLeaveRoom = async () => {
     setSoloSetup(false);
     await pushNotify.unsubscribeServer();
@@ -712,6 +845,7 @@ function App() {
       <SyncStatusBanner
         roomError={hasRoomSession ? roomError : null}
         syncLink={hasRoomSession ? syncLink : 'idle'}
+        hostOnline={hasRoomSession ? room?.hostOnline !== false : true}
         onDismissError={dismissRoomError}
         onReconnect={hasRoomSession ? () => resumeLiveSync({ forceSse: true }) : undefined}
       />
@@ -742,9 +876,11 @@ function App() {
             && !techResearch?.active
           }
           canSkipStatus={!!showStatusPhaseModal || !!objectiveScoring?.active}
+          canSkipSecretDraft={!!game.secretObjectives?.draftPending}
           onSkipDraft={() => dispatch({ type: 'DEV_SKIP_STRATEGY_DRAFT' })}
           onPassAll={() => dispatch({ type: 'DEV_PASS_ALL' })}
           onSkipStatus={() => dispatch({ type: 'DEV_SKIP_STATUS_PHASE' })}
+          onSkipSecretDraft={() => dispatch({ type: 'DEV_SKIP_SECRET_DRAFT' })}
         />
       )}
 
@@ -777,6 +913,7 @@ function App() {
           onOpenActiveLaws={() => setShowActiveLaws(true)}
           activeLawsCount={(activeLaws || []).length}
           onOpenExpedition={useTe ? openExpeditionPanel : undefined}
+          onOpenScoredSecrets={isGameActive ? () => setShowScoredSecrets(true) : undefined}
           onOpenTech={isViewerClient ? undefined : () => {
             ui.setTechViewPlayerId(perms?.seatPlayerId ?? activePlayer?.id ?? players[0]?.id ?? null);
             ui.setShowTechModal(true);
@@ -805,7 +942,7 @@ function App() {
         }`}
       >
         {showRoomBoot && (
-          <div className="hub-shell hub-shell--column min-h-screen relative flex items-center justify-center">
+          <div className="hub-shell hub-shell--column min-h-screen relative isolate flex items-center justify-center">
             <HubCosmosBackdrop />
             <div className="relative z-10 flex flex-col items-center gap-3 px-6 text-center">
               <i className="fa-solid fa-spinner fa-spin text-2xl text-amber-200/90" aria-hidden="true" />
@@ -826,6 +963,7 @@ function App() {
             onCreateRoom={handleCreateRoom}
             onCreateWithMilty={handleCreateWithMilty}
             onJoinRoom={handleJoinRoom}
+            onClaimHost={handleClaimHost}
             onPlaySolo={handlePlaySolo}
             importGameToken={handleImportGameToken}
             uiPrompt={uiPrompt}
@@ -1060,6 +1198,20 @@ function App() {
                   onOpenProduction={() => ui.setShowProductionCalculator(true)}
                   usePok={usePok}
                   useTe={useTe}
+                  mecatolControllerId={game.vpTrack?.mecatolControllerId ?? null}
+                  secretExchangeUsed={!!secretExchangeUsed}
+                  onExchangeSecret={(playerId, cardId) => dispatch({
+                    type: 'EXCHANGE_SECRET',
+                    playerId,
+                    cardId,
+                  })}
+                  isPoliticsActive={!!isPoliticsActive}
+                  onScoreSecret={(playerId, cardId) => dispatch({
+                    type: 'SCORE_SECRET',
+                    playerId,
+                    cardId,
+                  })}
+                  uiConfirm={uiConfirm}
                   phaseHub={buildPhaseHub({
                     showDraftModal,
                     showPoliticsModal,
@@ -1115,10 +1267,13 @@ function App() {
                 players={players}
                 spotlightObjectiveId={spotlightObjectiveId}
                 spotlightReady={spotlightReady}
-                adjustSecrets={(playerId, delta) => dispatch({ type: 'ADJUST_SECRETS', playerId, delta })}
                 adjustMecatol={(playerId, delta) => dispatch({ type: 'ADJUST_MECATOL', playerId, delta })}
                 vpTrack={game.vpTrack}
                 setCustodians={(playerId) => dispatch({ type: 'SET_CUSTODIANS', playerId })}
+                setMecatolController={(playerId) => dispatch({
+                  type: 'SET_MECATOL_CONTROLLER',
+                  playerId,
+                })}
                 setSupport={(fromPlayerId, holderPlayerId) => dispatch({
                   type: 'SET_SUPPORT',
                   fromPlayerId,
@@ -1169,6 +1324,9 @@ function App() {
                 claimedSeats={room?.claimedSeats || []}
                 isGameActive={isGameActive}
                 perms={perms}
+                canRevealPublic={!!game.secretObjectives?.dealStarted}
+                uiConfirm={uiConfirm}
+                onRaiseSecretCap={(playerId) => dispatch({ type: 'RAISE_SECRET_CAP', playerId })}
               />
               </Suspense>
             </div>
@@ -1205,8 +1363,13 @@ function App() {
             scoring={objectiveScoring}
             seatPlayerId={perms?.seatPlayerId ?? null}
             canScoreAny={!victoryLocked && perms.can('scoreAny')}
+            uiConfirm={uiConfirm}
             onSelectPublic={(playerId, objectiveId) => dispatch({ type: 'SELECT_SCORING_PUBLIC', playerId, objectiveId })}
-            onToggleSecret={(playerId) => dispatch({ type: 'TOGGLE_SCORING_SECRET', playerId })}
+            onToggleSecret={(playerId, cardId) => dispatch({
+              type: 'TOGGLE_SCORING_SECRET',
+              playerId,
+              cardId,
+            })}
             onConfirm={(playerId) => dispatch({ type: 'CONFIRM_OBJECTIVE_SCORING', playerId })}
             onPass={(playerId) => dispatch({ type: 'PASS_OBJECTIVE_SCORING', playerId })}
             onMinimize={() => ui.toggleMinimize('objectiveScoring')}
@@ -1225,8 +1388,6 @@ function App() {
             seatPlayerId={perms?.seatPlayerId ?? null}
             canScoreAny={!victoryLocked && perms.can('scoreAny')}
             onSelectPublic={(playerId, objectiveId) => dispatch({ type: 'SELECT_IMPERIAL_PUBLIC', playerId, objectiveId })}
-            onToggleMecatol={(playerId) => dispatch({ type: 'TOGGLE_IMPERIAL_MECATOL', playerId })}
-            onToggleSecret={(playerId) => dispatch({ type: 'TOGGLE_IMPERIAL_SECRET', playerId })}
             onConfirm={(playerId) => dispatch({ type: 'CONFIRM_IMPERIAL_CLAIM', playerId })}
             onPass={(playerId) => dispatch({ type: 'PASS_IMPERIAL_CLAIM', playerId })}
             onMinimize={() => ui.toggleMinimize('imperialClaim')}
@@ -1388,6 +1549,14 @@ function App() {
           />
         </LazyWhen>
 
+        <LazyWhen active={showScoredSecrets}>
+          <ScoredSecretsModal
+            show={showScoredSecrets}
+            onClose={() => setShowScoredSecrets(false)}
+            players={players}
+          />
+        </LazyWhen>
+
         <LazyWhen active={ui.showCombatModal || (combatActive && perms?.role === ROLES.ADMIN)}>
           <CombatModal
             show={ui.showCombatModal || (combatActive && perms?.role === ROLES.ADMIN)}
@@ -1515,6 +1684,7 @@ function App() {
             minimized={!!ui.minimizedModals.strategyResolution}
             resolution={strategyResolution}
             players={players}
+            game={game}
             canResolveAny={perms.can('phases') || perms.role === ROLES.ADMIN}
             onResolve={resolveStrategy}
             onMinimize={() => ui.toggleMinimize('strategyResolution')}
@@ -1527,6 +1697,57 @@ function App() {
           count={startingTechNeeders.length}
           onStart={() => dispatch({ type: 'START_STARTING_TECH_DRAFT' })}
         />
+
+        <SecretDealBanner
+          show={showSecretDealBanner}
+          onStart={() => dispatch({ type: 'START_SECRET_DRAFT' })}
+        />
+
+        <LazyWhen active={showSecretDraftPlayerModal || showSecretDraftHostModal}>
+          <SecretDraftModal
+            show={showSecretDraftPlayerModal || showSecretDraftHostModal}
+            player={showSecretDraftPlayerModal ? mySeatPlayer : null}
+            players={players}
+            draftPending={secretDraftPending}
+            isHost={perms?.role === ROLES.ADMIN || roomStatus === 'solo'}
+            onKeep={(playerId, cardId) => dispatch({
+              type: 'KEEP_SECRET_DRAFT',
+              playerId,
+              cardId,
+            })}
+            onMinimize={() => {
+              if (showSecretDraftPlayerModal) ui.ensureMinimized('secretDraft');
+              else ui.ensureMinimized('secretDraftHost');
+            }}
+          />
+        </LazyWhen>
+
+        <LazyWhen active={showSecretReceiveModal}>
+          <SecretReceiveModal
+            show={showSecretReceiveModal}
+            player={secretReceivePlayer}
+            cardId={
+              secretPendingReveal
+              && String(secretPendingReveal.playerId) === String(secretReceivePlayerId)
+                ? secretPendingReveal.cardId
+                : null
+            }
+            needsDiscard={
+              !!secretOverflow
+              && String(secretOverflow.playerId) === String(secretReceivePlayerId)
+            }
+            hand={Array.isArray(secretReceivePlayer?.secretHand) ? secretReceivePlayer.secretHand : []}
+            onDismiss={() => dispatch({
+              type: 'DISMISS_SECRET_REVEAL',
+              playerId: secretReceivePlayerId,
+            })}
+            onDiscard={(cardId) => dispatch({
+              type: 'DISCARD_SECRET',
+              playerId: secretReceivePlayerId,
+              cardId,
+            })}
+          />
+        </LazyWhen>
 
         <LazyWhen active={showStartingTechHostModal}>
           <StartingTechDraftModal
@@ -1573,6 +1794,7 @@ function App() {
             cardId={strategyResolution?.cardId}
             myStatus={strategyResolution?.responses?.[perms.seatPlayerId]}
             startedAt={strategyResolution?.startedAt}
+            canPlay={select.canMarkStrategyPlayed(game, perms.seatPlayerId)}
             onResolve={(choice) => resolveStrategy(perms.seatPlayerId, choice)}
           />
         )}
@@ -1610,7 +1832,12 @@ function App() {
             canPickController={canPickTeController}
             canEdit={roomStatus === 'solo' || perms?.role === ROLES.ADMIN}
             leaders={teLeaders}
-            onClaimSlice={(playerId, sliceId) => dispatch({ type: 'CLAIM_EXPEDITION_SLICE', playerId, sliceId })}
+            onClaimSlice={(playerId, sliceId, cardId) => dispatch({
+              type: 'CLAIM_EXPEDITION_SLICE',
+              playerId,
+              sliceId,
+              cardId,
+            })}
             onSetSlice={(sliceId, playerId) => dispatch({
               type: 'SET_EXPEDITION_SLICE',
               sliceId,
@@ -1690,12 +1917,58 @@ function App() {
         expeditionActive={false}
         startingTechDraftActive={showStartingTechHostModal}
         startingTechPlayerActive={startingTechPlayerPending}
+        secretDraftActive={showSecretDraftPlayerModal || (!!secretDraftPending && !!ui.minimizedModals.secretDraft && !!mySeatPlayer)}
+        secretDraftHostActive={
+          secretDraftPending
+          && (perms?.role === ROLES.ADMIN || roomStatus === 'solo')
+          && !showSecretDraftPlayerModal
+        }
         onRestore={(id) => {
           if (id === 'politicsPeek') setHostPoliticsPeekRestored(true);
-          ui.focusBlockingModal(id);
+          if (BLOCKING_MODAL_IDS.includes(id)) ui.focusBlockingModal(id);
+          else ui.ensureExpanded(id);
         }}
       />
       <AppDialog dialog={dialog} onClose={close} />
+
+      {isHostClient && secretScoreNotice && (
+        <div
+          className="fixed inset-0 z-[95] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 modal-overlay"
+          role="presentation"
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="secret-score-notice-title"
+            className="game-modal-panel max-w-sm w-full p-5 space-y-3"
+          >
+            <div className="flex items-center gap-3">
+              <span className="flex h-11 w-11 items-center justify-center rounded-xl border border-violet-400/60 bg-violet-500/20 text-violet-200 text-xl">
+                <i className="fa-solid fa-user-secret" aria-hidden="true" />
+              </span>
+              <div>
+                <h3 id="secret-score-notice-title" className="game-modal-title text-sm uppercase">
+                  Секретная цель
+                </h3>
+                <p className="text-xs text-[var(--game-muted)] mt-0.5">Игрок засчитал +1 ПО</p>
+              </div>
+            </div>
+            <p className="text-sm text-[var(--game-text)] leading-relaxed">
+              <span className="font-bold text-white">{secretScoreNotice.playerName}</span>
+              {' '}достиг секретной цели
+              {' '}
+              <span className="font-semibold text-violet-200">«{secretScoreNotice.cardTitle}»</span>.
+            </p>
+            <button
+              type="button"
+              onClick={() => setSecretScoreNotice(null)}
+              className="game-btn-primary w-full"
+            >
+              Понятно
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

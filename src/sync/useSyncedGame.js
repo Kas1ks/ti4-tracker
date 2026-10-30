@@ -10,6 +10,7 @@ import {
 import {
   LOCAL_ONLY_ACTIONS,
   createRoom,
+  claimHostSession,
   fetchRoomSnapshot,
   joinRoom,
   postRoomAction,
@@ -118,6 +119,7 @@ export function useSyncedGame() {
       securedSeats: extras.securedSeats ?? prev.securedSeats,
       milty: extras.milty !== undefined ? extras.milty : prev.milty,
       phase: extras.phase !== undefined ? extras.phase : prev.phase,
+      hostOnline: typeof extras.hostOnline === 'boolean' ? extras.hostOnline : prev.hostOnline,
     } : prev));
     return true;
   }, []);
@@ -173,12 +175,13 @@ export function useSyncedGame() {
     let cancelled = false;
     setRoomStatus('connecting');
 
-    fetchRoomSnapshot(saved.roomId)
+    fetchRoomSnapshot(saved.roomId, { sessionToken: saved.sessionToken })
       .then((snap) => {
         if (cancelled || sessionGenRef.current !== gen) return;
         const still = loadRoomSession();
         if (!still?.roomId || still.roomId !== saved.roomId) return;
         if (!snap?.state) throw new Error('not-found');
+        if (snap.partyEnded) throw new Error('party-ended');
         const view = parseRoomPublicView(snap);
         seqRef.current = typeof snap.seq === 'number' ? snap.seq : (saved.seq || 0);
         setGame({ type: '__REPLACE__', state: snap.state });
@@ -197,6 +200,7 @@ export function useSyncedGame() {
           phase: snap.phase || (snap.milty?.status === 'drafting' ? 'milty' : 'setup'),
           miltySecret: saved.miltySecret || null,
           miltyAdminSecret: saved.miltyAdminSecret || null,
+          hostOnline: snap.hostOnline !== false,
         };
         roomRef.current = next;
         setRoom(next);
@@ -205,12 +209,21 @@ export function useSyncedGame() {
       })
       .catch((err) => {
         if (cancelled || sessionGenRef.current !== gen) return;
+        const wasAdmin = !!(saved.hostKey || saved.role === ROLES.ADMIN);
+        const localMidGame = !!(gameRef.current?.isGameActive);
         clearRoomSession();
         roomRef.current = null;
         setRoom(null);
         setRoomStatus('solo');
-        setGame({ type: 'RESET_GAME' });
-        setRoomError(`Комната недоступна: ${err.message || err}`);
+        // Don't wipe a mid-game host local copy when the live room is gone.
+        if (!(wasAdmin && localMidGame)) {
+          setGame({ type: 'RESET_GAME' });
+        }
+        setRoomError(
+          wasAdmin && localMidGame
+            ? `Комната недоступна (${err.message || err}). Локальная партия сохранена — можно экспортировать код или продолжить соло.`
+            : `Комната недоступна: ${err.message || err}`,
+        );
       });
 
     return () => {
@@ -248,9 +261,18 @@ export function useSyncedGame() {
       (msg) => {
       if (msg.type === 'seats') {
         const current = roomRef.current;
-        const kicked = current?.role === ROLES.PLAYER
-          && msg.revokedSessionToken
-          && current.sessionToken === msg.revokedSessionToken;
+        const revoked = msg.revokedSessionToken
+          && current?.sessionToken === msg.revokedSessionToken;
+        if (revoked && current?.role === ROLES.ADMIN) {
+          clearGameState();
+          ejectStaleSession(
+            msg.hostMoved
+              ? 'Хост перенесён на другое устройство.'
+              : 'Сессия хоста устарела. Войдите снова с кодом хоста.',
+          );
+          return;
+        }
+        const kicked = current?.role === ROLES.PLAYER && revoked;
         if (kicked) {
           clearGameState();
           ejectStaleSession(
@@ -271,6 +293,13 @@ export function useSyncedGame() {
         return;
       }
 
+      if (msg.type === 'host') {
+        if (typeof msg.hostOnline === 'boolean') {
+          setRoom((prev) => (prev ? { ...prev, hostOnline: msg.hostOnline } : prev));
+        }
+        return;
+      }
+
       if ((msg.type === 'hello' || msg.type === 'state') && msg.state) {
         const current = roomRef.current;
         const endedByHost = msg.type === 'state'
@@ -278,6 +307,24 @@ export function useSyncedGame() {
         if (endedByHost && current && current.role !== ROLES.ADMIN) {
           clearGameState();
           ejectStaleSession('Партия завершена хостом.');
+          return;
+        }
+        // Soft host-offline must never look like a party end.
+        if (endedByHost && current?.role === ROLES.ADMIN && current.hostKey) {
+          // Keep local mid-game; drop live session only if server wiped party.
+          if (msg.roomEnded || !msg.state?.isGameActive) {
+            const keepLocal = !!gameRef.current?.isGameActive;
+            clearRoomSession();
+            roomRef.current = null;
+            setRoom(null);
+            setRoomStatus('solo');
+            clearSoloUndo();
+            if (!keepLocal) setGame({ type: 'RESET_GAME' });
+            setRoomError(keepLocal
+              ? 'Партия на сервере завершена. Локальная копия сохранена.'
+              : 'Партия завершена.');
+            setSyncLink('idle');
+          }
           return;
         }
 
@@ -303,6 +350,7 @@ export function useSyncedGame() {
           canUndo: typeof msg.canUndo === 'boolean' ? msg.canUndo : undefined,
           milty: msg.milty,
           phase: msg.phase,
+          hostOnline: typeof msg.hostOnline === 'boolean' ? msg.hostOnline : undefined,
         });
         return;
       }
@@ -338,12 +386,15 @@ export function useSyncedGame() {
     resumeInFlightRef.current = true;
     setSyncLink((prev) => (prev === 'closed' ? 'reconnecting' : prev));
     try {
-      const snap = await fetchRoomSnapshot(current.roomId);
+      const snap = await fetchRoomSnapshot(current.roomId, {
+        sessionToken: current.sessionToken,
+      });
       if (roomRef.current?.roomId !== current.roomId) return;
       if (snap?.state) {
         applyAuthoritativeState(snap.seq, snap.state, {
           claimedSeats: snap.claimedSeats,
           canUndo: typeof snap.canUndo === 'boolean' ? snap.canUndo : undefined,
+          hostOnline: typeof snap.hostOnline === 'boolean' ? snap.hostOnline : undefined,
         });
         setRoomError(null);
         setRoomStatus('live');
@@ -456,6 +507,7 @@ export function useSyncedGame() {
         'PICK_CARD', 'UNDO_PICK', 'PLAY_STRATEGY', 'RESOLVE_STRATEGY', 'COMMIT_POLITICS_PEEK',
         'PASS_TURN', 'NEXT_TURN',
         'SELECT_SCORING_PUBLIC', 'TOGGLE_SCORING_SECRET',
+        'SCORE_SECRET', 'UNSCORE_SECRET',
         'CONFIRM_OBJECTIVE_SCORING', 'PASS_OBJECTIVE_SCORING',
         'SELECT_IMPERIAL_PUBLIC', 'TOGGLE_IMPERIAL_MECATOL', 'TOGGLE_IMPERIAL_SECRET',
         'CONFIRM_IMPERIAL_CLAIM', 'PASS_IMPERIAL_CLAIM',
@@ -469,6 +521,7 @@ export function useSyncedGame() {
         'SET_SPEAKER_AGENDA_DECISION',
         'FINISH_AGENDA_PHASE',
         'SET_STARTING_TECH_PICK', 'CONFIRM_STARTING_TECH',
+        'KEEP_SECRET_DRAFT', 'DRAW_SECRET', 'DISCARD_SECRET', 'DISMISS_SECRET_REVEAL', 'EXCHANGE_SECRET',
         'UPDATE_PLAYER',
         'START_COMBAT', 'COMBAT_SET_OPPONENT', 'COMBAT_SET_NEUTRAL_COUNTS', 'COMBAT_BEGIN_NEUTRAL',
         'COMBAT_SET_HITS', 'COMBAT_ASSIGN',
@@ -540,7 +593,7 @@ export function useSyncedGame() {
           return;
         }
         setRoomError(message);
-        fetchRoomSnapshot(roomId)
+        fetchRoomSnapshot(roomId, { sessionToken: current.sessionToken })
           .then((snap) => {
             applyAuthoritativeState(snap?.seq, snap?.state, {
               claimedSeats: snap?.claimedSeats,
@@ -576,6 +629,7 @@ export function useSyncedGame() {
         phase: created.phase || (created.milty?.status === 'drafting' ? 'milty' : 'setup'),
         miltyAdminSecret: created.miltyAdminSecret || null,
         miltySecret: null,
+        hostOnline: true,
       };
       roomRef.current = next;
       setRoom(next);
@@ -608,11 +662,66 @@ export function useSyncedGame() {
     return view;
   }, []);
 
+  const claimHostByKey = useCallback(async (roomId, hostKey) => {
+    const id = String(roomId || '').trim().toUpperCase();
+    const key = String(hostKey || '').trim();
+    if (!id) throw new Error('missing-room');
+    if (!key) throw new Error('missing-host-key');
+    const gen = sessionGenRef.current;
+    setRoomStatus('connecting');
+    setRoomError(null);
+    try {
+      const claimed = await claimHostSession(id, { hostKey: key });
+      if (sessionGenRef.current !== gen) return claimed;
+      seqRef.current = claimed.seq || 0;
+      if (claimed.state) {
+        setGame({ type: '__REPLACE__', state: claimed.state });
+      }
+      clearSoloUndo();
+      setCanUndo(typeof claimed.canUndo === 'boolean' ? claimed.canUndo : false);
+      if (claimed.seatSecret && claimed.seatPlayerId != null) {
+        saveSeatSecret(claimed.roomId || id, claimed.seatPlayerId, claimed.seatSecret);
+      }
+      const next = {
+        roomId: claimed.roomId || id,
+        hostKey: claimed.hostKey || key,
+        sessionToken: claimed.sessionToken,
+        seq: claimed.seq || 0,
+        role: ROLES.ADMIN,
+        seatPlayerId: claimed.seatPlayerId ?? null,
+        seatSecret: claimed.seatSecret || null,
+        claimedSeats: claimed.claimedSeats || [],
+        milty: claimed.milty || null,
+        phase: claimed.phase || (claimed.milty?.status === 'drafting' ? 'milty' : 'setup'),
+        miltySecret: null,
+        miltyAdminSecret: claimed.miltyAdminSecret || null,
+        hostOnline: true,
+      };
+      roomRef.current = next;
+      setRoom(next);
+      saveRoomSession(next);
+      rememberRecentRoom({
+        roomId: next.roomId,
+        role: ROLES.ADMIN,
+        seatPlayerId: next.seatPlayerId,
+      });
+      setRoomStatus('live');
+      return claimed;
+    } catch (err) {
+      if (sessionGenRef.current !== gen) throw err;
+      setRoomStatus('error');
+      setRoomError(String(err.message || err));
+      throw err;
+    }
+  }, [clearSoloUndo]);
+
   const joinRoomById = useCallback(async (roomId, { role, seatPlayerId, seatSecret } = {}) => {
     const id = String(roomId || '').trim().toUpperCase();
     if (!id) throw new Error('missing-room');
     const joinRole = role === ROLES.VIEWER ? ROLES.VIEWER : ROLES.PLAYER;
     const gen = sessionGenRef.current;
+    // Status-only: do not stub `room` here — a roomId without sessionToken
+    // would save to sessionStorage and open SSE too early.
     setRoomStatus('connecting');
     setRoomError(null);
     try {
@@ -642,6 +751,7 @@ export function useSyncedGame() {
         phase: joined.phase || (joined.milty?.status === 'drafting' ? 'milty' : 'setup'),
         miltySecret: joined.miltySecret || null,
         miltyAdminSecret: null,
+        hostOnline: joined.hostOnline !== false,
       };
       roomRef.current = next;
       setRoom(next);
@@ -779,6 +889,7 @@ export function useSyncedGame() {
     startHostRoom,
     promoteMiltyToSetup,
     joinRoomById,
+    claimHostByKey,
     releaseSeatById,
     claimHostSeatById,
     leaveRoom,

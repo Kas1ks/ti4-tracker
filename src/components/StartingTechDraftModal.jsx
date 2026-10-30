@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import {
   canConfirmStartingTech,
   isStartingTechWaveAReady,
@@ -10,13 +11,20 @@ import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
 import { StartingTechChoice } from './StartingTechChoice';
 import { TechTypeIcon } from './TechTypeIcon';
 
-function statusLabel(status, choice, waveAReady) {
-  if (status === 'confirmed') return 'Подтвердил';
-  if (choice?.wave === 'C' && !waveAReady) return 'Ожидает';
-  if (status === 'picking') {
-    return choice?.kind === 'research' ? 'Исследует' : 'Выбирает';
+function statusMeta(status, choice, waveAReady, picks = []) {
+  if (status === 'confirmed') {
+    return { label: 'Выбрал', tone: 'done' };
   }
-  return choice?.kind === 'research' ? 'Исследует' : 'Ожидает';
+  if (choice?.wave === 'C' && !waveAReady) {
+    return { label: 'Ждёт', tone: 'wait' };
+  }
+  if (status === 'picking' || (picks && picks.length > 0)) {
+    return {
+      label: choice?.kind === 'research' ? 'Исследует' : 'Выбирает',
+      tone: 'active',
+    };
+  }
+  return { label: 'Не выбрал', tone: 'pending' };
 }
 
 function pickHint(choice, optionCount) {
@@ -27,7 +35,7 @@ function pickHint(choice, optionCount) {
   return `Выберите ${choice.pick}`;
 }
 
-/** Host status panel for starting-tech draft; can set picks / confirm for any seat. */
+/** Host status panel for starting-tech draft; open pick-for-seat as a second step. */
 export function StartingTechDraftModal({
   show,
   minimized,
@@ -39,167 +47,320 @@ export function StartingTechDraftModal({
   onMinimize,
   onClose,
 }) {
-  useEscapeKey(onMinimize || onClose, show && !minimized);
-  useBodyScrollLock(show && !minimized);
+  const [entered, setEntered] = useState(false);
+  const [hostPickPlayerId, setHostPickPlayerId] = useState(null);
+
+  const wantOpen = show && !minimized;
+  useEscapeKey(
+    () => {
+      if (hostPickPlayerId != null) setHostPickPlayerId(null);
+      else (onMinimize || onClose)?.();
+    },
+    wantOpen,
+  );
+  useBodyScrollLock(wantOpen);
+
+  useEffect(() => {
+    if (!wantOpen) {
+      setEntered(false);
+      setHostPickPlayerId(null);
+      return undefined;
+    }
+    // Double rAF so opacity/transform transitions reliably after un-minimize.
+    let inner = 0;
+    const outer = requestAnimationFrame(() => {
+      inner = requestAnimationFrame(() => setEntered(true));
+    });
+    return () => {
+      cancelAnimationFrame(outer);
+      cancelAnimationFrame(inner);
+    };
+  }, [wantOpen]);
+
+  useEffect(() => {
+    if (!show) setHostPickPlayerId(null);
+  }, [show]);
+
   if (!show) return null;
 
   const draft = game?.startingTechDraft;
-  const seats = players.filter(p => draft?.responses?.[p.id] != null);
-  const confirmed = seats.filter(p => draft.responses[p.id]?.status === 'confirmed').length;
+  const responseOf = (playerId) => (
+    draft?.responses?.[playerId]
+    ?? draft?.responses?.[String(playerId)]
+    ?? null
+  );
+  let seats = players.filter((p) => !p.eliminated && responseOf(p.id) != null);
+  // Fallback if response keys drifted (string/number) — still show active draft seats.
+  if (seats.length === 0 && draft?.active) {
+    seats = players.filter((p) => !p.eliminated && !!startingTechChoice(p.factionId));
+  }
+  const confirmed = seats.filter((p) => responseOf(p.id)?.status === 'confirmed').length;
   const waveAReady = isStartingTechWaveAReady(game);
+  const pickPlayer = hostPickPlayerId != null
+    ? seats.find((p) => p.id === hostPickPlayerId || String(p.id) === String(hostPickPlayerId)) || null
+    : null;
+
+  const openPick = (playerId) => setHostPickPlayerId(playerId);
+  const closePick = () => setHostPickPlayerId(null);
+
+  const handleConfirm = (playerId) => {
+    onConfirm?.(playerId);
+    setHostPickPlayerId(null);
+  };
 
   return (
     <div
-      className={`fixed inset-0 z-[56] bg-black/85 backdrop-blur-md flex items-stretch md:items-center justify-center md:p-4 modal-overlay ${minimized ? 'hidden' : ''}`}
+      className={`fixed inset-0 z-[56] bg-black/85 backdrop-blur-md flex items-center justify-center p-3 md:p-4 modal-overlay tech-overlay ${minimized ? 'hidden' : ''} ${wantOpen ? 'is-open' : ''}`}
       role="presentation"
-      onClick={onMinimize || onClose}
+      onClick={() => {
+        if (hostPickPlayerId != null) closePick();
+        else (onMinimize || onClose)?.();
+      }}
     >
       <div
-        className="relative w-full max-w-3xl max-md:h-full md:max-h-[92vh] bg-slate-950 border border-cyan-700/60 md:rounded-2xl shadow-2xl flex flex-col overflow-hidden"
+        className={`tech-shell flex flex-col w-full max-h-[min(92dvh,920px)] md:max-h-[90vh] md:max-w-3xl overflow-hidden ${entered || wantOpen ? 'is-open' : ''}`}
         role="dialog"
         aria-modal="true"
         aria-labelledby="starting-tech-draft-title"
         onClick={(event) => event.stopPropagation()}
       >
-        <div className="flex items-center justify-between gap-3 px-4 md:px-5 py-3 md:py-4 border-b border-slate-800 bg-slate-900/80">
-          <div className="min-w-0">
-            <h2 id="starting-tech-draft-title" className="font-orbitron font-black text-base md:text-xl text-cyan-300 uppercase tracking-wide truncate">
-              Стартовые технологии
-            </h2>
-            <p className="text-xs text-slate-400 mt-0.5">
-              Подтвердили {confirmed}/{seats.length}
-              {!waveAReady && seats.some(p => startingTechChoice(p.factionId)?.wave === 'C')
-                ? ' · Keleres ждёт волну A'
-                : ''}
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={onMinimize || onClose}
-            className="flex-shrink-0 w-10 h-10 rounded-xl bg-slate-900 border border-slate-700 text-slate-300 hover:text-white hover:border-slate-500 transition"
-            title="Свернуть"
-            aria-label="Свернуть"
-          >
-            <i className="fa-solid fa-window-minimize text-base" aria-hidden="true" />
-          </button>
-        </div>
+        {pickPlayer ? (
+          <HostPickStep
+            player={pickPlayer}
+            game={game}
+            draft={draft}
+            waveAReady={waveAReady}
+            canAct={canAct}
+            onBack={closePick}
+            onMinimize={onMinimize || onClose}
+            onSetPicks={onSetPicks}
+            onConfirm={handleConfirm}
+          />
+        ) : (
+          <HostStatusStep
+            seats={seats}
+            draft={draft}
+            confirmed={confirmed}
+            waveAReady={waveAReady}
+            canAct={canAct}
+            onOpenPick={openPick}
+            onMinimize={onMinimize || onClose}
+          />
+        )}
+      </div>
+    </div>
+  );
+}
 
-        <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-3">
+function HostStatusStep({
+  seats,
+  draft,
+  confirmed,
+  waveAReady,
+  canAct,
+  onOpenPick,
+  onMinimize,
+}) {
+  return (
+    <>
+      <header className="tech-shell-head flex-shrink-0">
+        <div className="tech-shell-head-main min-w-0">
+          <div className="tech-shell-eyebrow">Стартовые технологии · Хост</div>
+          <h2 id="starting-tech-draft-title" className="tech-shell-title">
+            Статус выбора
+          </h2>
+          <p className="tech-shell-sub">
+            Подтвердили {confirmed}/{seats.length}
+            {!waveAReady && seats.some((p) => startingTechChoice(p.factionId)?.wave === 'C')
+              ? ' · Keleres ждёт волну A'
+              : ''}
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={onMinimize}
+          className="tech-icon-btn"
+          title="Свернуть"
+          aria-label="Свернуть"
+        >
+          <i className="fa-solid fa-window-minimize" aria-hidden="true" />
+        </button>
+      </header>
+
+      <div className="tech-shell-body min-h-0 flex-1 overflow-y-auto overscroll-y-contain modal-scroll">
+        <ul className="st-host-seat-list">
           {seats.map((p) => {
             const choice = startingTechChoice(p.factionId);
-            const response = draft.responses[p.id] || { status: 'waiting', picks: [] };
+            const response = (
+              draft?.responses?.[p.id]
+              ?? draft?.responses?.[String(p.id)]
+              ?? { status: 'waiting', picks: [] }
+            );
             const done = response.status === 'confirmed';
             const lockedWave = choice?.wave === 'C' && !waveAReady;
-            const options = lockedWave
-              ? []
-              : startingTechOptions(p.factionId, game, {
-                playerId: p.id,
-                sessionPicks: response.picks || [],
-              });
-            // For research, show catalog options based on current session picks for toggle UX:
-            // list all currently researchable + already picked.
-            const researchOptions = choice?.kind === 'research' && !lockedWave
-              ? [...new Set([
-                ...(response.picks || []),
-                ...startingTechOptions(p.factionId, game, {
-                  playerId: p.id,
-                  sessionPicks: response.picks || [],
-                }),
-              ])]
-              : options;
-            const canConfirm = canAct && canConfirmStartingTech(p, game);
+            const meta = statusMeta(response.status, choice, waveAReady, response.picks);
+            const picks = response.picks || [];
 
             return (
-              <div
+              <li
                 key={p.id}
-                className={`rounded-xl border px-3 md:px-4 py-3 space-y-3 ${
-                  done
-                    ? 'bg-emerald-950/40 border-emerald-600/70'
-                    : lockedWave
-                      ? 'bg-slate-900/50 border-slate-800'
-                      : 'bg-slate-900/80 border-slate-700'
-                }`}
+                className={`st-host-seat ${meta.tone === 'done' ? 'is-done' : ''} ${meta.tone === 'wait' ? 'is-wait' : ''} ${meta.tone === 'active' ? 'is-active' : ''}`}
               >
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div className="min-w-0 flex items-center gap-2">
-                    <span
-                      className="w-2.5 h-2.5 rounded-full flex-shrink-0"
-                      style={{ backgroundColor: p.color || '#64748b' }}
-                    />
-                    <span className={`font-bold truncate ${done ? 'text-emerald-200' : 'text-slate-200'}`}>
-                      {p.name}
-                    </span>
-                    <span className="text-[10px] uppercase font-orbitron font-bold text-slate-500 border border-slate-700 px-1.5 py-0.5 rounded">
-                      {choice?.kind === 'research' ? 'research' : choice?.kind || 'pick'}
-                    </span>
+                <div className="st-host-seat-main">
+                  <span
+                    className="st-host-seat-dot"
+                    style={{ backgroundColor: p.color || '#64748b' }}
+                    aria-hidden="true"
+                  />
+                  <div className="st-host-seat-copy min-w-0">
+                    <div className="st-host-seat-name truncate">{p.name}</div>
+                    <div className="st-host-seat-kind">
+                      {choice?.kind === 'research' ? 'Исследование' : choice?.kind === 'fromOthers' ? 'Из чужих' : 'Выбор'}
+                    </div>
                   </div>
-                  <span className={`text-xs font-bold uppercase tracking-wide ${
-                    done ? 'text-emerald-300' : lockedWave ? 'text-slate-500' : 'text-amber-300'
-                  }`}>
-                    {statusLabel(response.status, choice, waveAReady)}
+                  <span className={`st-host-seat-status is-${meta.tone}`}>
+                    {meta.label}
                   </span>
                 </div>
 
-                {done ? (
-                  <div className="flex flex-wrap gap-1.5">
-                    {(response.picks || []).map((id) => {
+                {picks.length > 0 && (
+                  <div className="st-host-seat-picks">
+                    {picks.map((id) => {
                       const tech = techById(id);
                       return (
-                        <span
-                          key={id}
-                          className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-100 bg-emerald-900/40 border border-emerald-700/50 rounded-lg px-2 py-1"
-                        >
+                        <span key={id} className="st-host-pick-chip">
                           {tech?.color && <TechTypeIcon color={tech.color} size={14} />}
                           {tech?.name || id}
                         </span>
                       );
                     })}
                   </div>
-                ) : canAct && !lockedWave ? (
-                  <>
-                    <StartingTechChoice
-                      options={choice?.kind === 'research' ? researchOptions : options}
-                      selected={response.picks || []}
-                      pickCount={choice?.pick || 1}
-                      hint={pickHint(choice, options.length)}
-                      onChange={(picks) => onSetPicks?.(p.id, picks)}
-                    />
-                    <button
-                      type="button"
-                      disabled={!canConfirm}
-                      onClick={() => onConfirm?.(p.id)}
-                      className="w-full min-h-[44px] rounded-xl bg-cyan-500 hover:bg-cyan-400 disabled:bg-slate-800 disabled:text-slate-500 text-black font-extrabold text-sm border border-cyan-300 disabled:border-slate-700"
-                    >
-                      Подтвердить
-                    </button>
-                  </>
-                ) : (
-                  <div className="flex flex-wrap gap-1.5">
-                    {(response.picks || []).length === 0 ? (
-                      <span className="text-xs text-slate-500">
-                        {lockedWave ? 'Ждёт подтверждения волны A' : 'Ещё не выбрал'}
-                      </span>
-                    ) : (
-                      (response.picks || []).map((id) => {
-                        const tech = techById(id);
-                        return (
-                          <span
-                            key={id}
-                            className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-200 bg-slate-800 border border-slate-600 rounded-lg px-2 py-1"
-                          >
-                            {tech?.color && <TechTypeIcon color={tech.color} size={14} />}
-                            {tech?.name || id}
-                          </span>
-                        );
-                      })
-                    )}
-                  </div>
                 )}
-              </div>
+
+                {done ? null : lockedWave ? (
+                  <p className="st-host-seat-note">Ждёт подтверждения волны A</p>
+                ) : canAct ? (
+                  <button
+                    type="button"
+                    className="st-host-seat-action"
+                    onClick={() => onOpenPick(p.id)}
+                  >
+                    Выбрать за игрока
+                  </button>
+                ) : null}
+              </li>
             );
           })}
-        </div>
+        </ul>
       </div>
-    </div>
+    </>
+  );
+}
+
+function HostPickStep({
+  player,
+  game,
+  draft,
+  waveAReady,
+  canAct,
+  onBack,
+  onMinimize,
+  onSetPicks,
+  onConfirm,
+}) {
+  const choice = startingTechChoice(player.factionId);
+  const response = (
+    draft?.responses?.[player.id]
+    ?? draft?.responses?.[String(player.id)]
+    ?? { status: 'waiting', picks: [] }
+  );
+  const lockedWave = choice?.wave === 'C' && !waveAReady;
+  const options = lockedWave
+    ? []
+    : startingTechOptions(player.factionId, game, {
+      playerId: player.id,
+      sessionPicks: response.picks || [],
+    });
+  const researchOptions = choice?.kind === 'research' && !lockedWave
+    ? [...new Set([
+      ...(response.picks || []),
+      ...startingTechOptions(player.factionId, game, {
+        playerId: player.id,
+        sessionPicks: response.picks || [],
+      }),
+    ])]
+    : options;
+  const canConfirm = canAct && canConfirmStartingTech(player, game);
+  const eyebrow = choice?.kind === 'research'
+    ? 'Выбор за игрока · Исследование'
+    : 'Выбор за игрока';
+
+  return (
+    <>
+      <header className="tech-shell-head flex-shrink-0">
+        <div className="tech-shell-head-main min-w-0">
+          <div className="tech-shell-eyebrow">{eyebrow}</div>
+          <h2 id="starting-tech-draft-title" className="tech-shell-title truncate">
+            {player.name}
+          </h2>
+          <p className="tech-shell-sub">
+            {lockedWave
+              ? 'Keleres ждёт волну A'
+              : pickHint(choice, options.length)}
+          </p>
+        </div>
+        <div className="flex items-center gap-2 flex-shrink-0">
+          <button
+            type="button"
+            onClick={onBack}
+            className="tech-icon-btn"
+            aria-label="Назад к статусу"
+            title="Назад"
+          >
+            <i className="fa-solid fa-arrow-left" aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            onClick={onMinimize}
+            className="tech-icon-btn"
+            aria-label="Свернуть"
+          >
+            <i className="fa-solid fa-window-minimize" aria-hidden="true" />
+          </button>
+        </div>
+      </header>
+
+      <div className="tech-shell-body min-h-0 flex-1 overflow-y-auto overscroll-y-contain modal-scroll">
+        {lockedWave ? (
+          <p className="tech-empty">Ждёт подтверждения волны A</p>
+        ) : (
+          <StartingTechChoice
+            options={choice?.kind === 'research' ? researchOptions : options}
+            selected={response.picks || []}
+            pickCount={choice?.pick || 1}
+            hint={null}
+            onChange={(picks) => onSetPicks?.(player.id, picks)}
+          />
+        )}
+      </div>
+
+      <footer className="tech-shell-foot flex-shrink-0 space-y-2">
+        <button
+          type="button"
+          disabled={!canConfirm}
+          onClick={() => onConfirm?.(player.id)}
+          className="tech-foot-btn tech-foot-btn-primary"
+        >
+          Подтвердить
+        </button>
+        <button
+          type="button"
+          onClick={onBack}
+          className="tech-foot-btn st-host-back-btn"
+        >
+          Назад к статусу
+        </button>
+      </footer>
+    </>
   );
 }

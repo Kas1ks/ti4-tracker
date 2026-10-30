@@ -3,6 +3,7 @@ import {
   memoryCreateRoom,
   memoryGetRoom,
   memoryJoin,
+  memoryClaimHost,
   memoryListHubCards,
   memoryMiltyPick,
   memoryMiltyPromote,
@@ -20,7 +21,12 @@ import {
   createMiltyInEnv,
   linkedMiltySettings,
 } from './miltyAttach.js';
-import { makeRoomId, publicRoomView, adminSessionFromRoom } from './roomCore.js';
+import {
+  makeRoomId,
+  publicRoomView,
+  adminSessionFromRoom,
+  sessionAuthFromRoom,
+} from './roomCore.js';
 import { assertRoomCreateAllowed } from './roomCreateAuth.js';
 import { directoryList, hasRoomDirectory } from './roomIndex.js';
 import { readVapidConfig } from '../push/sendPush.js';
@@ -117,17 +123,18 @@ export async function handleRoomsApi(request, env) {
     }
 
     const room = memoryCreateRoom(createState, { milty: miltyAttach });
+    const adminTok = adminSessionFromRoom(room);
     return json({
-      ...publicRoomView(room),
+      ...publicRoomView(room, adminTok),
       hostKey: room.hostKey,
-      sessionToken: adminSessionFromRoom(room),
+      sessionToken: adminTok,
       role: 'admin',
       miltyAdminSecret,
     }, 201);
   }
 
   const roomMatch = pathname.match(
-    /^\/api\/rooms\/([^/]+)(?:\/(snapshot|actions|events|join|release-seat|claim-seat|push\/subscribe|push\/unsubscribe|milty\/promote|milty\/pick|milty\/undo|milty\/regen))?$/,
+    /^\/api\/rooms\/([^/]+)(?:\/(snapshot|actions|events|join|claim-host|release-seat|claim-seat|push\/subscribe|push\/unsubscribe|milty\/promote|milty\/pick|milty\/undo|milty\/regen))?$/,
   );
   if (!roomMatch) return null;
 
@@ -140,7 +147,9 @@ export async function handleRoomsApi(request, env) {
     const stub = await stubFor(env, roomId);
 
     if (method === 'GET' && (sub === 'snapshot' || !roomMatch[2])) {
-      const res = await stub.fetch(new Request('https://room/snapshot'));
+      const token = url.searchParams.get('sessionToken') || '';
+      const qs = token ? `?sessionToken=${encodeURIComponent(token)}` : '';
+      const res = await stub.fetch(new Request(`https://room/snapshot${qs}`));
       return new Response(await res.text(), {
         status: res.status,
         headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' },
@@ -150,6 +159,19 @@ export async function handleRoomsApi(request, env) {
     if (method === 'POST' && sub === 'join') {
       const body = await readJsonBody(request);
       const res = await stub.fetch(new Request('https://room/join', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body || {}),
+      }));
+      return new Response(await res.text(), {
+        status: res.status,
+        headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' },
+      });
+    }
+
+    if (method === 'POST' && sub === 'claim-host') {
+      const body = await readJsonBody(request);
+      const res = await stub.fetch(new Request('https://room/claim-host', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body || {}),
@@ -239,7 +261,8 @@ export async function handleRoomsApi(request, env) {
 
   // --- In-memory (Vite) ---
   if (method === 'GET' && (sub === 'snapshot' || !roomMatch[2])) {
-    const view = memoryPublicView(roomId);
+    const token = url.searchParams.get('sessionToken') || '';
+    const view = memoryPublicView(roomId, token || null);
     if (!view) return json({ error: 'not-found' }, 404);
     return json(view);
   }
@@ -256,12 +279,33 @@ export async function handleRoomsApi(request, env) {
       return json({ error: result.error }, status);
     }
     return json({
-      ...publicRoomView(result.room),
+      ...publicRoomView(result.room, result.sessionToken),
       sessionToken: result.sessionToken,
       role: result.role,
       seatPlayerId: result.seatPlayerId,
       seatSecret: result.seatSecret,
       miltySecret: result.miltySecret || null,
+      reclaimed: !!result.reclaimed,
+    });
+  }
+
+  if (method === 'POST' && sub === 'claim-host') {
+    const body = await readJsonBody(request);
+    const result = await memoryClaimHost(roomId, body || {});
+    if (!result.ok) {
+      const status = result.error === 'not-found' ? 404
+        : result.error === 'bad-host-key' ? 403
+          : result.error === 'party-ended' ? 409
+            : 400;
+      return json({ error: result.error }, status);
+    }
+    return json({
+      ...publicRoomView(result.room, result.sessionToken),
+      sessionToken: result.sessionToken,
+      hostKey: result.hostKey,
+      role: result.role,
+      seatPlayerId: result.seatPlayerId,
+      seatSecret: result.seatSecret,
       reclaimed: !!result.reclaimed,
     });
   }
@@ -275,7 +319,7 @@ export async function handleRoomsApi(request, env) {
           : 400;
       return json({ error: result.error }, status);
     }
-    return json(publicRoomView(result.room));
+    return json(publicRoomView(result.room, body?.sessionToken || adminSessionFromRoom(result.room)));
   }
 
   if (method === 'POST' && sub === 'milty/pick') {
@@ -290,7 +334,7 @@ export async function handleRoomsApi(request, env) {
     return json({
       ok: true,
       draft: result.draft,
-      room: publicRoomView(result.room),
+      room: publicRoomView(result.room, body?.sessionToken),
     });
   }
 
@@ -306,7 +350,7 @@ export async function handleRoomsApi(request, env) {
     return json({
       ok: true,
       draft: result.draft,
-      room: publicRoomView(result.room),
+      room: publicRoomView(result.room, body?.sessionToken),
     });
   }
 
@@ -322,7 +366,7 @@ export async function handleRoomsApi(request, env) {
     return json({
       ok: true,
       draft: result.draft,
-      room: publicRoomView(result.room),
+      room: publicRoomView(result.room, body?.sessionToken),
     });
   }
 
@@ -336,7 +380,7 @@ export async function handleRoomsApi(request, env) {
       return json({ error: result.error }, status);
     }
     return json({
-      ...publicRoomView(result.room),
+      ...publicRoomView(result.room, body?.sessionToken),
       seatPlayerId: result.seatPlayerId,
     });
   }
@@ -352,7 +396,7 @@ export async function handleRoomsApi(request, env) {
       return json({ error: result.error }, status);
     }
     return json({
-      ...publicRoomView(result.room),
+      ...publicRoomView(result.room, body?.sessionToken),
       seatPlayerId: result.seatPlayerId,
       seatSecret: result.seatSecret,
       miltySecret: result.miltySecret || null,
@@ -374,7 +418,7 @@ export async function handleRoomsApi(request, env) {
     }
     return json({
       seq: result.room.seq,
-      state: result.room.state,
+      state: result.viewState ?? result.room.state,
       noop: !!result.noop,
       canUndo: !!result.canUndo,
     });
@@ -405,7 +449,10 @@ export async function handleRoomsApi(request, env) {
   }
 
   if (method === 'GET' && sub === 'events') {
-    if (!memoryGetRoom(roomId)) return json({ error: 'not-found' }, 404);
+    const room = memoryGetRoom(roomId);
+    if (!room) return json({ error: 'not-found' }, 404);
+    const token = url.searchParams.get('sessionToken') || '';
+    const auth = sessionAuthFromRoom(room, token);
 
     const stream = new ReadableStream({
       start(controller) {
@@ -414,7 +461,7 @@ export async function handleRoomsApi(request, env) {
           controller.enqueue(encoder.encode(`data: ${JSON.stringify(obj)}\n\n`));
         };
 
-        send({ type: 'hello', ...memoryPublicView(roomId) });
+        send({ type: 'hello', ...memoryPublicView(roomId, auth) });
 
         const unsubscribe = memorySubscribe(roomId, (payload) => {
           try {
@@ -422,7 +469,7 @@ export async function handleRoomsApi(request, env) {
           } catch {
             unsubscribe();
           }
-        });
+        }, auth);
 
         const heartbeat = setInterval(() => {
           try {

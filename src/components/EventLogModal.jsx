@@ -37,6 +37,7 @@ function eventCategory(type) {
     || type.startsWith('AGENDA_')
     || type === 'SPEAKER_CHANGED'
   ) return 'strategy';
+  if (type.startsWith('SECRET_')) return 'strategy';
   if (type.startsWith('COMBAT_')) return 'combat';
   if (type.startsWith('TECH_') || type.startsWith('BREAKTHROUGH_')) return 'tech';
   return 'other';
@@ -69,6 +70,15 @@ function eventIcon(type, category) {
       return 'fa-user';
     case 'COMBAT_RESOLVED':
       return 'fa-crosshairs';
+    case 'SECRET_DRAWN':
+    case 'SECRET_SCORED':
+    case 'SECRET_EXCHANGED':
+    case 'SECRET_DISCARDED':
+    case 'SECRET_DRAFT_STARTED':
+    case 'SECRET_DRAFT_KEPT':
+    case 'SECRET_DRAFT_COMPLETED':
+    case 'SECRET_CAP_RAISED':
+      return 'fa-user-secret';
     default:
       return CATEGORY_META[category]?.icon || 'fa-circle-info';
   }

@@ -30,6 +30,7 @@ export function startNewRound(state) {
       roundStartedAt: null,
       turnPausedAccum: 0,
       strategyActionTaken: false,
+      secretExchangeUsed: false,
       expeditionClaimedThisTurn: false,
       expeditionClaimedSliceId: null,
       strategyResolution: { ...EMPTY_STRATEGY_RESOLUTION },

@@ -332,6 +332,64 @@ export function nextSpeakerAfter(state, playerId) {
   return state.players.find(p => p.id !== playerId && !p.eliminated)?.id ?? null;
 }
 
+/**
+ * Active seats clockwise starting after the speaker; speaker last.
+ * Used for Imperial (8) secondary Сыграно sequencing.
+ */
+export function speakerClockwiseOrder(state) {
+  const seats = activePlayers(state);
+  if (seats.length === 0) return [];
+  const speakerId = state.meta?.speakerId;
+  let speakerIdx = seats.findIndex((p) => p.id === speakerId);
+  if (speakerIdx === -1) speakerIdx = 0;
+  const order = [];
+  for (let i = 1; i < seats.length; i += 1) {
+    order.push(seats[(speakerIdx + i) % seats.length]);
+  }
+  order.push(seats[speakerIdx]);
+  return order;
+}
+
+function strategyResponseOf(resolution, playerId) {
+  return resolution?.responses?.[playerId] ?? resolution?.responses?.[String(playerId)];
+}
+
+function isStrategyResponseSettled(status) {
+  return status === 'played' || status === 'passed';
+}
+
+/**
+ * Imperial (8): Сыграно only in speaker-clockwise order (pass anytime).
+ * Other strategy cards: any pending seat may mark Сыграно.
+ */
+export function canMarkStrategyPlayed(state, playerId) {
+  const resolution = state?.round?.strategyResolution;
+  if (!resolution?.active) return false;
+  if (strategyResponseOf(resolution, playerId) !== 'pending') return false;
+  if (resolution.cardId !== 8) return true;
+
+  for (const seat of speakerClockwiseOrder(state)) {
+    if (String(seat.id) === String(playerId)) return true;
+    if (!isStrategyResponseSettled(strategyResponseOf(resolution, seat.id))) {
+      return false;
+    }
+  }
+  return false;
+}
+
+/** Seat whose Сыграно is currently allowed on Imperial (8), or null while discarding/blocked. */
+export function nextImperialPlaySeatId(state) {
+  const resolution = state?.round?.strategyResolution;
+  if (!resolution?.active || resolution.cardId !== 8) return null;
+  for (const seat of speakerClockwiseOrder(state)) {
+    const status = strategyResponseOf(resolution, seat.id);
+    if (isStrategyResponseSettled(status)) continue;
+    if (status === 'pending') return seat.id;
+    return null;
+  }
+  return null;
+}
+
 export function currentAgenda(state) {
   return state.politics.agendas[state.politics.currentAgendaIndex] || null;
 }

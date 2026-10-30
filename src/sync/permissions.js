@@ -1,12 +1,15 @@
 import {
   activePlayer,
   areAllStrategiesPlayed,
+  canMarkStrategyPlayed,
   currentDraftPlayerId,
   currentVoterId,
   isStrategyCardPlayed,
 } from '../game/selectors.js';
 import { isVictoryActionAllowed, isVictoryReached } from '../game/victory.js';
 import { NEUTRAL_OPPONENT_ID } from '../data/neutralUnits.js';
+import { secretObjectiveById } from '../data/secretObjectives.js';
+import { secretCapOf } from '../game/secretDeck.js';
 
 export const ROLES = Object.freeze({
   ADMIN: 'admin',
@@ -96,6 +99,10 @@ export function authorizeAction({ role, seatPlayerId, action, state }) {
       if (action.choice !== 'played' && action.choice !== 'passed') {
         return { ok: false, error: 'invalid-choice' };
       }
+      // Imperial (8): Сыграно only clockwise after speaker; Пас anytime.
+      if (action.choice === 'played' && !canMarkStrategyPlayed(state, seatPlayerId)) {
+        return { ok: false, error: 'imperial-play-order' };
+      }
       return { ok: true };
     }
 
@@ -181,8 +188,37 @@ export function authorizeAction({ role, seatPlayerId, action, state }) {
       return { ok: false, error: 'use-scoring-window' };
     }
 
+    case 'SCORE_SECRET': {
+      if (action.playerId !== seatPlayerId) return { ok: false, error: 'not-your-objective' };
+      // Status scoring window (existing flow).
+      if (state.statusPhase?.scoring?.active) {
+        const scoring = state.statusPhase.scoring;
+        const currentId = scoring.orderIds?.[scoring.currentIdx];
+        if (currentId !== seatPlayerId) return { ok: false, error: 'not-your-scoring-turn' };
+        const response = scoring.responses?.[seatPlayerId];
+        if (!response || response.status !== 'pending') return { ok: false, error: 'scoring-locked' };
+        return { ok: true };
+      }
+      // Mid-phase: action secrets in action phase, agenda secrets in politics.
+      const player = (state.players || []).find((p) => p.id === seatPlayerId);
+      if (!player || player.eliminated) return { ok: false, error: 'not-your-seat' };
+      const hand = Array.isArray(player.secretHand) ? player.secretHand : [];
+      if (!hand.includes(action.cardId)) return { ok: false, error: 'secret-not-in-hand' };
+      if ((player.secrets || 0) >= secretCapOf(player)) {
+        return { ok: false, error: 'secret-cap' };
+      }
+      const card = secretObjectiveById.get(action.cardId);
+      if (!card) return { ok: false, error: 'unknown-secret' };
+      const politics = !!state.meta?.isPoliticsActive;
+      const inAction = !!state.round?.active && !politics && !state.statusPhase?.show;
+      if (card.phase === 'action' && inAction) return { ok: true };
+      if (card.phase === 'agenda' && politics) return { ok: true };
+      return { ok: false, error: 'wrong-secret-phase' };
+    }
+
     case 'SELECT_SCORING_PUBLIC':
     case 'TOGGLE_SCORING_SECRET':
+    case 'UNSCORE_SECRET':
     case 'CONFIRM_OBJECTIVE_SCORING':
     case 'PASS_OBJECTIVE_SCORING': {
       if (action.playerId !== seatPlayerId) return { ok: false, error: 'not-your-objective' };
@@ -250,8 +286,10 @@ export function authorizeAction({ role, seatPlayerId, action, state }) {
       if (!state.meta?.useTe || !state.isGameActive) {
         return { ok: false, error: 'expedition-closed' };
       }
-      if (action.playerId !== seatPlayerId) return { ok: false, error: 'not-your-expedition' };
-      if (activePlayer(state)?.id !== seatPlayerId) {
+      if (String(action.playerId) !== String(seatPlayerId)) {
+        return { ok: false, error: 'not-your-expedition' };
+      }
+      if (String(activePlayer(state)?.id) !== String(seatPlayerId)) {
         return { ok: false, error: 'not-your-turn' };
       }
       if (state.round?.expeditionClaimedThisTurn) {
@@ -259,6 +297,17 @@ export function authorizeAction({ role, seatPlayerId, action, state }) {
       }
       if (state.expedition?.completed || state.expedition?.awaitingControlPick) {
         return { ok: false, error: 'expedition-locked' };
+      }
+      if (action.sliceId === 'secret') {
+        const seat = state.players?.find((p) => String(p.id) === String(seatPlayerId));
+        const hand = Array.isArray(seat?.secretHand) ? seat.secretHand : [];
+        if (!hand.length) return { ok: false, error: 'no-secret-in-hand' };
+        if (action.cardId != null && !hand.some((id) => String(id) === String(action.cardId))) {
+          return { ok: false, error: 'secret-not-in-hand' };
+        }
+        if (hand.length > 1 && action.cardId == null) {
+          return { ok: false, error: 'secret-card-required' };
+        }
       }
       return { ok: true };
     }
@@ -292,6 +341,15 @@ export function authorizeAction({ role, seatPlayerId, action, state }) {
       if (currentVoterId(state) !== seatPlayerId) {
         return { ok: false, error: 'not-your-vote-turn' };
       }
+      return { ok: true };
+    }
+
+    case 'KEEP_SECRET_DRAFT':
+    case 'DRAW_SECRET':
+    case 'DISCARD_SECRET':
+    case 'DISMISS_SECRET_REVEAL':
+    case 'EXCHANGE_SECRET': {
+      if (action.playerId !== seatPlayerId) return { ok: false, error: 'not-your-seat' };
       return { ok: true };
     }
 

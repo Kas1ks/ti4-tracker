@@ -1,7 +1,28 @@
 import { EXPEDITION_SLICE_IDS, emptyExpeditionSlices } from '../data/expedition';
 import { breakthroughStartsUnlocked } from '../data/breakthroughs';
+import { emptySecretObjectives, putSecretsUnderDeck } from './secretDeck';
 import { activePlayer } from './selectors';
 import { patchPlayer, withExpedition, withRound } from './stateHelpers';
+
+function sameId(a, b) {
+  return a != null && b != null && String(a) === String(b);
+}
+
+function discardSecretFromHand(state, playerId, cardId) {
+  const player = state.players.find((p) => sameId(p.id, playerId));
+  if (!player) return null;
+  const hand = Array.isArray(player.secretHand) ? player.secretHand : [];
+  if (!hand.some((id) => sameId(id, cardId))) return null;
+  const nextHand = hand.filter((id) => !sameId(id, cardId));
+  const deck = putSecretsUnderDeck(state.secretObjectives?.deck || [], [cardId]);
+  return {
+    ...patchPlayer(state, player.id, () => ({ secretHand: nextHand })),
+    secretObjectives: {
+      ...(state.secretObjectives || emptySecretObjectives()),
+      deck,
+    },
+  };
+}
 
 function expeditionOf(state) {
   return state.expedition || {
@@ -37,29 +58,48 @@ function claimedSliceCount(slices) {
   return Object.values(slices || {}).filter((id) => id != null).length;
 }
 
-export function claimExpeditionSlice(state, playerId, sliceId) {
+export function claimExpeditionSlice(state, playerId, sliceId, cardId = null) {
   if (!state.meta?.useTe || !state.isGameActive) return state;
   if (!state.round?.active) return state;
   if (!EXPEDITION_SLICE_IDS.includes(sliceId)) return state;
-  if (activePlayer(state)?.id !== playerId) return state;
-  if (state.round?.passed?.[playerId]) return state;
+  if (!sameId(activePlayer(state)?.id, playerId)) return state;
+  if (state.round?.passed?.[playerId] || state.round?.passed?.[String(playerId)]) return state;
   if (state.round?.expeditionClaimedThisTurn) return state;
 
   const expedition = expeditionOf(state);
   if (expedition.completed || expedition.awaitingControlPick) return state;
   if (expedition.slices?.[sliceId] != null) return state;
 
-  const player = state.players.find((p) => p.id === playerId);
+  const player = state.players.find((p) => sameId(p.id, playerId));
   if (!player || player.eliminated) return state;
 
-  const slices = { ...expedition.slices, [sliceId]: playerId };
-  let next = withRound(withExpedition(state, { slices }), {
+  const hand = Array.isArray(player.secretHand) ? player.secretHand : [];
+  // Secret slice: must discard an unscored secret from hand.
+  let discardId = cardId;
+  if (sliceId === 'secret') {
+    if (!hand.length) return state;
+    if (!discardId || !hand.some((id) => sameId(id, discardId))) {
+      discardId = hand.length === 1 ? hand[0] : null;
+    }
+    if (!discardId) return state;
+  }
+
+  let next = state;
+  if (sliceId === 'secret') {
+    const discarded = discardSecretFromHand(next, player.id, discardId);
+    if (!discarded) return state;
+    next = discarded;
+  }
+
+  const slices = { ...expedition.slices, [sliceId]: player.id };
+  next = withRound(withExpedition(next, { slices }), {
     expeditionClaimedThisTurn: true,
     expeditionClaimedSliceId: sliceId,
   });
 
-  if (!player.breakthrough) {
-    next = patchPlayer(next, playerId, () => ({ breakthrough: true }));
+  const claimedPlayer = next.players.find((p) => sameId(p.id, player.id));
+  if (claimedPlayer && !claimedPlayer.breakthrough) {
+    next = patchPlayer(next, player.id, () => ({ breakthrough: true }));
   }
 
   if (claimedSliceCount(slices) < EXPEDITION_SLICE_IDS.length) {
@@ -70,7 +110,7 @@ export function claimExpeditionSlice(state, playerId, sliceId) {
   if (leaders.length === 1) {
     return withExpedition(next, {
       completed: true,
-      placedById: playerId,
+      placedById: player.id,
       controllerId: leaders[0],
       awaitingControlPick: false,
     });
@@ -78,7 +118,7 @@ export function claimExpeditionSlice(state, playerId, sliceId) {
 
   return withExpedition(next, {
     completed: false,
-    placedById: playerId,
+    placedById: player.id,
     controllerId: null,
     awaitingControlPick: true,
   });

@@ -12,8 +12,13 @@ import {
   randomRoomId,
   randomSeatSecret,
 } from '../cryptoCodes.js';
+import {
+  redactStateForSession,
+  sessionAuthFromRoom,
+} from './secretRedaction.js';
 
 export { LOCAL_ONLY_ACTIONS, ROLES };
+export { redactStateForSession, sessionAuthFromRoom };
 
 /** Idle rooms expire after 48h without join/action. */
 export const ROOM_IDLE_TTL_MS = 48 * 60 * 60 * 1000;
@@ -104,6 +109,61 @@ export function createRoomRecord(initialState = null) {
 export function adminSessionFromRoom(room) {
   const entry = Object.entries(room.sessions || {}).find(([, s]) => s.role === ROLES.ADMIN);
   return entry ? entry[0] : null;
+}
+
+/**
+ * Move host admin session to another device with the room hostKey.
+ * Revokes previous admin session(s); keeps seat if the host was sitting.
+ */
+export function claimHostByKey(room, hostKey) {
+  const provided = String(hostKey || '').trim();
+  if (!provided || provided !== room.hostKey) {
+    return { ok: false, error: 'bad-host-key' };
+  }
+  if (room.partyEnded) {
+    return { ok: false, error: 'party-ended' };
+  }
+
+  const sessions = { ...(room.sessions || {}) };
+  const revokedSessionTokens = [];
+  let seatPlayerId = null;
+  for (const [token, session] of Object.entries(sessions)) {
+    if (session?.role !== ROLES.ADMIN) continue;
+    revokedSessionTokens.push(token);
+    if (session.seatPlayerId != null && seatPlayerId == null) {
+      seatPlayerId = session.seatPlayerId;
+    }
+    delete sessions[token];
+  }
+
+  const sessionToken = makeSessionToken();
+  sessions[sessionToken] = { role: ROLES.ADMIN, seatPlayerId };
+
+  const seatClaims = { ...(room.seatClaims || {}) };
+  if (seatPlayerId != null) {
+    seatClaims[seatPlayerId] = sessionToken;
+  }
+
+  const next = touchRoomActivity({
+    ...room,
+    sessions,
+    seatClaims,
+    hostOnline: true,
+  });
+
+  return {
+    ok: true,
+    room: next,
+    sessionToken,
+    hostKey: room.hostKey,
+    role: ROLES.ADMIN,
+    seatPlayerId,
+    seatSecret: seatPlayerId != null
+      ? (room.seatSecrets?.[seatPlayerId] ?? room.seatSecrets?.[String(seatPlayerId)] ?? null)
+      : null,
+    revokedSessionTokens,
+    reclaimed: revokedSessionTokens.length > 0,
+  };
 }
 
 /**
@@ -481,7 +541,12 @@ export function applyRoomAction(room, action, auth = {}) {
   };
 }
 
-export function publicRoomView(room) {
+/**
+ * Public room snapshot. Pass session (or sessionToken string) to redact foreign secrets.
+ * @param {object} room
+ * @param {{ role?: string, seatPlayerId?: * }|string|null} [sessionOrToken]
+ */
+export function publicRoomView(room, sessionOrToken = null) {
   const claimedSeats = Object.keys(room.seatClaims || {}).map((id) => {
     const asNum = Number(id);
     return Number.isNaN(asNum) ? id : asNum;
@@ -502,14 +567,23 @@ export function publicRoomView(room) {
   if (room.state?.isGameActive) phase = 'game';
   else if (milty?.status === 'drafting') phase = 'milty';
 
+  let session = null;
+  if (typeof sessionOrToken === 'string') {
+    session = sessionAuthFromRoom(room, sessionOrToken);
+  } else if (sessionOrToken && typeof sessionOrToken === 'object') {
+    session = sessionOrToken;
+  }
+
   return {
     roomId: room.roomId,
     seq: room.seq,
-    state: room.state,
+    state: redactStateForSession(room.state, session),
     updatedAt: room.updatedAt,
     createdAt: room.createdAt || null,
     lastActivityAt: room.lastActivityAt || null,
     expiresAt: room.expiresAt || null,
+    hostOnline: room.hostOnline !== false,
+    partyEnded: !!room.partyEnded,
     claimedSeats,
     securedSeats,
     canUndo: undoStackDepth(room.undoStack) > 0,
@@ -522,17 +596,18 @@ export function publicRoomView(room) {
 /**
  * True when the party should not appear in hub «Активные партии»:
  * - host ended (RESET_GAME / partyEnded)
- * - host left / went offline (hostOnline === false)
- * - inactive lobby without explicit hostOnline:true (legacy directory ghosts)
+ * - inactive lobby without online host (legacy ghosts / soft-offline lobby)
  * - short ended-TTL leftover card
- * Rooms stay listed while hostOnline === true (or game is actively running).
+ * Active games with hostOnline === false stay recoverable (not ended);
+ * hubRoomCard hides them separately.
  * @param {object|null} cardOrRoom
  */
 export function isHubPartyEnded(cardOrRoom) {
   if (!cardOrRoom) return false;
   if (cardOrRoom.partyEnded) return true;
-  if (cardOrRoom.hostOnline === false) return true;
   const active = !!(cardOrRoom.isGameActive || cardOrRoom.state?.isGameActive);
+  // Soft host offline: mid-game party is still recoverable.
+  if (cardOrRoom.hostOnline === false) return !active;
   if (active) return false;
   // Inactive rooms require an explicitly online host. Drops old hub cards
   // that never had hostOnline (e.g. abandoned 6CXL2Y-style leftovers).
@@ -550,6 +625,8 @@ export function isHubPartyEnded(cardOrRoom) {
  */
 export function hubRoomCard(room) {
   if (!room?.roomId) return null;
+  // Soft host offline: keep DO state, but hide from hub until host returns.
+  if (room.hostOnline === false) return null;
   if (isHubPartyEnded(room)) return null;
   // Hide from hub while Milty draft is in progress (join by code only).
   if (room.hubListed === false || room.milty?.status === 'drafting') return null;

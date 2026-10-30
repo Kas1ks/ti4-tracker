@@ -5,27 +5,43 @@
 export function SyncStatusBanner({
   roomError,
   syncLink,
+  hostOnline = true,
   onDismissError,
   onReconnect,
 }) {
   const reconnecting = syncLink === 'reconnecting';
   const closed = syncLink === 'closed';
-  if (!roomError && !reconnecting && !closed) return null;
+  const hostAway = hostOnline === false;
+  if (!roomError && !reconnecting && !closed && !hostAway) return null;
 
   const isError = !!roomError || closed;
   const tone = isError
     ? 'border-red-500/70 bg-red-950/95 text-red-100'
-    : 'border-amber-500/70 bg-amber-950/95 text-amber-100';
-  const icon = isError ? 'fa-triangle-exclamation' : 'fa-wifi';
+    : hostAway && !reconnecting && !closed
+      ? 'border-violet-500/70 bg-violet-950/95 text-violet-100'
+      : 'border-amber-500/70 bg-amber-950/95 text-amber-100';
+  const icon = isError
+    ? 'fa-triangle-exclamation'
+    : hostAway && !reconnecting && !closed
+      ? 'fa-user-clock'
+      : 'fa-wifi';
   const title = roomError
     ? 'Синхронизация'
     : closed
       ? 'Связь потеряна'
-      : 'Переподключение…';
+      : reconnecting
+        ? 'Переподключение…'
+        : hostAway
+          ? 'Хост офлайн'
+          : 'Переподключение…';
   const body = roomError
     || (closed
       ? 'Поток комнаты закрыт. Нажмите «Обновить связь» или перезайдите.'
-      : 'Связь с комнатой прервалась. Ждём восстановление потока…');
+      : reconnecting
+        ? 'Связь с комнатой прервалась. Ждём восстановление потока…'
+        : hostAway
+          ? 'Хост временно недоступен. Партия на сервере сохранена — ждём возврата. Сброс только через «Завершить партию».'
+          : 'Связь с комнатой прервалась. Ждём восстановление потока…');
   const showReconnect = typeof onReconnect === 'function'
     && (closed || reconnecting || !!roomError);
 

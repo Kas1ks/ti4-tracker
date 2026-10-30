@@ -4,10 +4,13 @@ import {
   hydrateRoomLifecycle,
   isRoomExpired,
   joinRoom,
+  claimHostByKey,
   hostClaimSeat,
   releaseSeat,
   publicRoomView,
   adminSessionFromRoom,
+  redactStateForSession,
+  sessionAuthFromRoom,
   ROLES,
 } from './roomCore.js';
 import {
@@ -30,19 +33,32 @@ import { undoStackDepth } from '../../src/sync/undoStack';
  * One Durable Object = one live game room.
  * Idle rooms expire via storage alarm (see roomCore TTL helpers).
  */
-/** After last host SSE drops, wait this long for refresh/reconnect before ending. */
-const HOST_OFFLINE_GRACE_MS = 60_000;
+/** After last host SSE drops, wait this long before marking host offline (party stays alive). */
+const HOST_OFFLINE_GRACE_MS = 120_000;
 
 export class GameRoom {
   constructor(ctx, env) {
     this.ctx = ctx;
     this.env = env;
-    /** @type {Set<(chunk: string) => Promise<void>>} */
-    this.sseWrites = new Set();
-    /** @type {Set<(chunk: string) => Promise<void>>} */
-    this.adminSseWrites = new Set();
+    /**
+     * SSE clients: { write, role, seatPlayerId, isAdmin }
+     * @type {Set<{ write: (chunk: string) => Promise<void>, role: string, seatPlayerId: *, isAdmin: boolean }>}
+     */
+    this.sseClients = new Set();
     /** @type {ReturnType<typeof setTimeout> | null} */
     this.hostOfflineTimer = null;
+  }
+
+  get sseWritesSize() {
+    return this.sseClients.size;
+  }
+
+  get adminSseWritesSize() {
+    let n = 0;
+    for (const c of this.sseClients) {
+      if (c.isAdmin) n += 1;
+    }
+    return n;
   }
 
   async load() {
@@ -69,15 +85,13 @@ export class GameRoom {
     logRoomEvent('room_expire', {
       backend: 'do',
       roomId: room?.roomId || null,
-      sseListeners: this.sseWrites.size,
+      sseListeners: this.sseClients.size,
       undoDepth: undoStackDepth(room?.undoStack),
     });
     if (room?.roomId) {
       this.ctx.waitUntil(directoryRemove(this.env, room.roomId));
     }
-    for (const write of [...this.sseWrites]) {
-      this.sseWrites.delete(write);
-    }
+    this.sseClients.clear();
     await this.ctx.storage.deleteAll();
   }
 
@@ -93,7 +107,7 @@ export class GameRoom {
     }
   }
 
-  /** Host SSE reconnected — keep room listed. */
+  /** Host SSE reconnected — keep room listed and notify clients. */
   async markHostOnline() {
     this.clearHostOfflineTimer();
     const room = await this.load();
@@ -105,11 +119,16 @@ export class GameRoom {
     const next = { ...room, hostOnline: true };
     await this.save(next);
     this.trackInDirectory(next);
+    this.broadcast({
+      type: 'host',
+      hostOnline: true,
+      seq: next.seq,
+    });
   }
 
   /**
-   * Last host SSE gone: grace period, then end party + drop from hub
-   * (covers closed tab / leave without RESET_GAME).
+   * Last host SSE gone: grace period, then soft-offline (keep state; hide from hub).
+   * Explicit RESET_GAME / «Завершить партию» still ends the party.
    */
   scheduleHostOffline() {
     this.clearHostOfflineTimer();
@@ -120,30 +139,23 @@ export class GameRoom {
   }
 
   async endPartyHostOffline() {
-    if (this.adminSseWrites.size > 0) return;
+    if (this.adminSseWritesSize > 0) return;
     const room = await this.load();
     if (!room || room.partyEnded) {
       if (room?.roomId) await directoryRemove(this.env, room.roomId);
       return;
     }
-    const ended = applyRoomAction(room, { type: 'RESET_GAME' }, { hostKey: room.hostKey });
-    if (!ended.ok) {
-      const next = { ...room, hostOnline: false };
-      await this.save(next);
+    if (room.hostOnline === false) {
       await directoryRemove(this.env, room.roomId);
       return;
     }
-    let saved = { ...ended.room, hostOnline: false, pushSubs: {} };
-    await this.save(saved);
-    await directoryRemove(this.env, saved.roomId);
+    const next = { ...room, hostOnline: false };
+    await this.save(next);
+    await directoryRemove(this.env, next.roomId);
     this.broadcast({
-      type: 'state',
-      seq: saved.seq,
-      state: saved.state,
-      action: ended.action,
-      claimedSeats: [],
-      canUndo: false,
-      roomEnded: true,
+      type: 'host',
+      hostOnline: false,
+      seq: next.seq,
     });
   }
 
@@ -156,11 +168,25 @@ export class GameRoom {
     await this.scheduleExpiry(room);
   }
 
+  /**
+   * Fan-out SSE. When payload includes `state`, redact per-client session.
+   * @param {object} payload
+   */
   broadcast(payload) {
-    const chunk = `data: ${JSON.stringify(payload)}\n\n`;
-    for (const write of [...this.sseWrites]) {
-      write(chunk).catch(() => {
-        this.sseWrites.delete(write);
+    for (const client of [...this.sseClients]) {
+      let out = payload;
+      if (payload && Object.prototype.hasOwnProperty.call(payload, 'state')) {
+        out = {
+          ...payload,
+          state: redactStateForSession(payload.state, {
+            role: client.role,
+            seatPlayerId: client.seatPlayerId,
+          }),
+        };
+      }
+      const chunk = `data: ${JSON.stringify(out)}\n\n`;
+      client.write(chunk).catch(() => {
+        this.sseClients.delete(client);
       });
     }
   }
@@ -184,10 +210,11 @@ export class GameRoom {
           await this.wipeExpired();
         } else {
           this.trackInDirectory(existing);
+          const adminTok = adminSessionFromRoom(existing);
           return Response.json({
-            ...publicRoomView(existing),
+            ...publicRoomView(existing, adminTok),
             hostKey: existing.hostKey,
-            sessionToken: adminSessionFromRoom(existing),
+            sessionToken: adminTok,
             role: 'admin',
             reused: true,
           });
@@ -217,10 +244,11 @@ export class GameRoom {
         players: room.state?.players?.length ?? 0,
         milty: !!room.milty,
       });
+      const adminTok = adminSessionFromRoom(room);
       return Response.json({
-        ...publicRoomView(room),
+        ...publicRoomView(room, adminTok),
         hostKey: room.hostKey,
-        sessionToken: adminSessionFromRoom(room),
+        sessionToken: adminTok,
         role: 'admin',
         miltyAdminSecret: room.milty?.adminSecret || undefined,
       }, { status: 201 });
@@ -236,7 +264,8 @@ export class GameRoom {
     }
 
     if (method === 'GET' && path.endsWith('/snapshot')) {
-      return Response.json(publicRoomView(room));
+      const token = String(url.searchParams.get('sessionToken') || '').trim();
+      return Response.json(publicRoomView(room, token || null));
     }
 
     if (method === 'POST' && path.endsWith('/join')) {
@@ -262,7 +291,7 @@ export class GameRoom {
       }
       await this.save(nextRoom);
       this.trackInDirectory(nextRoom);
-      const joinedView = publicRoomView(nextRoom);
+      const joinedView = publicRoomView(nextRoom, result.sessionToken);
       this.broadcast({
         type: 'seats',
         claimedSeats: joinedView.claimedSeats,
@@ -278,6 +307,54 @@ export class GameRoom {
         seatPlayerId: result.seatPlayerId,
         seatSecret: result.seatSecret,
         miltySecret,
+        reclaimed: !!result.reclaimed,
+      });
+    }
+
+    if (method === 'POST' && path.endsWith('/claim-host')) {
+      let body = null;
+      try {
+        body = await request.json();
+      } catch {
+        return Response.json({ error: 'invalid-body' }, { status: 400 });
+      }
+      const result = claimHostByKey(room, body?.hostKey);
+      if (!result.ok) {
+        const status = result.error === 'bad-host-key' ? 403
+          : result.error === 'party-ended' ? 409
+            : 400;
+        return Response.json({ error: result.error }, { status });
+      }
+      await this.save(result.room);
+      this.clearHostOfflineTimer();
+      this.trackInDirectory(result.room);
+      const view = publicRoomView(result.room, result.sessionToken);
+      const revoked = result.revokedSessionTokens || [];
+      for (const token of revoked) {
+        this.broadcast({
+          type: 'seats',
+          claimedSeats: view.claimedSeats,
+          securedSeats: view.securedSeats,
+          reclaimed: true,
+          hostMoved: true,
+          revokedSessionToken: token,
+        });
+      }
+      if (!revoked.length) {
+        this.broadcast({
+          type: 'seats',
+          claimedSeats: view.claimedSeats,
+          securedSeats: view.securedSeats,
+          hostMoved: true,
+        });
+      }
+      return Response.json({
+        ...view,
+        sessionToken: result.sessionToken,
+        hostKey: result.hostKey,
+        role: result.role,
+        seatPlayerId: result.seatPlayerId,
+        seatSecret: result.seatSecret,
         reclaimed: !!result.reclaimed,
       });
     }
@@ -314,8 +391,9 @@ export class GameRoom {
       }
       await this.save(applied.room);
       this.trackInDirectory(applied.room);
+      const promoteTok = body?.sessionToken || adminSessionFromRoom(applied.room);
       this.broadcast({ type: 'state', seq: applied.room.seq, state: applied.room.state, milty: publicRoomView(applied.room).milty, phase: 'setup' });
-      return Response.json(publicRoomView(applied.room));
+      return Response.json(publicRoomView(applied.room, promoteTok));
     }
 
     if (method === 'POST' && path.endsWith('/milty/pick')) {
@@ -383,7 +461,7 @@ export class GameRoom {
       return Response.json({
         ok: true,
         draft: picked.draft,
-        room: publicRoomView(nextRoom),
+        room: publicRoomView(nextRoom, body?.sessionToken),
       });
     }
 
@@ -407,7 +485,12 @@ export class GameRoom {
         return Response.json({ error: undone?.error || 'undo-failed' }, { status: 400 });
       }
       this.broadcast({ type: 'milty', draft: undone.draft, milty: publicRoomView(room).milty });
-      return Response.json({ ok: true, draft: undone.draft, room: publicRoomView(room) });
+      const undoTok = body?.sessionToken || adminSessionFromRoom(room);
+      return Response.json({
+        ok: true,
+        draft: undone.draft,
+        room: publicRoomView(room, undoTok),
+      });
     }
 
     if (method === 'POST' && path.endsWith('/milty/regen')) {
@@ -432,10 +515,11 @@ export class GameRoom {
         return Response.json({ error: regen?.error || 'regen-failed' }, { status: 400 });
       }
       this.broadcast({ type: 'milty', draft: regen.draft, milty: publicRoomView(room).milty });
+      const regenTok = body?.sessionToken || adminSessionFromRoom(room);
       return Response.json({
         ok: true,
         draft: regen.draft,
-        room: publicRoomView(room),
+        room: publicRoomView(room, regenTok),
         parts: regen.parts,
       });
     }
@@ -462,7 +546,7 @@ export class GameRoom {
       }
       await this.save(nextRoom);
       this.trackInDirectory(nextRoom);
-      const releasedView = publicRoomView(nextRoom);
+      const releasedView = publicRoomView(nextRoom, body?.sessionToken);
       this.broadcast({
         type: 'seats',
         claimedSeats: releasedView.claimedSeats,
@@ -479,7 +563,7 @@ export class GameRoom {
         }
       }
       return Response.json({
-        ...publicRoomView(nextRoom),
+        ...releasedView,
         seatPlayerId: released.seatPlayerId,
       });
     }
@@ -513,7 +597,7 @@ export class GameRoom {
       }
       await this.save(nextRoom);
       this.trackInDirectory(nextRoom);
-      const view = publicRoomView(nextRoom);
+      const view = publicRoomView(nextRoom, body?.sessionToken);
       this.broadcast({
         type: 'seats',
         claimedSeats: view.claimedSeats,
@@ -556,7 +640,7 @@ export class GameRoom {
           durationMs: measureMs(started),
           seq: room.seq,
           undoDepth: undoStackDepth(room.undoStack),
-          sseListeners: this.sseWrites.size,
+          sseListeners: this.sseClients.size,
         });
         const status = result.error === 'unauthorized' || result.error === 'forbidden'
           ? 403
@@ -616,13 +700,14 @@ export class GameRoom {
         durationMs: measureMs(started),
         seq: saved.seq,
         undoDepth: undoStackDepth(saved.undoStack),
-        sseListeners: this.sseWrites.size,
+        sseListeners: this.sseClients.size,
         roomEnded: !!result.roomEnded,
       });
 
+      const actorSession = sessionAuthFromRoom(saved, body?.sessionToken);
       return Response.json({
         seq: saved.seq,
-        state: saved.state,
+        state: redactStateForSession(saved.state, actorSession),
         noop: !!result.noop,
         canUndo: !!result.canUndo,
       });
@@ -672,41 +757,46 @@ export class GameRoom {
       const encoder = new TextEncoder();
       const write = (text) => writer.write(encoder.encode(text));
       const sessionToken = String(url.searchParams.get('sessionToken') || '').trim();
-      const session = sessionToken ? room.sessions?.[sessionToken] : null;
-      const isAdminSse = session?.role === ROLES.ADMIN;
+      const auth = sessionAuthFromRoom(room, sessionToken);
+      const role = auth?.role || ROLES.VIEWER;
+      const seatPlayerId = auth?.seatPlayerId ?? null;
+      const isAdminSse = role === ROLES.ADMIN;
+      const client = {
+        write,
+        role,
+        seatPlayerId,
+        isAdmin: isAdminSse,
+      };
 
-      this.sseWrites.add(write);
+      this.sseClients.add(client);
       if (isAdminSse) {
-        this.adminSseWrites.add(write);
         this.ctx.waitUntil(this.markHostOnline());
       }
       logRoomEvent('sse_connect', {
         backend: 'do',
         roomId: room.roomId,
-        sseListeners: this.sseWrites.size,
+        sseListeners: this.sseClients.size,
         adminSse: isAdminSse,
       });
-      write(`data: ${JSON.stringify({ type: 'hello', ...publicRoomView(room) })}\n\n`);
+      write(`data: ${JSON.stringify({ type: 'hello', ...publicRoomView(room, auth) })}\n\n`);
 
       const heartbeat = setInterval(() => {
         write(': ping\n\n').catch(() => {
           clearInterval(heartbeat);
-          this.sseWrites.delete(write);
-          if (isAdminSse) this.adminSseWrites.delete(write);
+          this.sseClients.delete(client);
         });
       }, 15000);
 
       const cleanup = () => {
         clearInterval(heartbeat);
-        this.sseWrites.delete(write);
-        if (isAdminSse) {
-          this.adminSseWrites.delete(write);
-          if (this.adminSseWrites.size === 0) this.scheduleHostOffline();
+        this.sseClients.delete(client);
+        if (isAdminSse && this.adminSseWritesSize === 0) {
+          this.scheduleHostOffline();
         }
         logRoomEvent('sse_disconnect', {
           backend: 'do',
           roomId: room.roomId,
-          sseListeners: this.sseWrites.size,
+          sseListeners: this.sseClients.size,
           adminSse: isAdminSse,
         });
         writer.close().catch(() => {});

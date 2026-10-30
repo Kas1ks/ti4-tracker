@@ -5,10 +5,13 @@ import {
   hydrateRoomLifecycle,
   isRoomExpired,
   joinRoom,
+  claimHostByKey,
   hostClaimSeat,
   releaseSeat,
   publicRoomView,
   adminSessionFromRoom,
+  redactStateForSession,
+  sessionAuthFromRoom,
   ROLES,
 } from './roomCore.js';
 import {
@@ -30,14 +33,22 @@ import { undoStackDepth } from '../../src/sync/undoStack';
  * Process-local rooms for Vite `npm run dev`.
  */
 const rooms = new Map();
+/** @type {Map<string, Set<{ callback: (payload: object) => void, session: { role: string, seatPlayerId: * }|null }>>} */
 const listeners = new Map();
 
 function notify(roomId, payload) {
   const set = listeners.get(roomId);
   if (!set) return;
-  for (const cb of set) {
+  for (const client of set) {
     try {
-      cb(payload);
+      let out = payload;
+      if (payload && Object.prototype.hasOwnProperty.call(payload, 'state')) {
+        out = {
+          ...payload,
+          state: redactStateForSession(payload.state, client.session),
+        };
+      }
+      client.callback(out);
     } catch (err) {
       console.error('[memoryRooms] listener', err);
     }
@@ -107,7 +118,7 @@ export async function memoryJoin(roomId, body, env = {}) {
     miltySecret = bound.miltySecret;
   }
   rooms.set(key, nextRoom);
-  const joinedView = publicRoomView(nextRoom);
+  const joinedView = publicRoomView(nextRoom, result.sessionToken);
   notify(key, {
     type: 'seats',
     claimedSeats: joinedView.claimedSeats,
@@ -117,6 +128,36 @@ export async function memoryJoin(roomId, body, env = {}) {
     revokedSessionToken: result.revokedSessionToken || null,
   });
   return { ...result, room: nextRoom, miltySecret };
+}
+
+export async function memoryClaimHost(roomId, { hostKey } = {}) {
+  const key = String(roomId || '').toUpperCase();
+  const room = purgeIfExpired(key);
+  if (!room) return { ok: false, error: 'not-found' };
+  const result = claimHostByKey(room, hostKey);
+  if (!result.ok) return result;
+  rooms.set(key, result.room);
+  const view = publicRoomView(result.room, result.sessionToken);
+  const revoked = result.revokedSessionTokens || [];
+  for (const token of revoked) {
+    notify(key, {
+      type: 'seats',
+      claimedSeats: view.claimedSeats,
+      securedSeats: view.securedSeats,
+      reclaimed: true,
+      hostMoved: true,
+      revokedSessionToken: token,
+    });
+  }
+  if (!revoked.length) {
+    notify(key, {
+      type: 'seats',
+      claimedSeats: view.claimedSeats,
+      securedSeats: view.securedSeats,
+      hostMoved: true,
+    });
+  }
+  return result;
 }
 
 export async function memoryMiltyPromote(roomId, { hostKey } = {}, env = {}) {
@@ -378,7 +419,13 @@ export function memoryApplyAction(roomId, action, auth, env = {}) {
     sseListeners: listeners.get(key)?.size || 0,
     roomEnded: !!result.roomEnded,
   });
-  return { ...result, room: saved };
+  const actorSession = sessionAuthFromRoom(saved, auth?.sessionToken);
+  return {
+    ...result,
+    room: saved,
+    /** Redacted view for the acting session (HTTP response). */
+    viewState: redactStateForSession(saved.state, actorSession),
+  };
 }
 
 export function memoryPushSubscribe(roomId, body) {
@@ -411,10 +458,16 @@ export function memoryPushUnsubscribe(roomId, body) {
   return { ok: true, room: next };
 }
 
-export function memorySubscribe(roomId, callback) {
+/**
+ * @param {string} roomId
+ * @param {(payload: object) => void} callback
+ * @param {{ role?: string, seatPlayerId?: * }|null} [session]
+ */
+export function memorySubscribe(roomId, callback, session = null) {
   const key = String(roomId || '').toUpperCase();
   if (!listeners.has(key)) listeners.set(key, new Set());
-  listeners.get(key).add(callback);
+  const client = { callback, session: session || null };
+  listeners.get(key).add(client);
   logRoomEvent('sse_connect', {
     backend: 'memory',
     roomId: key,
@@ -423,7 +476,7 @@ export function memorySubscribe(roomId, callback) {
   return () => {
     const set = listeners.get(key);
     if (!set) return;
-    set.delete(callback);
+    set.delete(client);
     logRoomEvent('sse_disconnect', {
       backend: 'memory',
       roomId: key,
@@ -433,9 +486,9 @@ export function memorySubscribe(roomId, callback) {
   };
 }
 
-export function memoryPublicView(roomId) {
+export function memoryPublicView(roomId, sessionOrToken = null) {
   const room = memoryGetRoom(roomId);
-  return room ? publicRoomView(room) : null;
+  return room ? publicRoomView(room, sessionOrToken) : null;
 }
 
 /** All non-expired live rooms as hub cards (Vite / memory backend). */

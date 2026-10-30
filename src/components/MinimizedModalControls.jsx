@@ -12,6 +12,8 @@ export function MinimizedModalControls({
   expeditionActive = false,
   startingTechDraftActive = false,
   startingTechPlayerActive = false,
+  secretDraftActive = false,
+  secretDraftHostActive = false,
   onRestore,
 }) {
   const controls = [
@@ -45,6 +47,20 @@ export function MinimizedModalControls({
       label: 'Мои стартовые tech',
       icon: 'fa-microchip',
       className: 'bg-slate-800 border border-cyan-500 text-cyan-300',
+    },
+    {
+      id: 'secretDraft',
+      show: secretDraftActive,
+      label: 'Выбор секретки',
+      icon: 'fa-user-secret',
+      className: 'bg-slate-800 border border-red-500 text-red-300',
+    },
+    {
+      id: 'secretDraftHost',
+      show: secretDraftHostActive,
+      label: 'Раздача секреток',
+      icon: 'fa-user-secret',
+      className: 'bg-slate-800 border border-red-500 text-red-300',
     },
     {
       id: 'imperialClaim',

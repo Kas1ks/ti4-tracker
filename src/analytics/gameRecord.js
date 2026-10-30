@@ -10,7 +10,7 @@ import {
 } from './gameRecordExtract';
 
 /** Current on-disk / cloud schema for finished-game analytics snapshots. */
-export const GAME_RECORD_SCHEMA_VERSION = 3;
+export const GAME_RECORD_SCHEMA_VERSION = 4;
 
 function factionName(factionId) {
   return ALL_FACTIONS.find(f => f.id === factionId)?.name || factionId || '';
@@ -66,6 +66,8 @@ function normalizePlayer(raw) {
     techs: asArray(raw.techs).map(String).filter(Boolean),
     secretsHeld: asNumber(raw.secretsHeld, 0),
     secretsScoredVp: asNumber(raw.secretsScoredVp, 0),
+    /** Scored secret objective card ids (v4+). Legacy → []. */
+    secretsScored: asArray(raw.secretsScored).map(String).filter(Boolean),
     objectiveScoringTurns: asNumber(raw.objectiveScoringTurns, 0),
   };
 }

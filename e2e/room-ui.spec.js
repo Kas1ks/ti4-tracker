@@ -19,6 +19,8 @@ test.describe('live room UI smoke', () => {
     await expect(host.getByRole('button', { name: 'Создать партию' })).toBeVisible();
 
     await host.getByRole('button', { name: 'Создать партию' }).click();
+    await expect(host.getByRole('heading', { name: 'Создать партию' })).toBeVisible();
+    await host.getByRole('button', { name: 'Без драфта' }).click();
     await confirmDialog(host, { fill: SECRET, confirmName: 'Продолжить' });
 
     // Success alert with room code

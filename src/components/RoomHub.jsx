@@ -49,6 +49,7 @@ export function RoomHub({
   roomError,
   onCreateRoom,
   onJoinRoom,
+  onClaimHost,
   onPlaySolo,
   importGameToken,
   uiPrompt,
@@ -57,10 +58,11 @@ export function RoomHub({
   onOpenMilty,
   onCreateWithMilty,
 }) {
-  const [view, setView] = useState('hub'); // hub | join | extras | create-choose
+  const [view, setView] = useState('hub'); // hub | join | claim-host | extras | create-choose
   const [joinCode, setJoinCode] = useState('');
   /** Room chosen from «Активные партии» — kept private, never shown in the code field. */
   const [selectedRoomId, setSelectedRoomId] = useState(null);
+  const [hostKeyInput, setHostKeyInput] = useState('');
   const [preview, setPreview] = useState(null);
   const [previewError, setPreviewError] = useState(null);
   const [joining, setJoining] = useState(false);
@@ -146,6 +148,7 @@ export function RoomHub({
   const resetJoinState = () => {
     setJoinCode('');
     setSelectedRoomId(null);
+    setHostKeyInput('');
     setPreview(null);
     setPreviewError(null);
   };
@@ -158,6 +161,21 @@ export function RoomHub({
   const openJoinByCode = () => {
     resetJoinState();
     setView('join');
+  };
+
+  const openClaimHost = () => {
+    resetJoinState();
+    setView('claim-host');
+  };
+
+  const claimAsHost = async () => {
+    if (!onClaimHost || !typedCode || !hostKeyInput.trim()) return;
+    setJoining(true);
+    try {
+      await onClaimHost(typedCode, hostKeyInput.trim());
+    } finally {
+      setJoining(false);
+    }
   };
 
   const openRecentParty = async (party) => {
@@ -325,6 +343,76 @@ export function RoomHub({
       </button>
     </nav>
   );
+
+  if (view === 'claim-host') {
+    return (
+      <div className="hub-shell hub-shell--column">
+        <HubCosmosBackdrop />
+        {topbar}
+        <div className="hub-main hub-main--focus">
+          <div className="hub-stage">
+            <button type="button" onClick={goHub} className="hub-back">
+              <i className="fa-solid fa-arrow-left" aria-hidden="true" />
+              Назад
+            </button>
+
+            <header className="hub-stage-head">
+              <h1 className="hub-stage-title">Продолжить как хост</h1>
+              <p className="hub-stage-lead">
+                Перенос стола на это устройство. Нужны код комнаты и код хоста
+                (в шапке партии на старом устройстве → кнопка Wi‑Fi).
+              </p>
+            </header>
+
+            <label className="hub-field-label" htmlFor="hub-host-room">
+              Код комнаты
+            </label>
+            <input
+              id="hub-host-room"
+              type="text"
+              value={joinCode}
+              onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
+              placeholder="КОД"
+              maxLength={8}
+              autoFocus
+              className="hub-input"
+              aria-label="Код комнаты"
+            />
+
+            <label className="hub-field-label" htmlFor="hub-host-key">
+              Код хоста
+            </label>
+            <input
+              id="hub-host-key"
+              type="text"
+              value={hostKeyInput}
+              onChange={(e) => setHostKeyInput(e.target.value.trim())}
+              placeholder="Длинный ключ с другого устройства"
+              className="hub-input hub-input--host-key"
+              autoComplete="off"
+              spellCheck={false}
+              aria-label="Код хоста"
+            />
+
+            <button
+              type="button"
+              className="hub-cta-primary"
+              disabled={connecting || !typedCode || !hostKeyInput.trim() || !onClaimHost}
+              onClick={claimAsHost}
+            >
+              <span className="hub-cta-label">
+                <i className="fa-solid fa-right-left" aria-hidden="true" />
+                {connecting ? 'Подключение…' : 'Стать хостом здесь'}
+              </span>
+              <i className="fa-solid fa-chevron-right hub-cta-chevron" aria-hidden="true" />
+            </button>
+
+            {roomError && <p className="hub-stage-msg is-error">{roomError}</p>}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (view === 'join') {
     return (
@@ -539,6 +627,20 @@ export function RoomHub({
                 Solo на этом устройстве — без синхронизации с телефонами.
               </span>
             </button>
+
+            {typeof onClaimHost === 'function' && (
+              <button
+                type="button"
+                disabled={connecting}
+                onClick={openClaimHost}
+                className="hub-extra-card"
+              >
+                <span className="hub-extra-card-title">Я хост — другое устройство</span>
+                <span className="hub-extra-card-text">
+                  Перенести стол на телефон или планшет: код комнаты + код хоста из Wi‑Fi в шапке.
+                </span>
+              </button>
+            )}
 
             <div className="hub-extra-card is-static">
               <span className="hub-extra-card-title">Загрузить партию</span>

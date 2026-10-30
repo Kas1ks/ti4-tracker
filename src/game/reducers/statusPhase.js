@@ -12,6 +12,8 @@ import {
 import { activePlayers } from '../selectors';
 import { startNewRound } from './roundLifecycle';
 import { buildShuffledAgendaDeck, drawIntoAgenda, emptyAgenda } from '../agendaDeck';
+import { scoreSecret, unscoreSecret } from './secretObjectives';
+import { secretCapOf } from '../secretDeck';
 
 export const STAGE_PUBLIC_MAX = 5;
 
@@ -97,7 +99,7 @@ function confirmStatusPhase(state) {
   let deck = agendaDeck;
   let discard = [];
   if (step === 'VOTE') {
-    const drawn = drawIntoAgenda(emptyAgenda(), agendaDeck, []);
+    const drawn = drawIntoAgenda(emptyAgenda(), agendaDeck, [], { state: next });
     agendas = [drawn.agenda];
     deck = drawn.agendaDeck;
     discard = drawn.agendaDiscard;
@@ -234,9 +236,13 @@ function undoWindowScores(state, playerId, response) {
     });
   }
   if (response.secret) {
-    next = patchPlayer(next, playerId, player => ({
-      secrets: Math.min(4, Math.max(0, player.secrets - 1)),
-    }));
+    if (response.secretId) {
+      next = unscoreSecret(next, playerId);
+    } else {
+      next = patchPlayer(next, playerId, player => ({
+        secrets: Math.min(4, Math.max(0, player.secrets - 1)),
+      }));
+    }
   }
   return next;
 }
@@ -273,7 +279,7 @@ function selectScoringPublic(state, playerId, objectiveId) {
   );
 }
 
-function toggleScoringSecret(state, playerId) {
+function toggleScoringSecret(state, playerId, cardId = null) {
   const scoring = scoringOf(state);
   if (!scoring.active || !isScoringTurn(scoring, playerId)) return state;
   const response = scoring.responses[playerId];
@@ -283,23 +289,35 @@ function toggleScoringSecret(state, playerId) {
   if (!player) return state;
 
   if (response.secret) {
+    if (response.secretId && cardId && cardId !== response.secretId) {
+      const cleared = unscoreSecret(state, playerId);
+      return scoreSecret(cleared, playerId, cardId, { scoringWindow: true });
+    }
+    if (response.secretId) return unscoreSecret(state, playerId);
     return patchScoringResponse(
       patchPlayer(state, playerId, p => ({
         secrets: Math.min(4, Math.max(0, p.secrets - 1)),
       })),
       playerId,
-      { secret: false },
+      { secret: false, secretId: null },
     );
   }
 
-  // Players score at most 3 secrets; a 4th is host-only via ADJUST_SECRETS.
-  if (player.secrets >= 3) return state;
+  const hand = Array.isArray(player.secretHand) ? player.secretHand : [];
+  if (hand.length > 0) {
+    const pick = cardId && hand.includes(cardId) ? cardId : hand[0];
+    return scoreSecret(state, playerId, pick, { scoringWindow: true });
+  }
+
+  // Legacy: no hand cards — boolean VP toggle within secretCap.
+  const cap = Math.min(3, secretCapOf(player));
+  if (player.secrets >= cap) return state;
   return patchScoringResponse(
     patchPlayer(state, playerId, p => ({
-      secrets: Math.min(3, p.secrets + 1),
+      secrets: Math.min(cap, p.secrets + 1),
     })),
     playerId,
-    { secret: true },
+    { secret: true, secretId: null },
   );
 }
 
@@ -323,6 +341,7 @@ function passObjectiveScoring(state, playerId) {
       status: 'passed',
       publicId: null,
       secret: false,
+      secretId: null,
     }),
   );
 }
@@ -375,7 +394,7 @@ export function reduceStatusPhase(state, action) {
       return selectScoringPublic(state, action.playerId, action.objectiveId);
 
     case 'TOGGLE_SCORING_SECRET':
-      return toggleScoringSecret(state, action.playerId);
+      return toggleScoringSecret(state, action.playerId, action.cardId ?? null);
 
     case 'CONFIRM_OBJECTIVE_SCORING':
       return confirmObjectiveScoring(state, action.playerId);

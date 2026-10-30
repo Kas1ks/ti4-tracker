@@ -1,4 +1,5 @@
 import { STRATEGY_CARDS } from '../data/gameData';
+import { secretObjectiveById } from '../data/secretObjectives';
 import { techById } from '../data/technologies';
 import { gameReducer } from './gameReducer';
 import { activePlayer, playerById } from './selectors';
@@ -12,6 +13,16 @@ function strategyLabel(cardId) {
 function techLabel(techId) {
   if (!techId) return 'tech';
   return techById(techId)?.name || techId;
+}
+
+function secretLabel(cardId) {
+  if (!cardId) return 'секретная цель';
+  return secretObjectiveById.get(cardId)?.title || cardId;
+}
+
+function secretHandOf(state, playerId) {
+  const player = state?.players?.find((p) => p.id === playerId);
+  return Array.isArray(player?.secretHand) ? player.secretHand : [];
 }
 
 export const MAX_GAME_EVENTS = 200;
@@ -146,6 +157,19 @@ export function deriveGameEvents(prev, action, next) {
         ));
       }
 
+      // Imperial secondary (and similar) may draw a secret inside the resolve.
+      const prevHand = secretHandOf(prev, action.playerId);
+      const nextHand = secretHandOf(next, action.playerId);
+      if (nextHand.length > prevHand.length) {
+        const drawnId = nextHand.find((id) => !prevHand.includes(id)) || nextHand[nextHand.length - 1];
+        events.push(baseEvent('SECRET_DRAWN', action, {
+          at,
+          playerId: action.playerId,
+          cardId: drawnId,
+          source: 'strategy',
+        }));
+      }
+
       const stillActive = !!next.round?.strategyResolution?.active;
       if (!stillActive && ownerId != null && cardId != null) {
         events.push(baseEvent('STRATEGY_PLAYED', action, {
@@ -262,6 +286,17 @@ export function deriveGameEvents(prev, action, next) {
         mecatol: !!prev.round?.imperialClaim?.mecatol,
         secret: !!prev.round?.imperialClaim?.secret,
       })];
+      const prevHand = secretHandOf(prev, action.playerId);
+      const nextHand = secretHandOf(next, action.playerId);
+      if (nextHand.length > prevHand.length) {
+        const drawnId = nextHand.find((id) => !prevHand.includes(id)) || nextHand[nextHand.length - 1];
+        events.push(baseEvent('SECRET_DRAWN', action, {
+          at,
+          playerId: action.playerId,
+          cardId: drawnId,
+          source: 'imperial',
+        }));
+      }
       if (next.round?.strategyResolution?.active) {
         events.push(baseEvent('STRATEGY_RESOLUTION_STARTED', action, {
           at,
@@ -353,6 +388,12 @@ export function deriveGameEvents(prev, action, next) {
 
     case 'SET_CUSTODIANS':
       return [baseEvent('CUSTODIANS_SET', action, {
+        at,
+        playerId: action.playerId ?? null,
+      })];
+
+    case 'SET_MECATOL_CONTROLLER':
+      return [baseEvent('MECATOL_CONTROLLER_SET', action, {
         at,
         playerId: action.playerId ?? null,
       })];
@@ -459,6 +500,95 @@ export function deriveGameEvents(prev, action, next) {
     case 'OPEN_DRAFT':
       if (!next.draft?.showModal || prev.draft?.queue?.length) return [];
       return [baseEvent('DRAFT_OPENED', action, { at })];
+
+    case 'START_SECRET_DRAFT':
+      if (!next.secretObjectives?.draftPending) return [];
+      return [baseEvent('SECRET_DRAFT_STARTED', action, { at })];
+
+    case 'KEEP_SECRET_DRAFT': {
+      if (prev === next) return [];
+      const events = [baseEvent('SECRET_DRAFT_KEPT', action, {
+        at,
+        playerId: action.playerId,
+        cardId: action.cardId ?? action.keepId ?? null,
+      })];
+      if (prev.secretObjectives?.draftPending && !next.secretObjectives?.draftPending) {
+        events.push(baseEvent('SECRET_DRAFT_COMPLETED', action, { at }));
+      }
+      return events;
+    }
+
+    case 'DEV_SKIP_SECRET_DRAFT': {
+      if (prev.secretObjectives?.draftPending && !next.secretObjectives?.draftPending) {
+        return [baseEvent('SECRET_DRAFT_COMPLETED', action, { at, byDev: true })];
+      }
+      return [];
+    }
+
+    case 'DRAW_SECRET': {
+      const prevHand = secretHandOf(prev, action.playerId);
+      const nextHand = secretHandOf(next, action.playerId);
+      if (nextHand.length <= prevHand.length) return [];
+      const drawnId = nextHand.find((id) => !prevHand.includes(id)) || nextHand[nextHand.length - 1];
+      return [baseEvent('SECRET_DRAWN', action, {
+        at,
+        playerId: action.playerId,
+        cardId: drawnId,
+        source: 'draw',
+      })];
+    }
+
+    case 'SCORE_SECRET': {
+      const prevScored = Number(prev.players?.find((p) => p.id === action.playerId)?.secrets) || 0;
+      const nextScored = Number(next.players?.find((p) => p.id === action.playerId)?.secrets) || 0;
+      if (nextScored <= prevScored) return [];
+      const phase = action.cardId
+        ? (secretObjectiveById.get(action.cardId)?.phase || null)
+        : null;
+      return [baseEvent('SECRET_SCORED', action, {
+        at,
+        playerId: action.playerId,
+        cardId: action.cardId ?? null,
+        scoringWindow: !!action.scoringWindow,
+        phase,
+      })];
+    }
+
+    case 'EXCHANGE_SECRET': {
+      if (prev === next) return [];
+      const prevHand = secretHandOf(prev, action.playerId);
+      const nextHand = secretHandOf(next, action.playerId);
+      const givenId = action.cardId
+        || prevHand.find((id) => !nextHand.includes(id))
+        || null;
+      const drawnId = nextHand.find((id) => !prevHand.includes(id)) || null;
+      return [baseEvent('SECRET_EXCHANGED', action, {
+        at,
+        playerId: action.playerId,
+        givenId,
+        drawnId,
+      })];
+    }
+
+    case 'DISCARD_SECRET': {
+      if (prev === next) return [];
+      return [baseEvent('SECRET_DISCARDED', action, {
+        at,
+        playerId: action.playerId,
+        cardId: action.cardId ?? null,
+      })];
+    }
+
+    case 'RAISE_SECRET_CAP': {
+      const prevCap = Number(prev.players?.find((p) => p.id === action.playerId)?.secretCap) === 4 ? 4 : 3;
+      const nextCap = Number(next.players?.find((p) => p.id === action.playerId)?.secretCap) === 4 ? 4 : 3;
+      if (nextCap <= prevCap) return [];
+      return [baseEvent('SECRET_CAP_RAISED', action, {
+        at,
+        playerId: action.playerId,
+        secretCap: nextCap,
+      })];
+    }
 
     default:
       return [];
@@ -601,6 +731,10 @@ export function formatGameEvent(event, players = []) {
       return event.playerId == null
         ? 'Токен Хранителей сброшен'
         : `${name(event.playerId)} взял Хранителей (+1 ПО)`;
+    case 'MECATOL_CONTROLLER_SET':
+      return event.playerId == null
+        ? 'Контроль Мекатол Рекс сброшен'
+        : `Контроль Мекатол Рекс → ${name(event.playerId)}`;
     case 'SUPPORT_SET':
       return event.holderPlayerId == null
         ? `Support ${name(event.fromPlayerId)} возвращён`
@@ -627,6 +761,24 @@ export function formatGameEvent(event, players = []) {
       return `Экспедиция: ничья — ${name(event.placedById ?? event.playerId)} выбирает контроль`;
     case 'EXPEDITION_COMPLETED':
       return `Грозовой рубеж: контроль у ${name(event.controllerId)}`;
+    case 'SECRET_DRAFT_STARTED':
+      return 'Раздача секретных целей';
+    case 'SECRET_DRAFT_KEPT':
+      return `${name(event.playerId)} выбрал секретную цель`;
+    case 'SECRET_DRAFT_COMPLETED':
+      return event.byDev
+        ? 'DEV: раздача секреток завершена'
+        : 'Раздача секретных целей завершена';
+    case 'SECRET_DRAWN':
+      return `${name(event.playerId)} взял секретную цель`;
+    case 'SECRET_SCORED':
+      return `${name(event.playerId)} засчитал «${secretLabel(event.cardId)}»`;
+    case 'SECRET_EXCHANGED':
+      return `${name(event.playerId)} обменял секретную цель`;
+    case 'SECRET_DISCARDED':
+      return `${name(event.playerId)} сбросил секретную цель (лимит)`;
+    case 'SECRET_CAP_RAISED':
+      return `Лимит секреток ${name(event.playerId)} → ${event.secretCap ?? 4}`;
     default:
       return event.type;
   }

@@ -9,6 +9,8 @@ const CTRL =
 function RoomLiveBadge({ room, seatSecret = null }) {
   const [expanded, setExpanded] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [copiedRoom, setCopiedRoom] = useState(false);
+  const [copiedHost, setCopiedHost] = useState(false);
   const rootRef = useRef(null);
 
   useEffect(() => {
@@ -29,17 +31,23 @@ function RoomLiveBadge({ room, seatSecret = null }) {
 
   const roleLabel = ROLE_LABELS[room.role] || room.role;
   const hasSeatSecret = !!seatSecret;
+  const hostKey = room?.hostKey || null;
+  const hasHostKey = !!hostKey && room?.role === 'admin';
 
-  const copySeatSecret = async () => {
-    if (!seatSecret) return;
+  const copyText = async (value, mark) => {
+    if (!value) return;
     try {
-      await navigator.clipboard.writeText(String(seatSecret));
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 1600);
+      await navigator.clipboard.writeText(String(value));
+      mark(true);
+      window.setTimeout(() => mark(false), 1600);
     } catch {
       /* clipboard may be blocked */
     }
   };
+
+  const copySeatSecret = () => copyText(seatSecret, setCopied);
+  const copyRoomCode = () => copyText(room?.roomId, setCopiedRoom);
+  const copyHostKey = () => copyText(hostKey, setCopiedHost);
 
   return (
     <div className="relative flex-shrink-0 game-header-room" ref={rootRef}>
@@ -66,9 +74,11 @@ function RoomLiveBadge({ room, seatSecret = null }) {
         aria-label={
           expanded
             ? `${roleLabel}, комната ${room.roomId}`
-            : hasSeatSecret
-              ? `Подключение: ${roleLabel}. Показать код комнаты и код места`
-              : `Подключение: ${roleLabel}. Показать код комнаты`
+            : hasHostKey
+              ? `Подключение: ${roleLabel}. Код комнаты и код хоста`
+              : hasSeatSecret
+                ? `Подключение: ${roleLabel}. Показать код комнаты и код места`
+                : `Подключение: ${roleLabel}. Показать код комнаты`
         }
         title="Подключение"
         onClick={() => setExpanded((v) => !v)}
@@ -78,7 +88,21 @@ function RoomLiveBadge({ room, seatSecret = null }) {
 
       {expanded && (
         <div role="status" className="game-header-room-pop">
-          <div className="game-header-room-code">{room.roomId}</div>
+          <div className="game-header-room-seat">
+            <div className="game-header-room-seat-label">Код комнаты</div>
+            <div className="game-header-room-seat-row">
+              <span className="game-header-room-code game-header-room-seat-code">{room.roomId}</span>
+              <button
+                type="button"
+                className="game-header-room-seat-copy"
+                onClick={copyRoomCode}
+                aria-label="Скопировать код комнаты"
+                title={copiedRoom ? 'Скопировано' : 'Скопировать код комнаты'}
+              >
+                <i className={`fa-solid ${copiedRoom ? 'fa-check' : 'fa-copy'}`} aria-hidden="true" />
+              </button>
+            </div>
+          </div>
           <div className="game-header-room-role">{roleLabel}</div>
           {hasSeatSecret && (
             <div className="game-header-room-seat">
@@ -95,6 +119,28 @@ function RoomLiveBadge({ room, seatSecret = null }) {
                   <i className={`fa-solid ${copied ? 'fa-check' : 'fa-copy'}`} aria-hidden="true" />
                 </button>
               </div>
+            </div>
+          )}
+          {hasHostKey && (
+            <div className="game-header-room-seat">
+              <div className="game-header-room-seat-label">Код хоста</div>
+              <div className="game-header-room-seat-row">
+                <span className="game-header-room-seat-code is-host-key" title={hostKey}>
+                  {String(hostKey).slice(0, 8)}…
+                </span>
+                <button
+                  type="button"
+                  className="game-header-room-seat-copy"
+                  onClick={copyHostKey}
+                  aria-label="Скопировать код хоста"
+                  title={copiedHost ? 'Скопировано' : 'Скопировать код хоста'}
+                >
+                  <i className={`fa-solid ${copiedHost ? 'fa-check' : 'fa-copy'}`} aria-hidden="true" />
+                </button>
+              </div>
+              <p className="game-header-room-host-hint">
+                Перенос на другое устройство: Настройки → «Я хост» + код комнаты и этот ключ.
+              </p>
             </div>
           )}
         </div>
@@ -122,6 +168,7 @@ export function GameHeader({
   onOpenStats,
   onOpenEventLog,
   onOpenExpedition,
+  onOpenScoredSecrets,
   onOpenTech,
   onOpenActiveLaws,
   activeLawsCount = 0,
@@ -148,7 +195,8 @@ export function GameHeader({
   const canPushSettings = !!canUsePush && typeof onOpenPushSettings === 'function';
   const canViewLaws = typeof onOpenActiveLaws === 'function';
 
-  const hasMoreItems = canPhases || canExport || canEndGame || canUndoLast || canPushSettings || canViewLaws;
+  const hasMoreItems = canPhases || canExport || canEndGame || canUndoLast || canPushSettings
+    || canViewLaws || typeof onOpenScoredSecrets === 'function';
   const leaveButton = typeof onLeaveRoom === 'function' && isViewer ? (
     <button
       type="button"
@@ -305,6 +353,7 @@ export function GameHeader({
                     onOpenEventLog={onOpenEventLog}
                     onOpenTech={onOpenTech}
                     onOpenExpedition={onOpenExpedition}
+                    onOpenScoredSecrets={onOpenScoredSecrets}
                     onOpenCombat={onOpenCombat}
                     onOpenStats={onOpenStats}
                     onOpenActiveLaws={onOpenActiveLaws}
@@ -418,6 +467,7 @@ export function GameHeader({
                   onOpenEventLog={onOpenEventLog}
                   onOpenTech={onOpenTech}
                   onOpenExpedition={onOpenExpedition}
+                  onOpenScoredSecrets={onOpenScoredSecrets}
                   onOpenCombat={onOpenCombat}
                   onOpenStats={onOpenStats}
                   onOpenActiveLaws={onOpenActiveLaws}
@@ -465,6 +515,7 @@ function HeaderMoreMenu({
   onOpenEventLog,
   onOpenTech,
   onOpenExpedition,
+  onOpenScoredSecrets,
   onOpenCombat,
   onOpenStats,
   onOpenActiveLaws,
@@ -650,6 +701,24 @@ function HeaderMoreMenu({
               <div className="hdr-more-copy">
                 <span className="hdr-more-title">Экспедиция</span>
                 <span className="hdr-more-desc">Thunder&apos;s Edge и прорывы</span>
+              </div>
+              <i className="fa-solid fa-chevron-right hdr-more-chev" aria-hidden="true" />
+            </button>
+          )}
+
+          {onOpenScoredSecrets && (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={runAndClose(onOpenScoredSecrets)}
+              className="hdr-more-item"
+            >
+              <span className="hdr-more-ico is-violet" aria-hidden="true">
+                <i className="fa-solid fa-user-secret" />
+              </span>
+              <div className="hdr-more-copy">
+                <span className="hdr-more-title">Достигнутые секретки</span>
+                <span className="hdr-more-desc">Какие секретные цели уже засчитаны</span>
               </div>
               <i className="fa-solid fa-chevron-right hdr-more-chev" aria-hidden="true" />
             </button>

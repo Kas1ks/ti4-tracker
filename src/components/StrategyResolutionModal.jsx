@@ -4,7 +4,12 @@ import { useEscapeKey } from '../hooks/useEscapeKey';
 import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
 import { useElapsedSeconds } from '../hooks/useTurnTimer';
 import { formatTime } from '../utils/game';
-import { isStrategyCardPlayed } from '../game/selectors';
+import {
+  canMarkStrategyPlayed,
+  isStrategyCardPlayed,
+  nextImperialPlaySeatId,
+  speakerClockwiseOrder,
+} from '../game/selectors';
 
 const CARD_GLOW = {
   1: '#ef4444',
@@ -21,6 +26,7 @@ function statusLabel(status) {
   if (status === 'played') return 'Сыграно';
   if (status === 'passed') return 'Пас';
   if (status === 'peeking') return 'Просмотр колоды';
+  if (status === 'discarding') return 'Сброс секретки';
   return 'Ожидание';
 }
 
@@ -129,6 +135,7 @@ export function StrategyResolutionModal({
   minimized,
   resolution,
   players = [],
+  game = null,
   canResolveAny = false,
   onResolve,
   onMinimize,
@@ -156,10 +163,15 @@ export function StrategyResolutionModal({
     return () => clearTimeout(t);
   }, [wantOpen, resolution?.cardId, resolution?.startedAt]);
 
-  const seats = (players || []).filter((p) => !p.eliminated && resolution?.responses?.[p.id] != null);
+  const isImperial = resolution?.cardId === 8;
+  const orderSeats = (game && isImperial)
+    ? speakerClockwiseOrder(game).filter((p) => resolution?.responses?.[p.id] != null)
+    : null;
+  const seats = orderSeats
+    || (players || []).filter((p) => !p.eliminated && resolution?.responses?.[p.id] != null);
   const anyPending = seats.some((p) => {
     const s = resolution?.responses?.[p.id];
-    return s === 'pending' || s === 'peeking';
+    return s === 'pending' || s === 'peeking' || s === 'discarding';
   });
   const liveSecs = useElapsedSeconds(
     resolution?.startedAt,
@@ -175,6 +187,7 @@ export function StrategyResolutionModal({
     return s === 'played' || s === 'passed';
   }).length;
   const glow = CARD_GLOW[card?.id] || '#c9a227';
+  const imperialTurnId = (game && isImperial) ? nextImperialPlaySeatId(game) : null;
 
   return (
     <div
@@ -203,6 +216,11 @@ export function StrategyResolutionModal({
               {' · '}
               {answered}/{seats.length}
             </p>
+            {isImperial && (
+              <p className="text-[11px] text-violet-300/90 mt-1 leading-snug">
+                Сыграно — по часовой от спикера. Пас — в любой момент.
+              </p>
+            )}
           </div>
           <div className="sr-shell-actions">
             <div className="sr-timer" title="Время розыгрыша">
@@ -250,24 +268,33 @@ export function StrategyResolutionModal({
                 const played = status === 'played';
                 const passed = status === 'passed';
                 const peeking = status === 'peeking';
+                const discarding = status === 'discarding';
                 const done = played || passed;
-                const canMark = canResolveAny && !done && !peeking;
+                const canPass = canResolveAny && !done && !peeking && !discarding;
+                const canPlay = canPass && (
+                  isImperial && game
+                    ? canMarkStrategyPlayed(game, p.id)
+                    : true
+                );
                 const isPrimary = p.id === resolution?.playerId;
+                const isImperialTurn = isImperial && String(imperialTurnId) === String(p.id);
                 const secs = resolutionSecsFor(resolution, p.id, liveSecs);
                 const faction = factionOf(p);
                 return (
                   <li
                     key={p.id}
                     className={`sr-seat-row ${
-                      isPrimary && !done
+                      isImperialTurn
                         ? 'is-primary'
-                        : played
-                          ? 'is-played'
-                          : passed
-                            ? 'is-passed'
-                            : peeking
-                              ? 'is-primary'
-                              : ''
+                        : isPrimary && !done
+                          ? 'is-primary'
+                          : played
+                            ? 'is-played'
+                            : passed
+                              ? 'is-passed'
+                              : peeking || discarding
+                                ? 'is-primary'
+                                : ''
                     }`}
                   >
                     <span className="sr-seat-idx">{idx + 1}</span>
@@ -287,6 +314,9 @@ export function StrategyResolutionModal({
                       <div className="sr-seat-name-row">
                         <span className="sr-seat-name truncate">{p.name}</span>
                         {isPrimary && <span className="sr-primary-tag">Primary</span>}
+                        {isImperialTurn && !isPrimary && (
+                          <span className="sr-primary-tag">Ход</span>
+                        )}
                       </div>
                     </div>
 
@@ -295,12 +325,14 @@ export function StrategyResolutionModal({
                       <div className={`sr-seat-state is-${status}`}>{statusLabel(status)}</div>
                     </div>
 
-                    {canMark ? (
+                    {canPass ? (
                       <div className="sr-seat-actions">
                         <button
                           type="button"
-                          onClick={() => onResolve?.(p.id, 'played')}
-                          className="sr-act is-play"
+                          disabled={!canPlay}
+                          onClick={() => canPlay && onResolve?.(p.id, 'played')}
+                          className={`sr-act is-play ${canPlay ? '' : 'opacity-40 cursor-not-allowed'}`}
+                          title={canPlay ? undefined : 'Сыграно по очереди от спикера'}
                         >
                           Сыграно
                         </button>

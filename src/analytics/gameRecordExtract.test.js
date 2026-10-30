@@ -99,6 +99,7 @@ describe('buildGameRecord wave C', () => {
         name: 'A',
         factionId: 'sol',
         secrets: 2,
+        secretScored: ['destroy_their_greatest_ship'],
         techIds: [],
         totalTime: 100,
       }],
@@ -115,6 +116,7 @@ describe('buildGameRecord wave C', () => {
     const record = buildGameRecord(state, state.players[0], () => 10);
     expect(record.strategyPlays.length).toBe(1);
     expect(record.players[0].secretsHeld).toBe(2);
+    expect(record.players[0].secretsScored).toEqual(['destroy_their_greatest_ship']);
     expect(record.politics?.finalSpeaker).toBe('A');
   });
 });

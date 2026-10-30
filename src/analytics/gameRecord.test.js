@@ -95,7 +95,7 @@ describe('buildGameRecord', () => {
     };
 
     const record = buildGameRecord(state, state.players[0], () => 5);
-    expect(record.schemaVersion).toBe(3);
+    expect(record.schemaVersion).toBe(GAME_RECORD_SCHEMA_VERSION);
     expect(record.playerCount).toBe(1);
     expect(record.players[0].techs).toEqual(['neural_motivator', 'sarween_tools']);
     expect(record.players[0].scoreBreakdown).toMatchObject({

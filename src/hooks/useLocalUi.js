@@ -14,6 +14,8 @@ export const BLOCKING_MODAL_IDS = [
   'expedition',
   'startingTechDraft',
   'startingTechPlayer',
+  'secretDraft',
+  'secretDraftHost',
 ];
 
 /** Ephemeral UI that never syncs to other devices. */

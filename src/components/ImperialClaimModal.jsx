@@ -2,8 +2,8 @@ import { useEscapeKey } from '../hooks/useEscapeKey';
 import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
 
 /**
- * Imperial (strategy 8) primary claim: Mecatol OR secret, plus one public.
- * Picks are draft-only until confirm.
+ * Imperial (strategy 8) primary claim: auto Mecatol VP or secret, plus optional public.
+ * Top block is system-chosen from Mecatol control; public picks are draft-only until confirm.
  */
 export function ImperialClaimModal({
   show,
@@ -15,8 +15,6 @@ export function ImperialClaimModal({
   seatPlayerId = null,
   canScoreAny = false,
   onSelectPublic,
-  onToggleMecatol,
-  onToggleSecret,
   onConfirm,
   onPass,
   onMinimize,
@@ -73,7 +71,7 @@ export function ImperialClaimModal({
                 {isMySeat ? 'Ваша способность' : (player?.name || '…')}
               </h2>
               <p className="text-xs text-slate-400 mt-1 leading-snug">
-                Мекатол (+1 ПО) или взять секретку (карта, без ПО), плюс 1 общая цель — засчитается только после подтверждения
+                Основное действие выбирается автоматически. Общую цель можно добавить — всё засчитается после подтверждения.
               </p>
             </div>
             {onMinimize && (
@@ -90,64 +88,43 @@ export function ImperialClaimModal({
         </header>
 
         <div className="flex-1 min-h-0 overflow-y-auto overscroll-y-contain px-4 md:px-6 py-4 space-y-4 modal-scroll">
-          <button
-            type="button"
-            disabled={!canAct}
-            onClick={() => canAct && onToggleMecatol?.(claim.playerId)}
-            className={`w-full flex items-center gap-3 px-4 py-3.5 rounded-2xl border text-left transition ${
-              claim.mecatol
-                ? 'bg-amber-500/15 border-amber-400 text-amber-200'
-                : 'bg-slate-900 border-slate-700 text-slate-300'
-            } ${canAct ? 'hover:border-amber-500/60' : 'opacity-70 cursor-default'}`}
-          >
-            <span className={`flex h-9 w-9 items-center justify-center rounded-xl border ${
-              claim.mecatol ? 'border-amber-400 bg-amber-500/20' : 'border-slate-700 bg-slate-950'
-            }`}
+          {claim.mecatol ? (
+            <div
+              className="w-full flex items-center gap-3 px-4 py-3.5 rounded-2xl border bg-amber-500/15 border-amber-400 text-amber-200"
+              role="status"
             >
-              <i className={`fa-solid ${claim.mecatol ? 'fa-check' : 'fa-globe'}`} aria-hidden="true" />
-            </span>
-            <span className="min-w-0 flex-1">
-              <span className="block font-orbitron font-bold text-sm uppercase tracking-wide">
-                Мекатол Rex
+              <span className="flex h-9 w-9 items-center justify-center rounded-xl border border-amber-400 bg-amber-500/20">
+                <i className="fa-solid fa-check" aria-hidden="true" />
               </span>
-              <span className="block text-xs text-slate-400 mt-0.5">
-                +1 ПО, если контролируете Мекатол
+              <span className="min-w-0 flex-1">
+                <span className="block font-orbitron font-bold text-sm uppercase tracking-wide">
+                  Мекатол Rex
+                </span>
+                <span className="block text-xs text-slate-400 mt-0.5">
+                  Вы контролируете Мекатол — +1 ПО
+                </span>
               </span>
-            </span>
-            {claim.mecatol && (
               <span className="font-orbitron font-black text-amber-300 text-sm">+1</span>
-            )}
-          </button>
-
-          <button
-            type="button"
-            disabled={!canAct || claim.mecatol}
-            onClick={() => canAct && !claim.mecatol && onToggleSecret?.(claim.playerId)}
-            title={claim.mecatol ? 'Снимите Мекатол, чтобы взять секретку' : undefined}
-            className={`w-full flex items-center gap-3 px-4 py-3.5 rounded-2xl border text-left transition ${
-              claim.secret
-                ? 'bg-violet-500/15 border-violet-400 text-violet-200'
-                : 'bg-slate-900 border-slate-700 text-slate-300'
-            } ${canAct && !claim.mecatol ? 'hover:border-violet-500/60' : 'opacity-70 cursor-default'}`}
-          >
-            <span className={`flex h-9 w-9 items-center justify-center rounded-xl border ${
-              claim.secret ? 'border-violet-400 bg-violet-500/20' : 'border-slate-700 bg-slate-950'
-            }`}
+            </div>
+          ) : (
+            <div
+              className="w-full flex items-center gap-3 px-4 py-3.5 rounded-2xl border bg-violet-500/15 border-violet-400 text-violet-200"
+              role="status"
             >
-              <i className={`fa-solid ${claim.secret ? 'fa-check' : 'fa-user-secret'}`} aria-hidden="true" />
-            </span>
-            <span className="min-w-0 flex-1">
-              <span className="block font-orbitron font-bold text-sm uppercase tracking-wide">
-                Взять секретку
+              <span className="flex h-9 w-9 items-center justify-center rounded-xl border border-violet-400 bg-violet-500/20">
+                <i className="fa-solid fa-user-secret" aria-hidden="true" />
               </span>
-              <span className="block text-xs text-slate-400 mt-0.5">
-                Взять карту секретной цели (не даёт ПО)
+              <span className="min-w-0 flex-1">
+                <span className="block font-orbitron font-bold text-sm uppercase tracking-wide">
+                  Взять секретку
+                </span>
+                <span className="block text-xs text-slate-400 mt-0.5">
+                  Нет контроля Мекатола — получите карту секретной цели
+                </span>
               </span>
-            </span>
-            {claim.secret && (
-              <span className="text-[10px] font-bold uppercase tracking-wide text-violet-300">Отметка</span>
-            )}
-          </button>
+              <span className="text-[10px] font-bold uppercase tracking-wide text-violet-300">Авто</span>
+            </div>
+          )}
 
           <section className="space-y-3 pt-2 border-t border-slate-800">
             <div>

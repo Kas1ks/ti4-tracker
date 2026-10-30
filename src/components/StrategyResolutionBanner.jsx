@@ -5,12 +5,14 @@ import { formatTime } from '../utils/game';
 /**
  * Sticky prompt for seated players during strategy-card resolution.
  * Disappears as soon as the seat picks Сыграно or Пас.
+ * Imperial (8): Сыграно only in speaker order; Пас anytime.
  */
 export function StrategyResolutionBanner({
   show,
   cardId,
   myStatus,
   startedAt = null,
+  canPlay = true,
   onResolve,
 }) {
   const pending = myStatus === 'pending' || myStatus == null;
@@ -18,6 +20,7 @@ export function StrategyResolutionBanner({
   if (!show || !pending) return null;
 
   const card = STRATEGY_CARDS.find(c => c.id === cardId) || null;
+  const imperialOrdered = cardId === 8 && !canPlay;
 
   return (
     <div className="fixed inset-x-0 top-0 z-[57] p-3 md:p-4 pointer-events-none">
@@ -46,11 +49,21 @@ export function StrategyResolutionBanner({
                 </div>
               )}
             </div>
+            {imperialOrdered && (
+              <p className="text-[11px] text-amber-200/80 leading-snug">
+                Сыграно — по очереди от спикера. Пас можно сейчас.
+              </p>
+            )}
             <div className="grid grid-cols-2 gap-2">
               <button
                 type="button"
-                onClick={() => onResolve?.('played')}
-                className="min-h-[44px] rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black font-extrabold text-sm border border-emerald-300 shadow"
+                disabled={!canPlay}
+                onClick={() => canPlay && onResolve?.('played')}
+                className={`min-h-[44px] rounded-xl font-extrabold text-sm border shadow ${
+                  canPlay
+                    ? 'bg-emerald-500 hover:bg-emerald-400 text-black border-emerald-300'
+                    : 'bg-slate-800 text-slate-500 border-slate-700 cursor-not-allowed'
+                }`}
               >
                 Сыграно
               </button>

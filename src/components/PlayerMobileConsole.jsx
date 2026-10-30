@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { ALL_FACTIONS, STRATEGY_CARDS } from '../data/gameData';
 import { agendaEffectText } from '../data/agendas';
+import { secretObjectiveById, secretObjectivePhaseLabel } from '../data/secretObjectives';
+import { secretCapOf } from '../game/secretDeck';
 import { formatTime } from '../utils/game';
 import { lawsOwnedByPlayer } from '../game/agendaDeck';
 import { areAllStrategiesPlayed, isStrategyCardPlayed } from '../game/selectors';
@@ -8,6 +10,8 @@ import { FactionGuideSheet } from './FactionGuideSheet';
 import { PhaseHubChips } from './PhaseHubChips';
 import { PlayerCombatSheet } from './PlayerCombatSheet';
 import { PlayerTechSheet, TechPips } from './TechSheet';
+import { SecretExchangeModal } from './SecretExchangeModal';
+import { ScoredSecretsBoard } from './ScoredSecretsBoard';
 import objStage1Bg from '../assets/objectives/stage1-bg.jpg';
 import objStage2Bg from '../assets/objectives/stage2-bg.jpg';
 import tableRowBg from '../assets/table-row-bg.jpg';
@@ -87,19 +91,29 @@ export function PlayerMobileConsole({
   useTe = false,
   activeLaws = [],
   phaseHub = [],
+  mecatolControllerId = null,
+  secretExchangeUsed = false,
+  onExchangeSecret,
+  isPoliticsActive = false,
+  onScoreSecret,
+  uiConfirm,
 }) {
   const [tab, setTab] = useState('turn');
-  const [objView, setObjView] = useState('personal');
+  const [objType, setObjType] = useState('public'); // public | secret
+  const [objSubtype, setObjSubtype] = useState('mine'); // mine | all
   const [tableSortMode, setTableSortMode] = useState('initiative');
   const [techSheetPlayerId, setTechSheetPlayerId] = useState(null);
   const scoringActive = !!scoring?.active;
   const myResponse = me ? scoring?.responses?.[me.id] : null;
   const isMyTurn = !!(me && activePlayer && activePlayer.id === me.id && !passed[me.id]);
 
-  const openObjectives = (view = 'personal') => {
-    setObjView(view);
+  const openObjectives = (type = 'public', subtype = 'mine') => {
+    setObjType(type);
+    setObjSubtype(subtype);
     setTab('objectives');
   };
+
+  const openSecrets = () => openObjectives('secret', 'mine');
 
   useEffect(() => {
     if (scoringActive) return;
@@ -162,6 +176,10 @@ export function PlayerMobileConsole({
             onCombatDismissResult={onCombatDismissResult}
             onOpenProduction={onOpenProduction}
             activeLaws={activeLaws}
+            onOpenSecrets={openSecrets}
+            mecatolControllerId={mecatolControllerId}
+            secretExchangeUsed={secretExchangeUsed}
+            onExchangeSecret={onExchangeSecret}
           />
         </div>
 
@@ -178,10 +196,16 @@ export function PlayerMobileConsole({
             objectives={objectives}
             completions={completions}
             players={players}
-            objView={objView}
-            onObjViewChange={setObjView}
+            objType={objType}
+            objSubtype={objSubtype}
+            onObjTypeChange={setObjType}
+            onObjSubtypeChange={setObjSubtype}
             scoringActive={scoringActive}
             myResponse={myResponse}
+            roundActive={roundActive}
+            isPoliticsActive={isPoliticsActive}
+            onScoreSecret={onScoreSecret}
+            uiConfirm={uiConfirm}
           />
         </div>
 
@@ -232,7 +256,7 @@ export function PlayerMobileConsole({
                 key={t.id}
                 type="button"
                 onClick={() => {
-                  if (t.id === 'objectives') openObjectives('personal');
+                  if (t.id === 'objectives') openObjectives('public', 'mine');
                   else setTab(t.id);
                 }}
                 className={`game-mobile-tab flex flex-col items-center justify-center gap-0.5 !py-2 ${
@@ -339,15 +363,29 @@ function TurnTab({
   onCombatDismissResult,
   onOpenProduction,
   activeLaws = [],
+  onOpenSecrets,
+  mecatolControllerId = null,
+  secretExchangeUsed = false,
+  onExchangeSecret,
 }) {
   const [guideFactionId, setGuideFactionId] = useState(null);
   const [guidePlayerName, setGuidePlayerName] = useState(null);
+  const [exchangeOpen, setExchangeOpen] = useState(false);
 
   const activeFaction = activePlayer
     ? ALL_FACTIONS.find(f => f.id === activePlayer.factionId)
     : null;
 
   const activeAccent = activePlayer?.color || '#f87171';
+  const mySecretHand = Array.isArray(me?.secretHand) ? me.secretHand : [];
+  const isMecatolController = !!(me && mecatolControllerId === me.id);
+  const canExchangeSecret = !!(
+    isMecatolController
+    && mySecretHand.length > 0
+    && !secretExchangeUsed
+    && typeof onExchangeSecret === 'function'
+  );
+  const showExchangeAction = !!(isMecatolController && typeof onExchangeSecret === 'function');
   const myLaws = lawsOwnedByPlayer(activeLaws, me?.id);
   // Always the seated player's cards (not the active seat's) — status stays visible off-turn.
   const myStrategyCards = [...(me?.cards?.length ? me.cards : strategyCards)]
@@ -468,11 +506,19 @@ function TurnTab({
             <span className="pt-stat-chip-k">ПО</span>
             <span className="pt-stat-chip-v">{myScore}<small> / {targetScore}</small></span>
           </div>
-          <div className="pt-stat-chip is-violet">
+          <button
+            type="button"
+            className="pt-stat-chip is-red is-link"
+            onClick={() => onOpenSecrets?.()}
+            title="Открыть секретные цели"
+          >
             <i className="fa-solid fa-user-secret pt-stat-chip-ico" aria-hidden="true" />
             <span className="pt-stat-chip-k">Секреты</span>
-            <span className="pt-stat-chip-v">{me.secrets ?? 0}</span>
-          </div>
+            <span className="pt-stat-chip-v">
+              {me.secrets ?? 0}
+              {mySecretHand.length > 0 ? `+${mySecretHand.length}` : ''}
+            </span>
+          </button>
         </div>
       )}
 
@@ -647,6 +693,28 @@ function TurnTab({
             )}
           </div>
 
+          {showExchangeAction && (
+            <button
+              type="button"
+              onClick={() => {
+                if (!canExchangeSecret) return;
+                setExchangeOpen(true);
+              }}
+              disabled={!canExchangeSecret}
+              title={
+                secretExchangeUsed
+                  ? 'Обмен уже использован в этом раунде'
+                  : mySecretHand.length === 0
+                    ? 'Нет секретных целей в руке'
+                    : 'Обменять секретную цель (1 раз за раунд)'
+              }
+              className={`pt-action is-wide is-secret-xchg${!canExchangeSecret ? ' is-off' : ''}`}
+            >
+              <i className="fa-solid fa-right-left" aria-hidden="true" />
+              {secretExchangeUsed ? 'Обмен использован' : 'Обмен секретки'}
+            </button>
+          )}
+
           <button
             type="button"
             onClick={canNextTurn ? onNextTurn : undefined}
@@ -665,6 +733,14 @@ function TurnTab({
           </button>
         </>
       )}
+
+      <SecretExchangeModal
+        show={exchangeOpen && !!me}
+        player={me}
+        hand={mySecretHand}
+        onExchange={(playerId, cardId) => onExchangeSecret?.(playerId, cardId)}
+        onClose={() => setExchangeOpen(false)}
+      />
 
       {!isMyTurn && (
         <PlayerCombatSheet
@@ -711,9 +787,14 @@ function TurnTab({
   );
 }
 
-const OBJ_VIEWS = [
-  { id: 'personal', label: 'Личная', icon: 'fa-user' },
-  { id: 'general', label: 'Общая', icon: 'fa-users' },
+const OBJ_TYPES = [
+  { id: 'public', label: 'Общие', icon: 'fa-bullseye' },
+  { id: 'secret', label: 'Секретные', icon: 'fa-user-secret' },
+];
+
+const OBJ_SUBTYPES = [
+  { id: 'mine', label: 'Мои', icon: 'fa-user' },
+  { id: 'all', label: 'Все', icon: 'fa-users' },
 ];
 
 function ObjectivesTab({
@@ -721,12 +802,24 @@ function ObjectivesTab({
   objectives,
   completions,
   players,
-  objView = 'personal',
-  onObjViewChange,
+  objType = 'public',
+  objSubtype = 'mine',
+  onObjTypeChange,
+  onObjSubtypeChange,
   scoringActive,
   myResponse,
+  roundActive = false,
+  isPoliticsActive = false,
+  onScoreSecret,
+  uiConfirm,
 }) {
   const [expanded, setExpanded] = useState({});
+  const [pickSecret, setPickSecret] = useState(false);
+  const [scoringBusy, setScoringBusy] = useState(false);
+
+  useEffect(() => {
+    setPickSecret(false);
+  }, [objType, objSubtype, roundActive, isPoliticsActive, scoringActive, me?.id]);
 
   if (!me) {
     return <div className="text-sm text-slate-500 text-center py-8">Место не назначено</div>;
@@ -737,37 +830,215 @@ function ObjectivesTab({
     { stage: 1, title: 'Этап I · 1 ПО', color: 'text-blue-400' },
     { stage: 2, title: 'Этап II · 2 ПО', color: 'text-rose-400' },
   ];
-  const isPersonal = objView !== 'general';
+  const isSecretType = objType === 'secret';
+  const isMine = objSubtype === 'mine';
+  const isSecretsHand = isSecretType && isMine;
+  const isScoredSecrets = isSecretType && !isMine;
+  const isPersonal = !isSecretType && isMine;
+  const mySecretHand = Array.isArray(me?.secretHand) ? me.secretHand : [];
+  const atSecretCap = (me.secrets || 0) >= secretCapOf(me);
+  const inActionPhase = !!roundActive && !isPoliticsActive && !scoringActive;
+  const inPoliticsPhase = !!isPoliticsActive && !scoringActive;
+  const scorableSecrets = mySecretHand.filter((cardId) => {
+    const card = secretObjectiveById.get(cardId);
+    if (!card) return false;
+    if (inActionPhase && card.phase === 'action') return true;
+    if (inPoliticsPhase && card.phase === 'agenda') return true;
+    return false;
+  });
+  const canScoreSecretNow = !atSecretCap
+    && scorableSecrets.length > 0
+    && typeof onScoreSecret === 'function'
+    && !scoringBusy;
 
   const toggleExpand = (id) => {
     setExpanded(prev => ({ ...prev, [id]: !prev[id] }));
   };
 
+  const scoreCard = async (cardId) => {
+    if (scoringBusy || atSecretCap || typeof onScoreSecret !== 'function') return;
+    if (!scorableSecrets.includes(cardId)) return;
+    const card = secretObjectiveById.get(cardId);
+    const title = card?.title || 'секретную цель';
+    setScoringBusy(true);
+    try {
+      // 2+ scorable: pick first (pickSecret), then confirm here.
+      if (typeof uiConfirm === 'function') {
+        const ok = await uiConfirm(
+          `Засчитать «${title}»? Вы получите +1 ПО.`,
+          {
+            title: 'Достичь секретку',
+            confirmLabel: 'Достичь',
+            cancelLabel: 'Отмена',
+            variant: 'success',
+          },
+        );
+        if (!ok) return;
+      }
+      onScoreSecret?.(me.id, cardId);
+      setPickSecret(false);
+    } finally {
+      setScoringBusy(false);
+    }
+  };
+
+  const hint = isSecretsHand
+    ? 'Ваши секретные цели в руке. Сыгранные — во вкладке «Все».'
+    : isScoredSecrets
+      ? 'Достигнутые секретные цели всех игроков.'
+      : isPersonal
+        ? 'Ваши отметки по открытым целям. Чужие достижения — во вкладке «Все».'
+        : 'Справочник открытых целей и кто их уже засчитал.';
+
   return (
     <div className="space-y-4 pt-1 pb-2">
-      <div className="obj-subtabs" role="tablist" aria-label="Разделы целей">
-        {OBJ_VIEWS.map((v) => (
-          <button
-            key={v.id}
-            type="button"
-            role="tab"
-            aria-selected={objView === v.id}
-            onClick={() => onObjViewChange?.(v.id)}
-            className={`obj-subtab ${objView === v.id ? 'is-active' : ''}`}
-          >
-            <i className={`fa-solid ${v.icon}`} aria-hidden="true" />
-            <span>{v.label}</span>
-          </button>
-        ))}
+      <div className="obj-tabs-stack" aria-label="Разделы целей">
+        <div className="obj-subtabs" role="tablist" aria-label="Тип целей">
+          {OBJ_TYPES.map((v) => (
+            <button
+              key={v.id}
+              type="button"
+              role="tab"
+              aria-selected={objType === v.id}
+              onClick={() => onObjTypeChange?.(v.id)}
+              className={`obj-subtab ${objType === v.id ? 'is-active' : ''}`}
+            >
+              <i className={`fa-solid ${v.icon}`} aria-hidden="true" />
+              <span>{v.label}</span>
+            </button>
+          ))}
+        </div>
+        <div className="obj-subtabs" role="tablist" aria-label="Подтип целей">
+          {OBJ_SUBTYPES.map((v) => (
+            <button
+              key={v.id}
+              type="button"
+              role="tab"
+              aria-selected={objSubtype === v.id}
+              onClick={() => onObjSubtypeChange?.(v.id)}
+              className={`obj-subtab ${objSubtype === v.id ? 'is-active' : ''}`}
+            >
+              <i className={`fa-solid ${v.icon}`} aria-hidden="true" />
+              <span>{v.label}</span>
+            </button>
+          ))}
+        </div>
       </div>
 
-      <p className="text-xs text-slate-500 px-0.5">
-        {isPersonal
-          ? 'Ваши отметки по открытым целям. Чужие достижения — во вкладке «Общая».'
-          : 'Справочник открытых целей и кто их уже засчитал.'}
-      </p>
+      <p className="text-xs text-slate-500 px-0.5">{hint}</p>
 
-      {isPersonal ? (
+      {isScoredSecrets ? (
+        <ScoredSecretsBoard players={players} />
+      ) : isSecretsHand ? (
+        <div className="pt-secrets space-y-3" aria-label="Мои секретные цели">
+          <div className="flex items-center justify-between gap-2 px-0.5">
+            <span className="pt-kicker is-red">
+              <i className="fa-solid fa-user-secret" aria-hidden="true" />
+              В руке
+            </span>
+            <span className="text-xs font-bold text-slate-400">
+              Сыграно {me.secrets ?? 0}
+              {mySecretHand.length > 0 ? ` · +${mySecretHand.length}` : ''}
+            </span>
+          </div>
+
+          <button
+            type="button"
+            disabled={!canScoreSecretNow && !pickSecret}
+            onClick={() => {
+              if (scoringBusy) return;
+              // Cancel pick mode
+              if (pickSecret) {
+                setPickSecret(false);
+                return;
+              }
+              if (!canScoreSecretNow) return;
+              // 2+ → сначала выбор карты, подтверждение после тапа по карте
+              if (scorableSecrets.length >= 2) {
+                setPickSecret(true);
+                return;
+              }
+              // Ровно одна подходящая — сразу окно подтверждения
+              scoreCard(scorableSecrets[0]);
+            }}
+            className={`w-full py-3 rounded-2xl font-orbitron font-black text-sm uppercase tracking-wide border transition ${
+              pickSecret
+                ? 'bg-slate-800 text-slate-200 border-slate-600'
+                : canScoreSecretNow
+                  ? 'bg-emerald-500 text-black border-emerald-400'
+                  : 'bg-slate-900 text-slate-500 border-slate-800 cursor-not-allowed'
+            }`}
+            title={
+              atSecretCap
+                ? 'Лимит сыгранных секреток'
+                : !inActionPhase && !inPoliticsPhase
+                  ? 'Доступно в фазе действий или политики'
+                  : scorableSecrets.length === 0
+                    ? 'Нет секреток текущей фазы'
+                    : pickSecret
+                      ? 'Отменить выбор'
+                      : scorableSecrets.length >= 2
+                        ? 'Сначала выберите карту'
+                        : 'Засчитать секретную цель'
+            }
+          >
+            {pickSecret ? 'Отмена' : 'Достичь секретку'}
+          </button>
+          {pickSecret && (
+            <p className="text-[11px] text-emerald-400/90 px-0.5">
+              Выберите секретку фазы {inPoliticsPhase ? 'политики' : 'действий'} — затем подтвердите
+            </p>
+          )}
+
+          {mySecretHand.length === 0 ? (
+            <p className="text-sm text-slate-500 text-center py-8">
+              Пока нет секретных целей в руке
+            </p>
+          ) : (
+            <ul className="space-y-2">
+              {mySecretHand.map((cardId) => {
+                const card = secretObjectiveById.get(cardId);
+                const phaseClass = card?.phase === 'action'
+                  ? 'text-red-300'
+                  : card?.phase === 'agenda'
+                    ? 'text-sky-300'
+                    : 'text-white';
+                const canPick = pickSecret && scorableSecrets.includes(cardId);
+                return (
+                  <li key={cardId}>
+                    <button
+                      type="button"
+                      disabled={!canPick}
+                      onClick={() => canPick && scoreCard(cardId)}
+                      className={`w-full text-left rounded-xl border px-3 py-2.5 space-y-1 transition ${
+                        canPick
+                          ? 'border-emerald-400 bg-emerald-950/40 ring-1 ring-emerald-500/40'
+                          : 'border-red-700/50 bg-red-950/25'
+                      } ${canPick ? '' : 'cursor-default'}`}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-bold text-sm text-white">{card?.title || cardId}</span>
+                        <span className={`text-[10px] font-bold uppercase ${phaseClass}`}>
+                          {secretObjectivePhaseLabel(card?.phase)}
+                        </span>
+                      </div>
+                      {card?.desc && <p className="text-xs text-slate-400 leading-snug">{card.desc}</p>}
+                      {canPick && (
+                        <p className="text-[11px] font-semibold uppercase tracking-wide text-emerald-300 pt-0.5">
+                          Нажмите, чтобы засчитать
+                        </p>
+                      )}
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+          <p className="text-[11px] text-slate-500 px-0.5">
+            Обмен секретной — действие на вкладке «Ход» (контроль Мекатола, 1 раз за раунд).
+          </p>
+        </div>
+      ) : isPersonal ? (
         <>
           {stages.map(({ stage, title, color }) => {
             const list = objectives.filter((o) => Number(o.stage) === stage);
@@ -946,7 +1217,7 @@ function ObjectivesTab({
         </>
       )}
 
-      {!objectives.length && (
+      {!isSecretType && !objectives.length && (
         <div className="text-sm text-slate-500 text-center py-8 border border-dashed border-slate-800 rounded-2xl">
           Цели ещё не раскрыты
         </div>

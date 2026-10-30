@@ -22,6 +22,7 @@ export function ObjectivesPanel({
   onObjectiveClick,
   spotlightObjectiveId = null,
   spotlightReady = false,
+  canRevealPublic = true,
 }) {
   const spotlightRef = useRef(null);
 
@@ -170,11 +171,17 @@ export function ObjectivesPanel({
 
         {canAdminBoard && (
           <div className="mt-auto pt-4 space-y-2">
+            {!canRevealPublic && (
+              <p className="text-[11px] text-amber-300/90 text-center leading-snug px-2">
+                Сначала запустите раздачу секретных целей
+              </p>
+            )}
             {officialCount < 5 && (
               <button
                 type="button"
+                disabled={!canRevealPublic}
                 onClick={() => addRandomObjective(stage)}
-                className="game-obj-add w-full py-3 border border-dashed rounded-2xl text-xs font-bold transition flex items-center justify-center gap-2"
+                className="game-obj-add w-full py-3 border border-dashed rounded-2xl text-xs font-bold transition flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 <span className="text-base">+</span>
                 <span>
@@ -184,8 +191,9 @@ export function ObjectivesPanel({
             )}
             <button
               type="button"
+              disabled={!canRevealPublic}
               onClick={() => addCustomObjective(stage)}
-              className="game-obj-manual w-full py-2 bg-transparent text-xs font-semibold transition"
+              className="game-obj-manual w-full py-2 bg-transparent text-xs font-semibold transition disabled:opacity-40 disabled:cursor-not-allowed"
             >
               + Ввести цель вручную
             </button>

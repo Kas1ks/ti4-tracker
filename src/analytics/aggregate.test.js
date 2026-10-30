@@ -5,6 +5,7 @@ import {
   buildObjectiveStats,
   buildPlayerStats,
   buildPoliticsStats,
+  buildSecretStats,
   buildStrategyStats,
 } from './aggregate';
 import { playerKey, resolveFactionId } from './keys';
@@ -117,6 +118,41 @@ describe('buildFactionStats', () => {
     expect(naalu.avgVp).toBe(9);
     expect(sol.picks).toBe(2);
     expect(sol.wins).toBe(1);
+  });
+});
+
+describe('buildSecretStats', () => {
+  it('ranks secrets by share of v4 games where they were scored', () => {
+    const secrets = buildSecretStats([
+      {
+        id: 1,
+        players: [
+          { name: 'A', secretsScored: ['destroy_their_greatest_ship', 'make_an_example_of_their_world'] },
+          { name: 'B', secretsScored: ['destroy_their_greatest_ship'] },
+        ],
+      },
+      {
+        id: 2,
+        players: [
+          { name: 'A', secretsScored: ['destroy_their_greatest_ship'] },
+          { name: 'B', secretsScored: [] },
+        ],
+      },
+      {
+        id: 3,
+        players: [
+          { name: 'A', secretsHeld: 1 },
+          { name: 'B' },
+        ],
+      },
+    ]);
+    expect(secrets.gamesWithSecrets).toBe(2);
+    expect(secrets.mostScored[0].id).toBe('destroy_their_greatest_ship');
+    expect(secrets.mostScored[0].scoredGames).toBe(2);
+    expect(secrets.mostScored[0].gameRatePct).toBe(100);
+    expect(secrets.mostScored[0].scoreEvents).toBe(3);
+    expect(secrets.rarelyScored.some((s) => s.id === 'make_an_example_of_their_world')).toBe(true);
+    expect(buildAnalytics(history).secrets.gamesWithSecrets).toBe(0);
   });
 });
 

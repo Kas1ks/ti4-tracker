@@ -1,6 +1,43 @@
 import { agendaById, agendaDeckForExp } from '../data/agendas';
+import { secretObjectiveById } from '../data/secretObjectives';
 import { shuffleArray } from '../utils/game';
 import { activePlayers, effectiveVoteAmount } from './selectors';
+
+/** True when any seat has at least one scored secret. */
+export function hasAnyScoredSecrets(state) {
+  return (state?.players || []).some(
+    (p) => Array.isArray(p?.secretScored) && p.secretScored.length > 0,
+  );
+}
+
+/** Elect labels for Classified Document Leaks (unique titles, fallback to id). */
+export function scoredSecretElectChoices(state) {
+  const labels = [];
+  const seen = new Set();
+  for (const p of state?.players || []) {
+    for (const id of p?.secretScored || []) {
+      if (typeof id !== 'string' || !id || seen.has(id)) continue;
+      seen.add(id);
+      const card = secretObjectiveById.get(id);
+      labels.push(card?.title || id);
+    }
+  }
+  return labels;
+}
+
+/** Resolve an elect choice label back to a scored secret card id. */
+export function scoredSecretIdFromElectChoice(state, choice) {
+  const raw = String(choice || '').trim();
+  if (!raw) return null;
+  for (const p of state?.players || []) {
+    for (const id of p?.secretScored || []) {
+      if (id === raw) return id;
+      const card = secretObjectiveById.get(id);
+      if (card?.title === raw || card?.titleEn === raw) return id;
+    }
+  }
+  return null;
+}
 
 /** Shuffled deck of agenda card ids for the current expansion setup. */
 export function buildShuffledAgendaDeck(usePok = false) {
@@ -179,7 +216,7 @@ function defaultOtherChoicesForElect(elect) {
     ];
   }
   if (e.includes('planet')) return ['Планета 1', 'Планета 2'];
-  if (e === 'scored_secret_objective') return ['Секрет 1', 'Секрет 2'];
+  if (e === 'scored_secret_objective') return [];
   if (e === 'law') return ['Закон 1', 'Закон 2'];
   return ['Вариант A', 'Вариант B'];
 }
@@ -242,7 +279,12 @@ export function covertOutcomeLabel(voteType) {
  * Covert Legislation also pulls the next card face-down for the speaker.
  * @returns {{ agenda: object, agendaDeck: string[], agendaDiscard: string[] }}
  */
-export function drawIntoAgenda(agenda, agendaDeck = [], agendaDiscard = [], { allowCovert = true } = {}) {
+export function drawIntoAgenda(agenda, agendaDeck = [], agendaDiscard = [], {
+  allowCovert = true,
+  state = null,
+  /** Internal: prevent infinite CDL skip when discard reshuffles into itself. */
+  _cdlSkips = 0,
+} = {}) {
   let deck = Array.isArray(agendaDeck) ? [...agendaDeck] : [];
   let discard = Array.isArray(agendaDiscard) ? [...agendaDiscard] : [];
   if (deck.length === 0 && discard.length > 0) {
@@ -255,10 +297,37 @@ export function drawIntoAgenda(agenda, agendaDeck = [], agendaDiscard = [], { al
   const cardId = deck[0];
   const rest = deck.slice(1);
   const card = agendaById.get(cardId);
+
+  // Classified Document Leaks: if no scored secrets when revealed, discard and draw next.
+  if (state && card?.id === 'classified_document_leaks' && !hasAnyScoredSecrets(state)) {
+    const maxSkips = Math.max(8, deck.length + discard.length + rest.length + 2);
+    if (_cdlSkips >= maxSkips) {
+      // Entire reshuffled pool is unplayable CDL — leave slot empty.
+      return {
+        agenda: agenda || emptyAgenda(),
+        agendaDeck: rest,
+        agendaDiscard: [...discard, cardId],
+      };
+    }
+    return drawIntoAgenda(agenda, rest, [...discard, cardId], {
+      allowCovert,
+      state,
+      _cdlSkips: _cdlSkips + 1,
+    });
+  }
+
   let filled = fillAgendaFromCard(agenda || emptyAgenda(), card);
 
+  if (filled.elect === 'scored_secret_objective' && state) {
+    const choices = scoredSecretElectChoices(state);
+    filled = {
+      ...filled,
+      customChoices: choices.length ? choices : [''],
+    };
+  }
+
   if (allowCovert && card?.id === 'covert_legislation') {
-    const nested = drawIntoAgenda(emptyAgenda(), rest, discard, { allowCovert: false });
+    const nested = drawIntoAgenda(emptyAgenda(), rest, discard, { allowCovert: false, state });
     if (nested.agenda?.cardId) {
       filled = applyCovertHidden(filled, nested.agenda);
       return {

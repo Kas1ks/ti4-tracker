@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { ALL_FACTIONS } from '../data/gameData';
 import { EXPEDITION_SLICES, EXPEDITION_PLANET_SRC } from '../data/expedition';
+import { secretObjectiveById, secretObjectivePhaseLabel } from '../data/secretObjectives';
 import { useEscapeKey } from '../hooks/useEscapeKey';
 import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
 import { ExpeditionToken } from './ExpeditionToken';
@@ -43,14 +45,25 @@ export function ExpeditionModal({
 }) {
   const isMobile = useIsMobileDock();
   const [hostEditOpen, setHostEditOpen] = useState(false);
+  const [secretDiscard, setSecretDiscard] = useState(null); // { playerId }
+  const [secretPickId, setSecretPickId] = useState(null);
   useBodyScrollLock(show && !minimized && isMobile);
   useEscapeKey(() => {
+    if (secretDiscard) {
+      setSecretDiscard(null);
+      setSecretPickId(null);
+      return;
+    }
     if (isMobile) onClose?.();
     else onMinimize?.();
   }, show && !minimized);
 
   useEffect(() => {
-    if (!show || minimized) setHostEditOpen(false);
+    if (!show || minimized) {
+      setHostEditOpen(false);
+      setSecretDiscard(null);
+      setSecretPickId(null);
+    }
   }, [show, minimized]);
 
   if (!show) return null;
@@ -62,6 +75,21 @@ export function ExpeditionModal({
   const showPlanet = !!expedition?.completed;
   const showHostEdit = canEdit && typeof onSetSlice === 'function';
   const livePlayers = players.filter(p => !p.eliminated);
+
+  const handleClaimSlice = (playerId, sliceId) => {
+    if (sliceId === 'secret') {
+      const p = playerById(playerId);
+      const hand = Array.isArray(p?.secretHand) ? p.secretHand : [];
+      if (!hand.length) return;
+      setSecretPickId(hand.length === 1 ? hand[0] : null);
+      setSecretDiscard({ playerId });
+      return;
+    }
+    onClaimSlice?.(playerId, sliceId);
+  };
+
+  const discardPlayer = secretDiscard ? playerById(secretDiscard.playerId) : null;
+  const discardHand = Array.isArray(discardPlayer?.secretHand) ? discardPlayer.secretHand : [];
 
   if (minimized) {
     return (
@@ -166,7 +194,7 @@ export function ExpeditionModal({
                 players={players}
                 canClaim={canClaim}
                 activePlayer={activePlayer}
-                onClaimSlice={onClaimSlice}
+                onClaimSlice={handleClaimSlice}
                 size={isMobile ? 'lg' : 'md'}
                 interactive
                 className="game-exp-token"
@@ -337,6 +365,95 @@ export function ExpeditionModal({
           </div>
         </div>
       </div>
+
+      {secretDiscard && discardPlayer && typeof document !== 'undefined' && createPortal(
+        <div
+          className="fixed inset-0 z-[95] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4"
+          role="presentation"
+          onClick={() => {
+            setSecretDiscard(null);
+            setSecretPickId(null);
+          }}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="exp-secret-discard-title"
+            className="game-modal-panel w-full max-w-sm p-4 space-y-3 pointer-events-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 id="exp-secret-discard-title" className="game-modal-title text-sm uppercase">
+              Сброс секретной
+            </h3>
+            <p className="text-xs text-slate-400">
+              Чтобы занять слот экспедиции, сбросьте одну незасчитанную секретную цель из руки под низ колоды.
+            </p>
+            {discardHand.length === 0 ? (
+              <p className="text-sm text-red-300">Нет секретных целей в руке</p>
+            ) : (
+              <ul className="space-y-2 max-h-[45vh] overflow-y-auto">
+                {discardHand.map((cardId) => {
+                  const card = secretObjectiveById.get(cardId);
+                  const selected = String(secretPickId) === String(cardId);
+                  return (
+                    <li key={cardId}>
+                      <button
+                        type="button"
+                        className={`w-full text-left rounded-xl border px-3 py-2.5 space-y-1 transition-colors ${
+                          selected
+                            ? 'border-amber-400/80 bg-amber-950/35'
+                            : 'border-slate-600/70 bg-black/30'
+                        }`}
+                        onClick={() => setSecretPickId(cardId)}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-bold text-sm text-white">{card?.title || cardId}</span>
+                          <span className="text-[10px] font-bold uppercase text-amber-200/90">
+                            {secretObjectivePhaseLabel(card?.phase)}
+                          </span>
+                        </div>
+                        {card?.desc && (
+                          <p className="text-xs text-slate-400 leading-snug">{card.desc}</p>
+                        )}
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+            <div className="flex gap-2">
+              <button
+                type="button"
+                className="game-btn-primary flex-1"
+                disabled={!secretPickId}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  if (!secretPickId || !secretDiscard) return;
+                  const pid = secretDiscard.playerId;
+                  const cid = secretPickId;
+                  setSecretDiscard(null);
+                  setSecretPickId(null);
+                  onClaimSlice?.(pid, 'secret', cid);
+                }}
+              >
+                Сбросить и занять
+              </button>
+              <button
+                type="button"
+                className="flex-1 rounded-xl border border-slate-600 py-2 text-sm"
+                onClick={() => {
+                  setSecretDiscard(null);
+                  setSecretPickId(null);
+                }}
+              >
+                Отмена
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body,
+      )}
     </div>
   );
 }

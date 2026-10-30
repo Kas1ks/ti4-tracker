@@ -9,6 +9,16 @@ async function readError(res) {
   }
 }
 
+export async function claimHostSession(roomId, { hostKey }) {
+  const res = await fetch(`/api/rooms/${encodeURIComponent(roomId)}/claim-host`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ hostKey }),
+  });
+  if (!res.ok) throw new Error(await readError(res));
+  return res.json();
+}
+
 export async function createRoom(state, { createSecret, milty } = {}) {
   const res = await fetch('/api/rooms', {
     method: 'POST',
@@ -91,8 +101,11 @@ export async function verifyHostSecret(createSecret) {
   return res.json();
 }
 
-export async function fetchRoomSnapshot(roomId) {
-  const res = await fetch(`/api/rooms/${encodeURIComponent(roomId)}/snapshot`);
+export async function fetchRoomSnapshot(roomId, { sessionToken } = {}) {
+  const qs = sessionToken
+    ? `?sessionToken=${encodeURIComponent(sessionToken)}`
+    : '';
+  const res = await fetch(`/api/rooms/${encodeURIComponent(roomId)}/snapshot${qs}`);
   if (!res.ok) throw new Error(await readError(res));
   return res.json();
 }

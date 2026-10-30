@@ -7,9 +7,11 @@ export function DevToolsPanel({
   canSkipDraft = false,
   canPassAll = false,
   canSkipStatus = false,
+  canSkipSecretDraft = false,
   onSkipDraft,
   onPassAll,
   onSkipStatus,
+  onSkipSecretDraft,
 }) {
   const [open, setOpen] = useState(true);
 
@@ -34,6 +36,15 @@ export function DevToolsPanel({
             title="Автораздача КС по очереди драфта и старт раунда"
           >
             Пропуск драфта КС
+          </button>
+          <button
+            type="button"
+            className="dev-tools-btn"
+            disabled={!canSkipSecretDraft}
+            onClick={onSkipSecretDraft}
+            title="Оставить первую секретную каждому и закрыть выбор"
+          >
+            Скип выбор секреток
           </button>
           <button
             type="button"

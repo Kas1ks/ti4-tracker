@@ -2,6 +2,7 @@
 import { createEmptyGameState, normalizeGameState } from '../game/gameState.js';
 import {
   applyRoomAction,
+  claimHostByKey,
   createRoomRecord,
   hubRoomCard,
   hydrateRoomLifecycle,
@@ -175,6 +176,32 @@ describe('roomCore', () => {
     expect(reclaim.reclaimed).toBe(false);
   });
 
+  it('claimHostByKey moves admin to a new session and revokes the old one', () => {
+    let room = createRoomRecord(normalizeGameState({
+      isGameActive: true,
+      players: [player(1, 'A'), player(2, 'B')],
+    }));
+    const oldAdmin = Object.keys(room.sessions)[0];
+    expect(room.sessions[oldAdmin].role).toBe(ROLES.ADMIN);
+
+    const bad = claimHostByKey(room, 'wrong');
+    expect(bad.ok).toBe(false);
+    expect(bad.error).toBe('bad-host-key');
+
+    const moved = claimHostByKey(room, room.hostKey);
+    expect(moved.ok).toBe(true);
+    expect(moved.role).toBe(ROLES.ADMIN);
+    expect(moved.sessionToken).not.toBe(oldAdmin);
+    expect(moved.reclaimed).toBe(true);
+    expect(moved.revokedSessionTokens).toContain(oldAdmin);
+    expect(moved.room.sessions[oldAdmin]).toBeUndefined();
+    expect(moved.room.sessions[moved.sessionToken]).toEqual({
+      role: ROLES.ADMIN,
+      seatPlayerId: null,
+    });
+    expect(moved.room.hostOnline).toBe(true);
+  });
+
   it('ends the party for everyone and clears seat claims on RESET_GAME', () => {
     let room = createRoomRecord(normalizeGameState({
       isGameActive: true,
@@ -203,7 +230,17 @@ describe('roomCore', () => {
     expect(hubRoomCard(lobby)?.roomId).toBe(lobby.roomId);
     expect(hubRoomCard(lobby)?.hostOnline).toBe(true);
 
+    // Soft-offline lobby (not mid-game) is treated as ended for hub cleanup.
     expect(isHubPartyEnded({ ...hubRoomCard(lobby), hostOnline: false })).toBe(true);
+
+    // Soft-offline mid-game: recoverable, but hidden from hub.
+    const live = createRoomRecord(normalizeGameState({
+      isGameActive: true,
+      players: [player(1, 'A'), player(2, 'B')],
+    }));
+    const softOffline = { ...live, hostOnline: false };
+    expect(isHubPartyEnded(softOffline)).toBe(false);
+    expect(hubRoomCard(softOffline)).toBeNull();
 
     // Pre-hostOnline directory card (production ghost 6CXL2Y shape).
     const legacyGhost = {

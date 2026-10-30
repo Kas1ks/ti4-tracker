@@ -1,4 +1,5 @@
 import { ALL_FACTIONS } from '../data/gameData';
+import { overflowForPlayer } from '../game/secretDeck';
 import * as select from '../game/selectors';
 
 /**
@@ -67,7 +68,16 @@ export function useGameDialogs({ game, dispatch, uiAlert, uiConfirm, uiForm, onN
     return (deck || []).filter((o) => !activeIds.has(o.id));
   };
 
+  const secretsDealStarted = !!game.secretObjectives?.dealStarted;
+
   const addRandomObjective = async (stage) => {
+    if (!secretsDealStarted) {
+      await uiAlert('Сначала запустите раздачу секретных целей.', {
+        title: 'Публичные цели закрыты',
+        variant: 'info',
+      });
+      return;
+    }
     if (officialCountForStage(stage) >= 5) {
       await uiAlert(
         `Уже открыто 5 целей этапа ${stage}. 6-ю можно добавить только через «Ввести цель вручную».`,
@@ -87,6 +97,13 @@ export function useGameDialogs({ game, dispatch, uiAlert, uiConfirm, uiForm, onN
   };
 
   const addCustomObjective = async (stageArg) => {
+    if (!secretsDealStarted) {
+      await uiAlert('Сначала запустите раздачу секретных целей.', {
+        title: 'Публичные цели закрыты',
+        variant: 'info',
+      });
+      return;
+    }
     const stage = Number(stageArg) === 2 ? 2 : 1;
     const asExtra = officialCountForStage(stage) >= 5;
     const remaining = remainingDeckForStage(stage);
@@ -160,16 +177,22 @@ export function useGameDialogs({ game, dispatch, uiAlert, uiConfirm, uiForm, onN
 
   const handleAddSecret = async (playerId) => {
     const player = players.find(p => p.id === playerId);
-    if (!player || player.secrets >= 4) return;
-
-    if (player.secrets === 3) {
-      const confirmFourth = await uiConfirm(
-        `У ${player.name} уже 3 секретные цели (стандартный лимит). Добавить 4-ю целевую секретку?`,
-        { title: 'Лимит секреток', confirmLabel: 'Добавить 4-ю' },
-      );
-      if (!confirmFourth) return;
+    if (!player) return;
+    if (!game.secretObjectives?.dealStarted || game.secretObjectives?.draftPending) {
+      await uiAlert('Сначала завершите раздачу секретных целей.', {
+        title: 'Секретки',
+        variant: 'info',
+      });
+      return;
     }
-    dispatch({ type: 'ADJUST_SECRETS', playerId, delta: 1 });
+    if (overflowForPlayer(game.secretObjectives, playerId)) {
+      await uiAlert(
+        `У ${player.name} перебор секреток — сначала сбросьте карту до лимита.`,
+        { title: 'Секретки', variant: 'info' },
+      );
+      return;
+    }
+    dispatch({ type: 'DRAW_SECRET', playerId });
   };
 
   const passTurn = async (playerId) => {

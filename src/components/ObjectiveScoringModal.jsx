@@ -1,7 +1,23 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useEscapeKey } from '../hooks/useEscapeKey';
 import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
 import { getObjectiveIcon, SECRET_OBJECTIVE_ICON } from '../data/objectiveIcons';
+import { secretObjectiveById } from '../data/secretObjectives';
+
+/** Keep secret row order stable while a card is scored (removed from hand). */
+function mergeSecretDisplayOrder(prevOrder, hand, selectedSecretId) {
+  const known = [];
+  const seen = new Set();
+  const push = (id) => {
+    if (!id || seen.has(id)) return;
+    seen.add(id);
+    known.push(id);
+  };
+  (prevOrder || []).forEach(push);
+  (hand || []).forEach(push);
+  push(selectedSecretId);
+  return known.filter((id) => (hand || []).includes(id) || id === selectedSecretId);
+}
 
 /**
  * Objective scoring modal — layout matches the scoring mock:
@@ -16,6 +32,7 @@ export function ObjectiveScoringModal({
   scoring,
   seatPlayerId = null,
   canScoreAny = false,
+  uiConfirm,
   onSelectPublic,
   onToggleSecret,
   onConfirm,
@@ -24,6 +41,8 @@ export function ObjectiveScoringModal({
   onClose,
 }) {
   const [entered, setEntered] = useState(false);
+  /** Host-only: player ids whose secret hands were explicitly revealed this window. */
+  const [revealedSecretPlayerIds, setRevealedSecretPlayerIds] = useState(() => new Set());
   const wantOpen = show && !minimized;
 
   useEscapeKey(onMinimize || onClose, wantOpen);
@@ -40,6 +59,10 @@ export function ObjectiveScoringModal({
     setEntered(false);
     return undefined;
   }, [wantOpen]);
+
+  useEffect(() => {
+    if (!show) setRevealedSecretPlayerIds(new Set());
+  }, [show]);
 
   if (!show) return null;
 
@@ -92,6 +115,35 @@ export function ObjectiveScoringModal({
           ? `Отметка за: ${currentPlayer?.name || '…'}`
           : 'По инициативе · 1 общая + 1 секретная';
 
+  const ownsDisplayedSecrets = !!(
+    displayPlayer
+    && seatPlayerId != null
+    && String(seatPlayerId) === String(displayPlayer.id)
+  );
+  const secretsVisible = ownsDisplayedSecrets
+    || (!!displayPlayer && revealedSecretPlayerIds.has(displayPlayer.id));
+
+  const revealSecretsForDisplay = async () => {
+    if (!displayPlayer || secretsVisible) return;
+    const ok = typeof uiConfirm === 'function'
+      ? await uiConfirm(
+        `Показать секретные цели игрока ${displayPlayer.name}? Их увидит только хост на этом экране.`,
+        {
+          title: 'Показать секретки',
+          confirmLabel: 'Показать',
+          cancelLabel: 'Отмена',
+          variant: 'danger',
+        },
+      )
+      : window.confirm(`Показать секретные цели игрока ${displayPlayer.name}?`);
+    if (!ok) return;
+    setRevealedSecretPlayerIds((prev) => {
+      const next = new Set(prev);
+      next.add(displayPlayer.id);
+      return next;
+    });
+  };
+
   const bodyProps = {
     canActOnCurrent,
     displayPlayer,
@@ -101,6 +153,9 @@ export function ObjectiveScoringModal({
     completions,
     onToggleSecret,
     onSelectPublic,
+    secretsVisible,
+    canRevealSecrets: !!canScoreAny && !ownsDisplayedSecrets,
+    onRevealSecrets: revealSecretsForDisplay,
   };
 
   const queueProps = {
@@ -345,44 +400,154 @@ function ScoringBody({
   completions,
   onToggleSecret,
   onSelectPublic,
+  secretsVisible = true,
+  canRevealSecrets = false,
+  onRevealSecrets,
 }) {
+  const secretOrderRef = useRef([]);
+  const secretOrderPlayerRef = useRef(null);
+
+  const hand = Array.isArray(displayPlayer?.secretHand) ? displayPlayer.secretHand : [];
+  const selectedSecretId = displayResponse?.secret ? displayResponse?.secretId : null;
+
+  if (displayPlayer?.id !== secretOrderPlayerRef.current) {
+    secretOrderPlayerRef.current = displayPlayer?.id ?? null;
+    secretOrderRef.current = [];
+  }
+  if (canActOnCurrent && displayPlayer) {
+    secretOrderRef.current = mergeSecretDisplayOrder(
+      secretOrderRef.current,
+      hand,
+      selectedSecretId,
+    );
+  }
+
+  const secretDisplayIds = canActOnCurrent && displayPlayer
+    ? secretOrderRef.current
+    : [];
+
   return (
     <div className="osc-goals">
-      {canActOnCurrent && displayPlayer && (
-        <button
-          type="button"
-          onClick={() => onToggleSecret(displayPlayer.id)}
-          className={`osc-goal is-secret${displayResponse?.secret ? ' is-checked' : ''}`}
-        >
-          <span className={`osc-goal-check ${displayResponse?.secret ? 'is-on' : ''}`} aria-hidden="true">
-            {displayResponse?.secret && <i className="fa-solid fa-check" />}
-          </span>
-          <span className="osc-goal-text">
-            <span className="osc-goal-title">Секретная цель (+1 ПО)</span>
-            <span className="osc-goal-meta">
-              Сейчас секретов: {displayPlayer.secrets ?? 0}/3
-              {(displayPlayer.secrets ?? 0) >= 3 && !displayResponse?.secret ? ' · лимит' : ''}
+      {canActOnCurrent && displayPlayer && (() => {
+        const cap = Number(displayPlayer.secretCap) === 4 ? 4 : 3;
+        const scored = displayPlayer.secrets ?? 0;
+        const selectedOffHand = !!(
+          selectedSecretId && !hand.includes(selectedSecretId)
+        );
+        const hasSecretsUi = secretDisplayIds.length > 0 || selectedOffHand;
+
+        if (!secretsVisible && hasSecretsUi) {
+          return (
+            <div className="space-y-2">
+              <div className="osc-goal is-secret is-hidden-secret" aria-label="Секретные цели скрыты">
+                <span className="osc-goal-check" aria-hidden="true">
+                  <i className="fa-solid fa-eye-slash" />
+                </span>
+                <span className="osc-goal-text">
+                  <span className="osc-goal-title">Секретки скрыты</span>
+                  <span className="osc-goal-meta">
+                    В руке: {hand.length}
+                    {selectedOffHand ? ' · секрет уже отмечен игроком' : ''}
+                    {' · сыграно '}{scored}/{cap}
+                  </span>
+                </span>
+                <span className="osc-secret-emblem" aria-hidden="true">
+                  <span className="osc-secret-ring" />
+                  <span className="osc-secret-ring is-outer" />
+                  <span className="osc-secret-card">
+                    <i className={`fa-solid ${SECRET_OBJECTIVE_ICON.icon}`} />
+                  </span>
+                </span>
+              </div>
+              {canRevealSecrets && (
+                <button
+                  type="button"
+                  className="osc-btn osc-btn--reveal-secrets"
+                  onClick={() => onRevealSecrets?.()}
+                >
+                  <i className="fa-solid fa-eye" aria-hidden="true" />
+                  Показать секретки
+                </button>
+              )}
+            </div>
+          );
+        }
+
+        if (secretDisplayIds.length > 0) {
+          return (
+            <div className="space-y-2">
+              <div className="osc-goal-meta px-1 flex items-center justify-between gap-2">
+                <span>Секретки в руке · сыграно {scored}/{cap}</span>
+                {canRevealSecrets && secretsVisible && (
+                  <span className="text-[10px] uppercase tracking-wide text-amber-300/90 font-bold">
+                    Показаны хосту
+                  </span>
+                )}
+              </div>
+              {secretDisplayIds.map((cardId) => {
+                const card = secretObjectiveById.get(cardId);
+                const selected = !!(displayResponse?.secret && displayResponse?.secretId === cardId);
+                return (
+                  <button
+                    key={cardId}
+                    type="button"
+                    onClick={() => onToggleSecret(displayPlayer.id, cardId)}
+                    className={`osc-goal is-secret${selected ? ' is-checked' : ''}`}
+                  >
+                    <span className={`osc-goal-check ${selected ? 'is-on' : ''}`} aria-hidden="true">
+                      {selected && <i className="fa-solid fa-check" />}
+                    </span>
+                    <span className="osc-goal-text">
+                      <span className="osc-goal-title">{card?.title || cardId}</span>
+                      <span className="osc-goal-meta">
+                        {selected
+                          ? 'Выбрано · нажмите, чтобы отменить'
+                          : (card?.desc || 'Секретная цель (+1 ПО)')}
+                      </span>
+                    </span>
+                    <span className="osc-secret-emblem" aria-hidden="true">
+                      <span className="osc-secret-ring" />
+                      <span className="osc-secret-ring is-outer" />
+                      <span className="osc-secret-card">
+                        <i className={`fa-solid ${SECRET_OBJECTIVE_ICON.icon}`} />
+                      </span>
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          );
+        }
+        return (
+          <button
+            type="button"
+            onClick={() => onToggleSecret(displayPlayer.id)}
+            className={`osc-goal is-secret${displayResponse?.secret ? ' is-checked' : ''}`}
+          >
+            <span className={`osc-goal-check ${displayResponse?.secret ? 'is-on' : ''}`} aria-hidden="true">
+              {displayResponse?.secret && <i className="fa-solid fa-check" />}
             </span>
-          </span>
-          <span className="osc-secret-emblem" aria-hidden="true">
-            <span className="osc-secret-ring" />
-            <span className="osc-secret-ring is-outer" />
-            <span className="osc-secret-card">
-              <i className={`fa-solid ${SECRET_OBJECTIVE_ICON.icon}`} />
+            <span className="osc-goal-text">
+              <span className="osc-goal-title">Секретная цель (+1 ПО)</span>
+              <span className="osc-goal-meta">
+                Сейчас секретов: {scored}/{cap}
+                {scored >= cap && !displayResponse?.secret ? ' · лимит' : ''}
+              </span>
             </span>
-          </span>
-        </button>
-      )}
+            <span className="osc-secret-emblem" aria-hidden="true">
+              <span className="osc-secret-ring" />
+              <span className="osc-secret-ring is-outer" />
+              <span className="osc-secret-card">
+                <i className={`fa-solid ${SECRET_OBJECTIVE_ICON.icon}`} />
+              </span>
+            </span>
+          </button>
+        );
+      })()}
 
       {stages.map(({ stage, title }) => {
-        const list = objectives.filter((o) => {
-          if (o.stage !== stage) return false;
-          if (!displayPlayer) return true;
-          const alreadyOwned = !!completions[`${displayPlayer.id}_${o.id}`];
-          const scoredThisWindow = displayResponse?.publicId === o.id;
-          if (alreadyOwned && !scoredThisWindow) return false;
-          return true;
-        });
+        // Keep full stage order — do not hide already-scored rows (selection must not reshuffle).
+        const list = objectives.filter((o) => Number(o.stage) === stage);
         if (!list.length) return null;
         return (
           <section key={stage} className="osc-goal-stage">
@@ -392,8 +557,9 @@ function ScoringBody({
                 ? !!completions[`${displayPlayer.id}_${obj.id}`]
                 : false;
               const scoredThisWindow = displayResponse?.publicId === obj.id;
+              const lockedOwned = mine && !scoredThisWindow;
               const selected = mine || scoredThisWindow;
-              const interactive = canActOnCurrent && displayPlayer;
+              const interactive = !!(canActOnCurrent && displayPlayer && !lockedOwned);
               const { icon, tone } = getObjectiveIcon(obj);
 
               return (
@@ -402,13 +568,16 @@ function ScoringBody({
                   type="button"
                   disabled={!interactive}
                   onClick={() => interactive && onSelectPublic(displayPlayer.id, obj.id)}
-                  className={`osc-goal ${selected ? 'is-selected' : ''} ${interactive ? 'is-interactive' : ''}`}
+                  className={`osc-goal ${selected ? 'is-selected' : ''} ${interactive ? 'is-interactive' : ''}${lockedOwned ? ' is-locked' : ''}`}
                 >
                   <span className={`osc-goal-check ${selected ? 'is-on' : ''}`} aria-hidden="true">
                     {selected && <i className="fa-solid fa-check" />}
                   </span>
                   <span className="osc-goal-text">
                     <span className="osc-goal-title">{obj.desc}</span>
+                    {lockedOwned && (
+                      <span className="osc-goal-meta">Уже засчитано ранее</span>
+                    )}
                   </span>
                   <GoalIconBadge icon={icon} tone={tone} active={selected} />
                 </button>

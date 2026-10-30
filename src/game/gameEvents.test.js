@@ -165,7 +165,10 @@ describe("Thunder's Edge expedition events", () => {
   const withTe = (players) => normalizeGameState({
     ...createEmptyGameState(),
     isGameActive: true,
-    players,
+    players: players.map((p) => ({
+      ...p,
+      secretHand: Array.isArray(p.secretHand) ? p.secretHand : [`exp_secret_${p.id}`],
+    })),
     meta: {
       ...createEmptyGameState().meta,
       speakerId: players[0]?.id ?? null,
@@ -177,6 +180,12 @@ describe("Thunder's Edge expedition events", () => {
       turnOrderIds: players.map(p => p.id),
       activeTurnIdx: 0,
       passed: {},
+    },
+    secretObjectives: {
+      deck: ['exp_deck_spare'],
+      scored: [],
+      dealStarted: true,
+      draftPending: false,
     },
   });
 
@@ -201,12 +210,17 @@ describe("Thunder's Edge expedition events", () => {
           expeditionClaimedThisTurn: false,
         },
       };
-      state = reduceGame(state, {
+      const sliceId = slices[i];
+      const payload = {
         type: 'CLAIM_EXPEDITION_SLICE',
         playerId: pid,
-        sliceId: slices[i],
+        sliceId,
         at: 20 + i,
-      });
+      };
+      if (sliceId === 'secret') {
+        payload.cardId = state.players.find((p) => p.id === pid)?.secretHand?.[0];
+      }
+      state = reduceGame(state, payload);
     });
     expect(state.expedition.awaitingControlPick).toBe(true);
     expect(state.log.events.at(-1).type).toBe('EXPEDITION_CONTROL_PENDING');
