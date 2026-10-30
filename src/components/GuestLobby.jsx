@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import brandMark from '../assets/brand-mark.png';
 import { ALL_FACTIONS, PLAYER_COLORS } from '../data/gameData';
@@ -13,6 +13,7 @@ export function GuestLobby({
   onLeaveRoom,
   onPickColor,
 }) {
+  const [seatCopied, setSeatCopied] = useState(false);
   const roleLabel = ROLE_LABELS[room?.role] || room?.role;
   const seatIdx = players.findIndex((p) => String(p.id) === String(room?.seatPlayerId));
   const mySeat = seatIdx >= 0 ? players[seatIdx] : null;
@@ -28,6 +29,18 @@ export function GuestLobby({
     document.body.classList.add('hub-cinematic');
     return () => document.body.classList.remove('hub-cinematic');
   }, []);
+
+  const copySeatSecret = async () => {
+    const value = room?.seatSecret;
+    if (!value) return;
+    try {
+      await navigator.clipboard.writeText(String(value));
+      setSeatCopied(true);
+      window.setTimeout(() => setSeatCopied(false), 1600);
+    } catch {
+      /* clipboard may be blocked */
+    }
+  };
 
   return (
     <div className="hub-shell hub-shell--column guest-lobby-shell">
@@ -59,7 +72,19 @@ export function GuestLobby({
         {mySeat && room?.seatSecret && (
           <section className="guest-lobby-secret hub-panel" aria-label="Код места">
             <div className="guest-lobby-room-label">Код места</div>
-            <div className="guest-lobby-secret-code">{room.seatSecret}</div>
+            <div className="guest-lobby-secret-row">
+              <div className="guest-lobby-secret-code">{room.seatSecret}</div>
+              <button
+                type="button"
+                className={`guest-lobby-secret-copy${seatCopied ? ' is-copied' : ''}`}
+                onClick={copySeatSecret}
+                aria-label="Скопировать код места"
+                title={seatCopied ? 'Скопировано' : 'Скопировать код места'}
+              >
+                <i className={`fa-solid ${seatCopied ? 'fa-check' : 'fa-copy'}`} aria-hidden="true" />
+                {seatCopied ? 'Скопировано' : 'Копировать'}
+              </button>
+            </div>
             <p className="guest-lobby-hint">
               Нужен, чтобы сесть сюда с другого телефона или вкладки. Не показывайте посторонним.
             </p>

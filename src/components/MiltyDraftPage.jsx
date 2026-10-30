@@ -162,6 +162,7 @@ function SliceResourceCount({ label, resources, influence }) {
  *     hostKey?: string|null,
  *     sessionToken?: string|null,
  *     seatPlayerId?: string|number|null,
+ *     seatSecret?: string|null,
  *     miltySecret?: string|null,
  *     miltyAdminSecret?: string|null,
  *     onPromote?: () => Promise<void>,
@@ -189,6 +190,7 @@ export function MiltyDraftPage({ roomBinding = null, liveDraftFromRoom = null } 
   const [pageTab, setPageTab] = useState('draft');
   const [codeCopied, setCodeCopied] = useState(false);
   const [hostKeyCopied, setHostKeyCopied] = useState(false);
+  const [seatSecretCopied, setSeatSecretCopied] = useState(false);
   const [regenSel, setRegenSel] = useState({ slices: false, factions: false, order: false });
   const [referenceFaction, setReferenceFaction] = useState(null);
   const [auth, setAuth] = useState(() => {
@@ -638,7 +640,9 @@ export function MiltyDraftPage({ roomBinding = null, liveDraftFromRoom = null } 
   };
 
   const hostKey = inRoom ? (roomBinding?.hostKey || null) : null;
+  const seatSecret = inRoom ? (roomBinding?.seatSecret || null) : null;
   const copyHostKey = () => copyText(hostKey, setHostKeyCopied);
+  const copySeatSecret = () => copyText(seatSecret, setSeatSecretCopied);
 
   return (
     <div className="milty-draft hub-shell hub-shell--column">
@@ -689,6 +693,18 @@ export function MiltyDraftPage({ roomBinding = null, liveDraftFromRoom = null } 
                   ? 'Скопировано'
                   : (inRoom ? 'Код' : 'Ссылка')}
               </button>
+              {seatSecret && (
+                <button
+                  type="button"
+                  className={`milty-draft-tool milty-draft-tool--seat-key${seatSecretCopied ? ' is-copied' : ''}`}
+                  onClick={copySeatSecret}
+                  title={`Код места ${seatSecret}: сесть сюда с другого устройства (хаб → Войти по коду)`}
+                  aria-label="Скопировать код места"
+                >
+                  <i className={`fa-solid ${seatSecretCopied ? 'fa-check' : 'fa-chair'}`} aria-hidden="true" />
+                  {seatSecretCopied ? 'Место ✓' : 'Место'}
+                </button>
+              )}
               {hostKey && (
                 <button
                   type="button"

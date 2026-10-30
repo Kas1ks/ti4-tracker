@@ -16765,14 +16765,46 @@ body.hub-cinematic .game-header,
   background: rgba(201, 162, 39, 0.08);
 }
 
-.guest-lobby-secret-code {
+.guest-lobby-secret-row {
   margin-top: 0.35rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.guest-lobby-secret-code {
   font-family: 'Orbitron', sans-serif;
   font-weight: 800;
   font-size: clamp(1.45rem, 6.5vw, 1.9rem);
   letter-spacing: 0.32em;
   color: var(--hub-gold-bright);
   line-height: 1.15;
+}
+
+.guest-lobby-secret-copy {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 2.25rem;
+  padding: 0.35rem 0.75rem;
+  border-radius: 0.65rem;
+  border: 1px solid rgba(201, 162, 39, 0.45);
+  background: rgba(12, 18, 36, 0.45);
+  color: var(--hub-gold-bright);
+  font-family: 'Montserrat', sans-serif;
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.guest-lobby-secret-copy:hover {
+  border-color: rgba(250, 204, 21, 0.65);
+}
+
+.guest-lobby-secret-copy.is-copied {
+  border-color: rgba(52, 211, 153, 0.55);
+  color: #a7f3d0;
 }
 
 .guest-lobby-hint {
@@ -20469,7 +20501,7 @@ body.hub-cinematic .game-header,
     --milty-em: clamp(28px, 3.4vw, 40px);
   }
 }
-@media (min-width: 900px) {
+@media (min-width: 1400px) {
   .milty-slice-graph {
     /* 5em must fit slice cards inside the board center column */
     --milty-em: clamp(28px, 2.1vw, 36px);
@@ -20486,7 +20518,7 @@ body.hub-cinematic .game-header,
     gap: 0.45rem;
   }
 }
-@media (min-width: 1100px) {
+@media (min-width: 1400px) {
   .milty-turn-order {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
@@ -21157,6 +21189,7 @@ body.hub-cinematic .game-header,
   justify-self: end;
 }
 .milty-draft__topbar .milty-draft-tool--share,
+.milty-draft__topbar .milty-draft-tool--seat-key,
 .milty-draft__topbar .milty-draft-tool--host-key {
   grid-area: unset;
   justify-self: unset;
@@ -21165,9 +21198,18 @@ body.hub-cinematic .game-header,
   display: none;
 }
 .milty-draft-tool--share.is-copied,
+.milty-draft-tool--seat-key.is-copied,
 .milty-draft-tool--host-key.is-copied {
   border-color: rgba(52, 211, 153, 0.55);
   color: #a7f3d0;
+}
+.milty-draft-tool--seat-key {
+  border-color: rgba(251, 191, 36, 0.45);
+  color: #fcd34d;
+}
+.milty-draft-tool--seat-key:hover:not(:disabled) {
+  border-color: rgba(252, 211, 77, 0.7);
+  color: #fde68a;
 }
 .milty-draft-tool--host-key {
   border-color: rgba(96, 165, 250, 0.4);
@@ -21204,7 +21246,7 @@ body.hub-cinematic .game-header,
   object-fit: contain;
   filter: drop-shadow(0 2px 10px rgba(0, 0, 0, 0.5));
 }
-@media (min-width: 1100px) {
+@media (min-width: 1400px) {
   .milty-draft__brand-mark {
     width: 4rem;
     height: 4rem;
@@ -21440,8 +21482,380 @@ body.hub-cinematic .game-header,
   color: #475569;
 }
 
+/* Tablet / small laptop: Pad 6 landscape is ~1280×800 — desktop 3-col is too tight */
+@media (min-width: 700px) and (max-width: 1399px) {
+  .milty-draft__topbar {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      'brand tools'
+      'tabs tabs';
+    align-items: center;
+    column-gap: 0.75rem;
+    row-gap: 0.55rem;
+  }
+  .milty-draft__topbar .milty-draft__brand {
+    grid-area: brand;
+    min-width: 0;
+  }
+  .milty-draft__topbar .milty-page-tabs {
+    grid-area: tabs;
+    width: 100%;
+    flex-wrap: wrap;
+    overflow: visible;
+  }
+  .milty-draft__topbar .milty-draft__tools {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.35rem;
+    grid-area: tools;
+    max-width: min(100%, 26rem);
+  }
+  .milty-draft__topbar .milty-draft-code {
+    display: inline-flex;
+    max-width: 7.5rem;
+  }
+  .milty-draft__topbar .milty-draft__codes {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.35rem;
+    grid-area: unset;
+    justify-self: unset;
+  }
+  .milty-draft__topbar .milty-draft-tool--share,
+  .milty-draft__topbar .milty-draft-tool--seat-key,
+  .milty-draft__topbar .milty-draft-tool--host-key,
+  .milty-draft__topbar .milty-draft-tool--exit,
+  .milty-draft__topbar .milty-draft-tool--undo,
+  .milty-draft__topbar .milty-draft-tool--promote {
+    grid-area: unset;
+    justify-self: unset;
+  }
+  .milty-draft__topbar .milty-draft-tool--share .fa-link {
+    display: inline-block;
+  }
+  .milty-draft__topbar .milty-draft-tool {
+    box-sizing: border-box;
+    padding: 0.45rem 0.7rem;
+    font-size: 0.72rem;
+    min-height: 2.35rem;
+  }
+  .milty-draft__topbar .milty-page-tab {
+    box-sizing: border-box;
+    min-height: 2.35rem;
+    padding: 0.5rem 0.85rem;
+  }
+}
+
+/* Shared tablet chrome: queue + stage padding (portrait Pad ~800 and up) */
+@media (min-width: 700px) and (max-width: 1399px) {
+  .milty-draft__stage {
+    padding-left: 1.15rem;
+    padding-right: 1.15rem;
+  }
+  .milty-draft__overview {
+    display: grid;
+    grid-template-columns: minmax(11rem, 15.5rem) minmax(0, 1fr);
+    gap: 0.75rem;
+    align-items: stretch;
+  }
+  .milty-draft__status {
+    grid-column: 1;
+    align-self: stretch;
+    height: auto;
+    min-height: 100%;
+    justify-content: center;
+  }
+  .milty-draft__queue {
+    grid-column: 2;
+    min-width: 0;
+  }
+  .milty-turn-order {
+    display: flex;
+    flex-wrap: nowrap;
+    gap: 0.4rem;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: 0.15rem;
+  }
+  .milty-turn-order .milty-turn-card {
+    flex: 0 0 auto;
+    width: min(12rem, 38vw);
+    grid-template-areas: 'idx fac main';
+    align-items: center;
+  }
+  .milty-turn-order .milty-turn-card__main {
+    display: block;
+  }
+  .milty-turn-order .milty-turn-card__name,
+  .milty-turn-order .milty-turn-card__meta {
+    grid-area: unset;
+  }
+  .milty-turn-order .milty-turn-card__meta {
+    margin-top: 0.15rem;
+    padding-top: 0;
+    border-top: 0;
+  }
+}
+
+/* Portrait tablet (~800): stacked board, 2-col slices, stats under hex */
+@media (min-width: 700px) and (max-width: 899px) {
+  .milty-draft__overview {
+    grid-template-columns: 1fr;
+  }
+  .milty-draft__status,
+  .milty-draft__queue {
+    grid-column: 1;
+  }
+  .milty-draft__board {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+  .milty-draft__col--factions .milty-draft-factions {
+    grid-template-columns: repeat(auto-fit, minmax(7.5rem, 1fr));
+  }
+  .milty-draft__col--seats .milty-draft-seats {
+    grid-template-columns: repeat(auto-fit, minmax(6.5rem, 1fr));
+  }
+  .milty-draft-slices {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.7rem;
+  }
+  .milty-draft-slice {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    min-height: 0;
+    padding: 0.55rem 0.65rem 0.75rem;
+  }
+  .milty-draft-slice__visual {
+    container-type: inline-size;
+    width: 100%;
+  }
+  .milty-slice-graph {
+    --milty-em: clamp(34px, 14cqi, 48px);
+    margin-inline: auto;
+  }
+  .milty-slice-card__body {
+    width: 100%;
+    margin-top: 0.35rem;
+  }
+  .milty-slice-stats-rail {
+    justify-content: center;
+  }
+}
+
+/* Landscape tablet / large portrait: side rail + slices */
+@media (min-width: 900px) and (max-width: 1399px) {
+  .milty-draft__board {
+    display: grid;
+    grid-template-columns: minmax(11rem, 14rem) minmax(0, 1fr);
+    grid-template-areas:
+      'factions slices'
+      'seats slices';
+    gap: 0.75rem;
+    align-items: start;
+  }
+  .milty-draft__col--factions {
+    grid-area: factions;
+    max-height: calc(100dvh - 13rem);
+  }
+  .milty-draft__col--slices {
+    grid-area: slices;
+    min-width: 0;
+  }
+  .milty-draft__col--seats {
+    grid-area: seats;
+    max-height: calc(100dvh - 13rem);
+  }
+  .milty-draft__col--factions .milty-draft-factions,
+  .milty-draft__col--seats .milty-draft-seats {
+    grid-template-columns: 1fr;
+    gap: 0.45rem;
+    overflow-y: auto;
+    max-height: calc(50dvh - 5.5rem);
+    padding-right: 0.15rem;
+  }
+  .milty-draft__col--factions .milty-draft-fac {
+    padding: 0.55rem 0.4rem 0.5rem;
+  }
+  .milty-draft__col--factions .milty-draft-fac-icon {
+    width: 40px !important;
+    height: 40px !important;
+  }
+  .milty-draft__col--factions .milty-draft-fac__name {
+    font-size: 0.7rem;
+  }
+  .milty-draft__col--slices .milty-draft-slices {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.65rem;
+    width: 100%;
+  }
+  .milty-draft__col--slices .milty-draft-slice {
+    display: grid;
+    grid-template-columns: minmax(0, 1.55fr) minmax(7.5rem, 0.85fr);
+    grid-template-rows: auto 1fr;
+    grid-template-areas:
+      'title title'
+      'visual stats';
+    align-items: stretch;
+    min-width: 0;
+    width: 100%;
+    min-height: 13.5rem;
+    height: 100%;
+    gap: 0.3rem 0.55rem;
+    overflow-x: clip;
+  }
+  .milty-draft__col--slices .milty-draft-slice__title {
+    grid-area: title;
+  }
+  .milty-draft__col--slices .milty-draft-slice__visual {
+    grid-area: visual;
+    container-type: inline-size;
+    min-width: 0;
+    min-height: 0;
+    overflow: visible;
+  }
+  .milty-draft__col--slices .milty-slice-card__body {
+    grid-area: stats;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    justify-content: center;
+    min-width: 0;
+    min-height: 0;
+    padding-right: 0.1rem;
+  }
+  .milty-draft__col--slices .milty-slice-graph {
+    --milty-em: clamp(32px, 5.2cqi, 48px);
+    width: 5em;
+    height: 5.2em;
+    max-width: 100%;
+  }
+  .milty-draft__col--slices .milty-slice-stats-rail {
+    display: grid;
+    grid-template-columns: auto auto;
+    column-gap: 0.35rem;
+    row-gap: 0.25rem;
+    align-items: center;
+    justify-items: start;
+  }
+  .milty-draft__col--slices .milty-slice-stats-rail__icons {
+    grid-column: 2;
+    justify-self: center;
+  }
+  .milty-draft__col--slices .milty-slice-stats-rail__icons .milty-draft-slice-meta {
+    margin: 0;
+    justify-content: center;
+    width: auto;
+  }
+  .milty-draft__col--slices .milty-slice-stats-rail .milty-res-block {
+    display: contents;
+    margin: 0;
+  }
+  .milty-draft__col--slices .milty-slice-stats-rail .milty-res-row {
+    display: contents;
+  }
+  .milty-draft__col--slices .milty-slice-stats-rail .milty-res-label {
+    grid-column: 1;
+    justify-self: end;
+    min-width: 0;
+    text-align: right;
+  }
+  .milty-draft__col--slices .milty-slice-stats-rail .milty-res-pair {
+    grid-column: 2;
+    justify-self: center;
+  }
+}
+
+/* Wide tablets (Pad 6 landscape ~1280): roomier side rail; keep 2 slice cols
+   so Total/Optimal stats don't crush (3 cols leave ~90px for the rail). */
+@media (min-width: 1100px) and (max-width: 1399px) {
+  .milty-draft__board {
+    grid-template-columns: minmax(12.5rem, 16rem) minmax(0, 1fr);
+  }
+  .milty-draft__overview {
+    grid-template-columns: minmax(13rem, 16.5rem) minmax(0, 1fr);
+  }
+  .milty-draft__col--slices .milty-draft-slices {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .milty-draft__col--slices .milty-draft-slice {
+    min-height: 13.25rem;
+  }
+  .milty-draft__col--slices .milty-slice-graph {
+    --milty-em: clamp(34px, 6cqi, 52px);
+  }
+  .milty-turn-order .milty-turn-card {
+    width: min(12rem, 26vw);
+  }
+}
+
+/* Short landscape tablets (Pad 6 ~800px tall): tighten vertical rhythm */
+@media (min-width: 700px) and (max-width: 1399px) and (max-height: 920px) {
+  .milty-draft__stage {
+    gap: 0.55rem;
+    padding-top: 0.7rem;
+    padding-bottom: 0.7rem;
+  }
+  .milty-draft__brand-mark {
+    width: 2.75rem;
+    height: 2.75rem;
+  }
+  .milty-draft__title {
+    font-size: 1.15rem;
+  }
+  .milty-draft__lead {
+    display: none;
+  }
+  .milty-draft__overview,
+  .milty-draft__board {
+    gap: 0.55rem;
+  }
+  .milty-draft__panel {
+    padding: 0.7rem 0.75rem 0.8rem;
+  }
+  .milty-draft__status {
+    padding: 0.55rem 0.65rem 0.6rem;
+  }
+  .milty-draft__col--factions,
+  .milty-draft__col--seats {
+    max-height: calc(100dvh - 10.5rem);
+  }
+  .milty-draft__col--factions .milty-draft-factions,
+  .milty-draft__col--seats .milty-draft-seats {
+    max-height: calc(46dvh - 4.5rem);
+  }
+  .milty-draft__col--slices .milty-draft-slice {
+    min-height: 10.75rem;
+  }
+  .milty-draft__col--slices .milty-slice-graph {
+    --milty-em: clamp(28px, 4.4cqi, 42px);
+  }
+  .milty-draft__topbar .milty-draft-tool,
+  .milty-draft__topbar .milty-page-tab {
+    min-height: 2.15rem;
+    padding-top: 0.35rem;
+    padding-bottom: 0.35rem;
+  }
+}
+
+/* Narrow tablet / large phone portrait: keep board stacked, but use 2-col slices */
+@media (min-width: 640px) and (max-width: 699px) {
+  .milty-draft-slices {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.65rem;
+  }
+}
+
 /* Desktop draft board layout (mockup positions only) */
-@media (min-width: 1100px) {
+@media (min-width: 1400px) {
   .milty-draft__stage {
     max-width: none;
     padding-left: 1.5rem;
@@ -21479,6 +21893,7 @@ body.hub-cinematic .game-header,
     gap: 0.45rem;
   }
   .milty-draft__topbar .milty-draft-tool--share,
+  .milty-draft__topbar .milty-draft-tool--seat-key,
   .milty-draft__topbar .milty-draft-tool--host-key,
   .milty-draft__topbar .milty-draft-tool--exit,
   .milty-draft__topbar .milty-draft-tool--undo,
@@ -21771,7 +22186,7 @@ body.hub-cinematic .game-header,
   gap: 0.65rem;
   width: 100%;
 }
-@media (min-width: 900px) {
+@media (min-width: 1400px) {
   .milty-draft-factions {
     grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr));
     gap: 0.75rem;
@@ -21929,18 +22344,6 @@ body.hub-cinematic .game-header,
   gap: 0.55rem;
   width: 100%;
   overflow: visible;
-}
-@media (min-width: 640px) {
-  .milty-draft-slices {
-    grid-template-columns: repeat(auto-fit, minmax(16.5rem, 1fr));
-    gap: 0.85rem;
-  }
-}
-@media (min-width: 900px) and (max-width: 1099px) {
-  .milty-draft-slices {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 0.85rem;
-  }
 }
 .milty-draft-slice {
   min-width: 0;

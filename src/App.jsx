@@ -990,6 +990,7 @@ function App() {
                 hostKey: room.hostKey,
                 sessionToken: room.sessionToken,
                 seatPlayerId: room.seatPlayerId,
+                seatSecret: room.seatSecret,
                 miltySecret: room.miltySecret,
                 miltyAdminSecret: room.miltyAdminSecret,
                 onPromote: async () => {
