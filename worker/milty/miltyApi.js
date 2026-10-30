@@ -94,7 +94,11 @@ export async function handleMiltyApi(request, env) {
 
   if (method === 'GET' && action === 'events') {
     if (hasDo(env)) {
-      return doFetch(env, id, '/events', { method: 'GET' });
+      return doFetch(env, id, '/events', {
+        method: 'GET',
+        headers: { Accept: 'text/event-stream' },
+        signal: request.signal,
+      });
     }
     let unsub = () => {};
     let heartbeat = null;
@@ -130,8 +134,9 @@ export async function handleMiltyApi(request, env) {
     return new Response(stream, {
       headers: {
         'Content-Type': 'text/event-stream; charset=utf-8',
-        'Cache-Control': 'no-store',
+        'Cache-Control': 'no-cache, no-transform',
         Connection: 'keep-alive',
+        'X-Accel-Buffering': 'no',
       },
     });
   }

@@ -38,11 +38,9 @@ export class MiltyDraft {
   broadcast(draft) {
     const payload = `data: ${JSON.stringify({ type: 'state', draft: publicDraftView(draft) })}\n\n`;
     for (const write of [...this.sseWrites]) {
-      this.ctx.waitUntil(
-        write(payload).catch(() => {
-          this.sseWrites.delete(write);
-        }),
-      );
+      write(payload).catch(() => {
+        this.sseWrites.delete(write);
+      });
     }
   }
 
@@ -98,17 +96,19 @@ export class MiltyDraft {
           clearInterval(heartbeat);
           this.sseWrites.delete(write);
         });
-      }, 25000);
-      request.signal?.addEventListener('abort', () => {
+      }, 15000);
+      const cleanup = () => {
         clearInterval(heartbeat);
         this.sseWrites.delete(write);
         writer.close().catch(() => {});
-      });
+      };
+      request.signal?.addEventListener('abort', cleanup);
       return new Response(readable, {
         headers: {
           'Content-Type': 'text/event-stream; charset=utf-8',
-          'Cache-Control': 'no-store',
+          'Cache-Control': 'no-cache, no-transform',
           Connection: 'keep-alive',
+          'X-Accel-Buffering': 'no',
         },
       });
     }

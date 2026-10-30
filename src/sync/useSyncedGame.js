@@ -87,6 +87,8 @@ export function useSyncedGame() {
   const hiddenAtRef = useRef(0);
   const resumeInFlightRef = useRef(false);
   const [canUndo, setCanUndo] = useState(false);
+  /** Live milty draft payload from room SSE (in-room draft sync fallback). */
+  const [miltyLiveDraft, setMiltyLiveDraft] = useState(null);
   const seqRef = useRef(loadRoomSession()?.seq || 0);
   const roomRef = useRef(null);
   const gameRef = useRef(game);
@@ -356,6 +358,9 @@ export function useSyncedGame() {
       }
 
       if (msg.type === 'milty') {
+        if (msg.draft && typeof msg.draft === 'object') {
+          setMiltyLiveDraft(msg.draft);
+        }
         setRoom((prev) => (prev ? {
           ...prev,
           milty: msg.milty ?? prev.milty,
@@ -849,6 +854,7 @@ export function useSyncedGame() {
     clearSoloUndo();
     setGame({ type: 'RESET_GAME' });
     setRoom(null);
+    setMiltyLiveDraft(null);
     setRoomStatus('solo');
     setRoomError(null);
     setSyncLink('idle');
@@ -886,6 +892,7 @@ export function useSyncedGame() {
     dismissRoomError,
     perms,
     canUndo,
+    miltyLiveDraft,
     startHostRoom,
     promoteMiltyToSetup,
     joinRoomById,

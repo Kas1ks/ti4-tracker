@@ -93,14 +93,46 @@ export async function regenMilty(id, body) {
   return data;
 }
 
-export function subscribeMilty(id, onEvent) {
+/**
+ * Subscribe to milty draft SSE.
+ * @param {string} id
+ * @param {(ev: object) => void} onEvent
+ * @param {{ onStatus?: (s: 'open'|'reconnecting'|'closed') => void }} [opts]
+ * @returns {() => void} unsubscribe
+ */
+export function subscribeMilty(id, onEvent, { onStatus } = {}) {
   const es = new EventSource(`/api/milty/${encodeURIComponent(id)}/events`);
+  let intentionalClose = false;
+  let sawOpen = false;
+
+  es.onopen = () => {
+    sawOpen = true;
+    onStatus?.('open');
+  };
+
   es.onmessage = (ev) => {
+    if (sawOpen) onStatus?.('open');
     try {
       onEvent(JSON.parse(ev.data));
     } catch {
       /* ignore */
     }
   };
-  return () => es.close();
+
+  es.onerror = () => {
+    if (intentionalClose) return;
+    if (es.readyState === EventSource.CLOSED) {
+      onStatus?.('closed');
+      return;
+    }
+    onStatus?.('reconnecting');
+  };
+
+  return () => {
+    intentionalClose = true;
+    es.onerror = null;
+    es.onmessage = null;
+    es.onopen = null;
+    es.close();
+  };
 }

@@ -359,8 +359,8 @@ export function RoomHub({
             <header className="hub-stage-head">
               <h1 className="hub-stage-title">Продолжить как хост</h1>
               <p className="hub-stage-lead">
-                Перенос стола на это устройство. Нужны код комнаты и код хоста
-                (в шапке партии на старом устройстве → кнопка Wi‑Fi).
+                Перенос стола или Milty-драфта на это устройство. Нужны код комнаты и код хоста
+                (в партии: Wi‑Fi в шапке; в Milty: кнопка «Хост» рядом с кодом комнаты).
               </p>
             </header>
 
@@ -637,7 +637,8 @@ export function RoomHub({
               >
                 <span className="hub-extra-card-title">Я хост — другое устройство</span>
                 <span className="hub-extra-card-text">
-                  Перенести стол на телефон или планшет: код комнаты + код хоста из Wi‑Fi в шапке.
+                  Перенести стол или Milty на телефон/планшет: код комнаты + код хоста
+                  (Wi‑Fi в шапке или кнопка «Хост» в драфте).
                 </span>
               </button>
             )}

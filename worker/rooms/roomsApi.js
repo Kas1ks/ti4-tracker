@@ -306,6 +306,7 @@ export async function handleRoomsApi(request, env) {
       role: result.role,
       seatPlayerId: result.seatPlayerId,
       seatSecret: result.seatSecret,
+      miltyAdminSecret: result.room.milty?.adminSecret || undefined,
       reclaimed: !!result.reclaimed,
     });
   }

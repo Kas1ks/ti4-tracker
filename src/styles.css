@@ -21147,16 +21147,35 @@ body.hub-cinematic .game-header,
 .milty-draft__topbar .milty-draft-code {
   display: none;
 }
-.milty-draft__topbar .milty-draft-tool--share {
+.milty-draft__topbar .milty-draft__codes {
   grid-area: share;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.35rem;
   justify-self: end;
+}
+.milty-draft__topbar .milty-draft-tool--share,
+.milty-draft__topbar .milty-draft-tool--host-key {
+  grid-area: unset;
+  justify-self: unset;
 }
 .milty-draft__topbar .milty-draft-tool--share .fa-link {
   display: none;
 }
-.milty-draft-tool--share.is-copied {
+.milty-draft-tool--share.is-copied,
+.milty-draft-tool--host-key.is-copied {
   border-color: rgba(52, 211, 153, 0.55);
   color: #a7f3d0;
+}
+.milty-draft-tool--host-key {
+  border-color: rgba(96, 165, 250, 0.4);
+  color: #93c5fd;
+}
+.milty-draft-tool--host-key:hover:not(:disabled) {
+  border-color: rgba(147, 197, 253, 0.65);
+  color: #bfdbfe;
 }
 .milty-draft__topbar .milty-draft-tool--exit {
   grid-area: exit;
@@ -21454,7 +21473,13 @@ body.hub-cinematic .game-header,
   .milty-draft__topbar .milty-draft-code {
     display: inline-flex;
   }
+  .milty-draft__topbar .milty-draft__codes {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+  }
   .milty-draft__topbar .milty-draft-tool--share,
+  .milty-draft__topbar .milty-draft-tool--host-key,
   .milty-draft__topbar .milty-draft-tool--exit,
   .milty-draft__topbar .milty-draft-tool--undo,
   .milty-draft__topbar .milty-draft-tool--promote {

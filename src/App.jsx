@@ -105,6 +105,7 @@ function App() {
     resetLocalGame,
     perms,
     canUndo,
+    miltyLiveDraft,
   } = useSyncedGame();
 
   const [soloSetup, setSoloSetup] = useState(false);
@@ -982,6 +983,7 @@ function App() {
             )}
           >
             <MiltyDraftPage
+              liveDraftFromRoom={miltyLiveDraft}
               roomBinding={{
                 roomId: room.roomId,
                 draftId: room.milty.draftId,

@@ -139,7 +139,7 @@ function RoomLiveBadge({ room, seatSecret = null }) {
                 </button>
               </div>
               <p className="game-header-room-host-hint">
-                Перенос на другое устройство: Настройки → «Я хост» + код комнаты и этот ключ.
+                Перенос на другое устройство (стол или Milty): хаб → Настройки → «Я хост» + код комнаты и этот ключ.
               </p>
             </div>
           )}

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import brandMarkLg from '../assets/brand-mark-lg.png';
 import { useAllowPageZoom } from '../hooks/useAllowPageZoom';
@@ -168,10 +168,11 @@ function SliceResourceCount({ label, resources, influence }) {
  *     onHostClaimSeat?: (seatPlayerId: string|number) => Promise<void>,
  *     onHostReleaseSeat?: (seatPlayerId: string|number) => Promise<void>,
  *     onLeave?: () => void,
- *   }
+ *   },
+ *   liveDraftFromRoom?: object|null,
  * }} [props]
  */
-export function MiltyDraftPage({ roomBinding = null } = {}) {
+export function MiltyDraftPage({ roomBinding = null, liveDraftFromRoom = null } = {}) {
   const location = useLocation();
   const pathId = draftIdFromPath(location.pathname);
   const id = roomBinding?.draftId || pathId;
@@ -182,9 +183,12 @@ export function MiltyDraftPage({ roomBinding = null } = {}) {
   useAllowPageZoom(true);
   const [draft, setDraft] = useState(null);
   const [error, setError] = useState(null);
+  const [sseGeneration, setSseGeneration] = useState(0);
+  const draftDoneRef = useRef(false);
   const [busy, setBusy] = useState(false);
   const [pageTab, setPageTab] = useState('draft');
   const [codeCopied, setCodeCopied] = useState(false);
+  const [hostKeyCopied, setHostKeyCopied] = useState(false);
   const [regenSel, setRegenSel] = useState({ slices: false, factions: false, order: false });
   const [referenceFaction, setReferenceFaction] = useState(null);
   const [auth, setAuth] = useState(() => {
@@ -232,6 +236,23 @@ export function MiltyDraftPage({ roomBinding = null } = {}) {
     }
   }, [id, search, inRoom]);
 
+  const refreshDraft = useCallback(async () => {
+    if (!id) return null;
+    const data = await fetchMiltyDraft(id, {
+      playerId: auth.playerId,
+      secret: auth.secret,
+      adminSecret: auth.adminSecret,
+    });
+    draftDoneRef.current = !!data.draft?.done;
+    setDraft(data.draft);
+    setError(null);
+    return data.draft;
+  }, [id, auth.playerId, auth.secret, auth.adminSecret]);
+
+  useEffect(() => {
+    draftDoneRef.current = !!draft?.done;
+  }, [draft?.done]);
+
   useEffect(() => {
     if (!id) {
       setError('not-found');
@@ -241,34 +262,57 @@ export function MiltyDraftPage({ roomBinding = null } = {}) {
     setError(null);
     (async () => {
       try {
-        const data = await fetchMiltyDraft(id, {
-          playerId: auth.playerId,
-          secret: auth.secret,
-          adminSecret: auth.adminSecret,
-        });
-        if (!cancelled) setDraft(data.draft);
+        await refreshDraft();
       } catch (err) {
         if (!cancelled) setError(String(err?.message || err));
       }
     })();
+
     const unsub = subscribeMilty(id, async (ev) => {
       if (ev?.type !== 'state' && ev?.type !== 'milty') return;
+      // Apply payload immediately so UI moves even if follow-up fetch lags.
+      if (!cancelled && ev.draft) {
+        draftDoneRef.current = !!ev.draft.done;
+        setDraft(ev.draft);
+      }
       try {
-        const data = await fetchMiltyDraft(id, {
-          playerId: auth.playerId,
-          secret: auth.secret,
-          adminSecret: auth.adminSecret,
-        });
-        if (!cancelled) setDraft(data.draft);
+        await refreshDraft();
       } catch {
-        if (!cancelled && ev.draft) setDraft(ev.draft);
+        /* keep payload draft if refresh fails */
       }
     });
+
+    // Prod DO SSE can go zombie; poll while the draft is open.
+    const poll = setInterval(() => {
+      if (cancelled || document.visibilityState === 'hidden' || draftDoneRef.current) return;
+      refreshDraft().catch(() => {});
+    }, 5000);
+
+    const onVisible = () => {
+      if (document.visibilityState !== 'visible') return;
+      refreshDraft().catch(() => {});
+      setSseGeneration((g) => g + 1);
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('focus', onVisible);
+
     return () => {
       cancelled = true;
       unsub();
+      clearInterval(poll);
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('focus', onVisible);
     };
-  }, [id, auth.playerId, auth.secret, auth.adminSecret]);
+  }, [id, refreshDraft, sseGeneration]);
+
+  // In-room picks are also broadcast on the room SSE — apply immediately, then
+  // re-fetch with seat auth so private slice matches the picker's view.
+  useEffect(() => {
+    if (!liveDraftFromRoom || typeof liveDraftFromRoom !== 'object') return;
+    draftDoneRef.current = !!liveDraftFromRoom.done;
+    setDraft(liveDraftFromRoom);
+    refreshDraft().catch(() => {});
+  }, [liveDraftFromRoom, refreshDraft]);
 
   const shareUrl = useMemo(() => {
     if (typeof window === 'undefined') return '';
@@ -564,15 +608,14 @@ export function MiltyDraftPage({ roomBinding = null } = {}) {
     || (inRoom ? `Комната ${roomBinding.roomId}` : `Milty ${draft.id}`);
   const draftCode = inRoom ? String(roomBinding.roomId) : String(draft.id);
 
-  const copyRoomCode = async () => {
-    const text = inRoom ? draftCode : (shareUrl || draftCode);
+  const copyText = async (text, markCopied) => {
     if (!text) return;
     try {
       if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(text);
+        await navigator.clipboard.writeText(String(text));
       } else {
         const ta = document.createElement('textarea');
-        ta.value = text;
+        ta.value = String(text);
         ta.setAttribute('readonly', '');
         ta.style.position = 'fixed';
         ta.style.opacity = '0';
@@ -581,13 +624,21 @@ export function MiltyDraftPage({ roomBinding = null } = {}) {
         document.execCommand('copy');
         document.body.removeChild(ta);
       }
-      setCodeCopied(true);
-      window.setTimeout(() => setCodeCopied(false), 1600);
+      markCopied(true);
+      window.setTimeout(() => markCopied(false), 1600);
     } catch {
-      setCodeCopied(true);
-      window.setTimeout(() => setCodeCopied(false), 1600);
+      markCopied(true);
+      window.setTimeout(() => markCopied(false), 1600);
     }
   };
+
+  const copyRoomCode = () => {
+    const text = inRoom ? draftCode : (shareUrl || draftCode);
+    return copyText(text, setCodeCopied);
+  };
+
+  const hostKey = inRoom ? (roomBinding?.hostKey || null) : null;
+  const copyHostKey = () => copyText(hostKey, setHostKeyCopied);
 
   return (
     <div className="milty-draft hub-shell hub-shell--column">
@@ -625,18 +676,32 @@ export function MiltyDraftPage({ roomBinding = null } = {}) {
           </nav>
 
           <div className="milty-draft__tools">
-            <span className="milty-draft-code" title={draftCode}>{draftCode}</span>
-            <button
-              type="button"
-              className={`milty-draft-tool milty-draft-tool--share${codeCopied ? ' is-copied' : ''}`}
-              onClick={copyRoomCode}
-              title={inRoom ? `Скопировать код ${draftCode}` : 'Скопировать ссылку'}
-            >
-              <i className={`fa-solid ${codeCopied ? 'fa-check' : 'fa-link'}`} aria-hidden="true" />
-              {codeCopied
-                ? 'Скопировано'
-                : (inRoom ? 'Код' : 'Ссылка')}
-            </button>
+            <div className="milty-draft__codes">
+              <span className="milty-draft-code" title={draftCode}>{draftCode}</span>
+              <button
+                type="button"
+                className={`milty-draft-tool milty-draft-tool--share${codeCopied ? ' is-copied' : ''}`}
+                onClick={copyRoomCode}
+                title={inRoom ? `Скопировать код ${draftCode}` : 'Скопировать ссылку'}
+              >
+                <i className={`fa-solid ${codeCopied ? 'fa-check' : 'fa-link'}`} aria-hidden="true" />
+                {codeCopied
+                  ? 'Скопировано'
+                  : (inRoom ? 'Код' : 'Ссылка')}
+              </button>
+              {hostKey && (
+                <button
+                  type="button"
+                  className={`milty-draft-tool milty-draft-tool--host-key${hostKeyCopied ? ' is-copied' : ''}`}
+                  onClick={copyHostKey}
+                  title="Код хоста: перенос на другое устройство (хаб → Настройки → Я хост)"
+                  aria-label="Скопировать код хоста"
+                >
+                  <i className={`fa-solid ${hostKeyCopied ? 'fa-check' : 'fa-key'}`} aria-hidden="true" />
+                  {hostKeyCopied ? 'Хост ✓' : 'Хост'}
+                </button>
+              )}
+            </div>
             {isHost && (
               <button
                 type="button"

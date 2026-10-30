@@ -202,6 +202,29 @@ describe('roomCore', () => {
     expect(moved.room.hostOnline).toBe(true);
   });
 
+  it('claimHostByKey works while Milty draft is in progress', () => {
+    let room = createRoomRecord(normalizeGameState({
+      players: [player(1, 'A'), player(2, 'B')],
+    }));
+    room = {
+      ...room,
+      hubListed: false,
+      milty: {
+        draftId: 'ABCD12',
+        status: 'drafting',
+        adminSecret: 'milty-admin-secret',
+        seatSecrets: {},
+      },
+    };
+    const oldAdmin = Object.keys(room.sessions)[0];
+    const moved = claimHostByKey(room, room.hostKey);
+    expect(moved.ok).toBe(true);
+    expect(moved.sessionToken).not.toBe(oldAdmin);
+    expect(moved.room.milty?.status).toBe('drafting');
+    expect(moved.room.milty?.adminSecret).toBe('milty-admin-secret');
+    expect(hubRoomCard(moved.room)).toBeNull();
+  });
+
   it('ends the party for everyone and clears seat claims on RESET_GAME', () => {
     let room = createRoomRecord(normalizeGameState({
       isGameActive: true,
