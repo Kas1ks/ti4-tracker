@@ -185,6 +185,7 @@ export function MiltyDraftPage({ roomBinding = null } = {}) {
   const [busy, setBusy] = useState(false);
   const [pageTab, setPageTab] = useState('draft');
   const [codeCopied, setCodeCopied] = useState(false);
+  const [regenSel, setRegenSel] = useState({ slices: false, factions: false, order: false });
   const [referenceFaction, setReferenceFaction] = useState(null);
   const [auth, setAuth] = useState(() => {
     if (roomBinding) {
@@ -449,19 +450,29 @@ export function MiltyDraftPage({ roomBinding = null } = {}) {
     }
   };
 
-  const onRegen = async (part) => {
+  const toggleRegenPart = (part) => {
+    setRegenSel((prev) => ({ ...prev, [part]: !prev[part] }));
+  };
+
+  const onRegenConfirm = async () => {
+    const parts = ['slices', 'factions', 'order'].filter((key) => regenSel[key]);
+    if (!parts.length) {
+      setError('Выберите, что перегенерировать');
+      return;
+    }
+    if ((draft?.log?.length || 0) > 0) {
+      setError('Перегенерация только до первого выбора');
+      return;
+    }
     const labels = {
       slices: 'слайсы',
       factions: 'расы',
       order: 'порядок игроков',
     };
-    if ((draft?.log?.length || 0) > 0) {
-      setError('Перегенерация только до первого выбора');
-      return;
-    }
-    const ok = await uiConfirm(`Перегенерировать ${labels[part]}?`, {
-      title: 'Перегенерация',
-      confirmLabel: 'Перегенерировать',
+    const list = parts.map((p) => labels[p]).join(', ');
+    const ok = await uiConfirm(`Перегенерировать: ${list}?`, {
+      title: 'Подтверждение перегенерации',
+      confirmLabel: 'Подтвердить',
       cancelLabel: 'Отмена',
       variant: 'info',
     });
@@ -472,16 +483,17 @@ export function MiltyDraftPage({ roomBinding = null } = {}) {
       if (inRoom) {
         const res = await regenMiltyInRoom(roomBinding.roomId, {
           hostKey: roomBinding.hostKey,
-          part,
+          parts,
         });
         setDraft(res.draft);
       } else {
         const res = await regenMilty(id, {
           adminSecret: auth.adminSecret,
-          part,
+          parts,
         });
         setDraft(res.draft);
       }
+      setRegenSel({ slices: false, factions: false, order: false });
     } catch (err) {
       setError(String(err?.message || err));
     } finally {
@@ -1048,34 +1060,55 @@ export function MiltyDraftPage({ roomBinding = null } = {}) {
             ) : (
               <>
                 <p className="milty-draft-hint">
-                  Можно менять слайсы, расы и порядок игроков, пока никто ещё не сделал выбор.
+                  Отметьте, что нужно обновить, затем подтвердите. Можно выбрать несколько пунктов.
+                  При перегенерации рас новые расы стараются не повторять текущий пул.
                 </p>
-                <div className="milty-draft-regen">
+                <div className="milty-draft-regen" role="group" aria-label="Что перегенерировать">
                   <button
                     type="button"
                     disabled={busy}
-                    onClick={() => onRegen('slices')}
-                    className="milty-draft-tool milty-draft-tool--wide"
+                    aria-pressed={regenSel.slices}
+                    onClick={() => toggleRegenPart('slices')}
+                    className={`milty-draft-tool milty-draft-tool--wide milty-draft-regen__opt${
+                      regenSel.slices ? ' is-active' : ''
+                    }`}
                   >
-                    Перегенерировать слайсы
+                    <i className={`fa-solid ${regenSel.slices ? 'fa-square-check' : 'fa-square'}`} aria-hidden="true" />
+                    Слайсы
                   </button>
                   <button
                     type="button"
                     disabled={busy}
-                    onClick={() => onRegen('factions')}
-                    className="milty-draft-tool milty-draft-tool--wide"
+                    aria-pressed={regenSel.factions}
+                    onClick={() => toggleRegenPart('factions')}
+                    className={`milty-draft-tool milty-draft-tool--wide milty-draft-regen__opt${
+                      regenSel.factions ? ' is-active' : ''
+                    }`}
                   >
-                    Перегенерировать расы
+                    <i className={`fa-solid ${regenSel.factions ? 'fa-square-check' : 'fa-square'}`} aria-hidden="true" />
+                    Расы
                   </button>
                   <button
                     type="button"
                     disabled={busy}
-                    onClick={() => onRegen('order')}
-                    className="milty-draft-tool milty-draft-tool--wide"
+                    aria-pressed={regenSel.order}
+                    onClick={() => toggleRegenPart('order')}
+                    className={`milty-draft-tool milty-draft-tool--wide milty-draft-regen__opt${
+                      regenSel.order ? ' is-active' : ''
+                    }`}
                   >
-                    Перемешать порядок игроков
+                    <i className={`fa-solid ${regenSel.order ? 'fa-square-check' : 'fa-square'}`} aria-hidden="true" />
+                    Порядок игроков
                   </button>
                 </div>
+                <button
+                  type="button"
+                  disabled={busy || !(regenSel.slices || regenSel.factions || regenSel.order)}
+                  onClick={onRegenConfirm}
+                  className="milty-draft-tool milty-draft-tool--wide milty-draft-tool--accent milty-draft-regen__confirm"
+                >
+                  Подтвердить перегенерацию
+                </button>
               </>
             )}
           </section>

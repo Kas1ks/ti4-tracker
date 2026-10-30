@@ -607,6 +607,9 @@ function App() {
             onBack={() => navigate('/')}
             isStatsLoading={cloud.isStatsLoading}
             globalHistory={cloud.globalHistory}
+            pendingLocalCount={cloud.pendingLocalCount}
+            isPendingUploading={cloud.isPendingUploading}
+            onUploadPending={cloud.uploadPendingStats}
             deleteSingleGame={cloud.deleteSingleGame}
             clearAllStats={cloud.clearAllStats}
           />

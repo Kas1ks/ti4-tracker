@@ -700,6 +700,10 @@ function PlayersPanel({ players, onOpenPlayer, onOpenFaction }) {
                 <th className="is-center">Поб.</th>
                 <th className="is-center">WR</th>
                 <th className="is-center">Ср. ПО</th>
+                <th className="is-center">Урон</th>
+                <th className="is-center">BT%</th>
+                <th className="is-center">Cust.</th>
+                <th className="is-center">Elim</th>
                 <th className="is-right">Ср. время</th>
                 <th>Топ фракции</th>
               </tr>
@@ -717,6 +721,12 @@ function PlayersPanel({ players, onOpenPlayer, onOpenFaction }) {
                   <td className="is-center is-gold">{p.wins}</td>
                   <td className="is-center is-gold">{p.winRate}%</td>
                   <td className="is-center">{p.avgScore}</td>
+                  <td className="is-center is-danger">{p.avgDamage ?? 0}</td>
+                  <td className="is-center">{p.breakthroughRate ?? 0}%</td>
+                  <td className="is-center is-muted">{p.custodiansGames ?? 0}</td>
+                  <td className="is-center is-muted">
+                    {p.avgElimRound != null ? p.avgElimRound : '—'}
+                  </td>
                   <td className="is-right mono">{formatAvgTime(p.avgGameTime)}</td>
                   <td className="stats-factions-cell">
                     {(p.factions || []).slice(0, 2).map((f) => (
@@ -759,6 +769,8 @@ function FactionsPanel({ factions, onOpenFaction }) {
                 <th className="is-center">Поб.</th>
                 <th className="is-center">WR</th>
                 <th className="is-center">Ср. ПО</th>
+                <th className="is-center">Урон</th>
+                <th className="is-center">BT%</th>
                 <th className="is-center">Ср. раунд</th>
                 <th className="is-right">Ср. время</th>
               </tr>
@@ -776,6 +788,8 @@ function FactionsPanel({ factions, onOpenFaction }) {
                   <td className="is-center is-gold">{f.wins}</td>
                   <td className="is-center is-gold">{f.winRate}%</td>
                   <td className="is-center">{f.avgVp}</td>
+                  <td className="is-center is-danger">{f.avgDamage ?? 0}</td>
+                  <td className="is-center">{f.breakthroughRate ?? 0}%</td>
                   <td className="is-center is-muted">{f.avgRounds}</td>
                   <td className="is-right mono">{formatAvgTime(f.avgGameTime)}</td>
                 </tr>
@@ -1285,6 +1299,9 @@ export function StatsPage({
   onBack,
   isStatsLoading,
   globalHistory,
+  pendingLocalCount = 0,
+  isPendingUploading = false,
+  onUploadPending = null,
   deleteSingleGame,
   clearAllStats,
 }) {
@@ -1367,6 +1384,37 @@ export function StatsPage({
       </header>
 
       <main className="stats-main">
+        {pendingLocalCount > 0 && (
+          <div className="stats-local-banner" role="status">
+            <div className="stats-local-banner__copy">
+              <strong>Локальные партии:</strong>
+              {' '}
+              {pendingLocalCount}
+              {' '}
+              ещё не в облаке — уже учтены в этой странице.
+            </div>
+            {isCloudConfigured && typeof onUploadPending === 'function' ? (
+              <button
+                type="button"
+                className="stats-local-banner__btn"
+                disabled={isPendingUploading}
+                onClick={onUploadPending}
+              >
+                {isPendingUploading ? (
+                  <>
+                    <i className="fa-solid fa-spinner fa-spin" aria-hidden="true" />
+                    Загрузка…
+                  </>
+                ) : (
+                  <>
+                    <i className="fa-solid fa-cloud-arrow-up" aria-hidden="true" />
+                    Загрузить в облако
+                  </>
+                )}
+              </button>
+            ) : null}
+          </div>
+        )}
         {isStatsLoading ? (
           <div className="stats-state">
             <i className="fa-solid fa-spinner fa-spin" aria-hidden="true" />
@@ -1376,7 +1424,7 @@ export function StatsPage({
           <div className="stats-state">
             {isCloudConfigured
               ? 'История игр пока пуста. Завершите хотя бы одну партию!'
-              : 'Облачная статистика выключена (VITE_CLOUD_ENABLED=false).'}
+              : 'Облачная статистика выключена (VITE_CLOUD_ENABLED=false). Локальные итоги появятся здесь после партии.'}
           </div>
         ) : (
           <div className="stats-content">

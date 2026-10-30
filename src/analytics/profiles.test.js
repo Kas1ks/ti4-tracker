@@ -56,6 +56,13 @@ const history = normalizeHistory([
       { round: 1, player: 'Alex', cardId: 7 },
       { round: 1, player: 'Bob', cardId: 1 },
     ],
+    strategyPlays: [
+      { player: 'Alex', cardId: 7, role: 'primary', outcome: 'played' },
+      { player: 'Alex', cardId: 1, role: 'secondary', outcome: 'played' },
+      { player: 'Alex', cardId: 2, role: 'secondary', outcome: 'passed' },
+      { player: 'Bob', cardId: 1, role: 'primary', outcome: 'played' },
+      { player: 'Bob', cardId: 7, role: 'secondary', outcome: 'passed' },
+    ],
     objectives: [],
   },
   {
@@ -140,6 +147,14 @@ describe('profiles', () => {
     expect(profile.techs.some((t) => t.id === 'neural_motivator')).toBe(true);
     expect(profile.recentGames.length).toBe(2);
     expect(profile.vpMix.gamesWithDetail).toBe(1);
+  });
+
+  it('counts secondary engagement from outcome=passed/played', () => {
+    const profile = buildPlayerProfile(history, 'Alex');
+    expect(profile.secondary.gamesWithPlays).toBe(1);
+    expect(profile.secondary.secondaryPlays).toBe(1);
+    expect(profile.secondary.secondaryPasses).toBe(1);
+    expect(profile.secondary.engagementRate).toBe(50);
   });
 
   it('builds faction profile with players list', () => {

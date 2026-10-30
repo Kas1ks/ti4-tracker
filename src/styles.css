@@ -17319,6 +17319,49 @@ body.hub-cinematic .game-header,
   color: var(--stats-muted);
 }
 
+.stats-local-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.65rem 1rem;
+  margin: 0 0 0.85rem;
+  padding: 0.75rem 0.9rem;
+  border-radius: 12px;
+  border: 1px solid rgba(240, 215, 140, 0.4);
+  background: rgba(201, 162, 39, 0.12);
+  color: rgba(226, 232, 240, 0.92);
+  font-size: 0.86rem;
+  line-height: 1.4;
+}
+.stats-local-banner__copy strong {
+  color: #f0d78c;
+}
+.stats-local-banner__btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  border-radius: 9px;
+  border: 1px solid rgba(240, 215, 140, 0.55);
+  background: rgba(15, 23, 42, 0.55);
+  color: #f0d78c;
+  font-family: 'Montserrat', sans-serif;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 0.5rem 0.85rem;
+  cursor: pointer;
+}
+.stats-local-banner__btn:hover:not(:disabled) {
+  border-color: rgba(240, 215, 140, 0.85);
+  background: rgba(201, 162, 39, 0.2);
+}
+.stats-local-banner__btn:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
 .stats-note.is-strong {
   font-weight: 700;
   color: var(--stats-text);
@@ -20795,8 +20838,20 @@ body.hub-cinematic .game-header,
 }
 .milty-draft-regen {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
   gap: 0.5rem;
+}
+.milty-draft-regen__opt {
+  justify-content: flex-start;
+  gap: 0.55rem;
+}
+.milty-draft-regen__opt.is-active {
+  border-color: rgba(240, 215, 140, 0.7);
+  background: rgba(201, 162, 39, 0.18);
+  color: #f0d78c;
+}
+.milty-draft-regen__confirm {
+  margin-top: 0.35rem;
 }
 .milty-draft-foot {
   margin: 0.25rem 0 0;

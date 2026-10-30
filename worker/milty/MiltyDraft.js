@@ -3,7 +3,7 @@ import {
   claimPlayer,
   createDraftDocument,
   publicDraftView,
-  regenerateDraftPart,
+  regenerateDraftParts,
   unclaimPlayer,
   undoLastPick,
 } from '../../src/milty/draftEngine.js';
@@ -185,7 +185,9 @@ export class MiltyDraft {
 
     if (method === 'POST' && path.endsWith('/regen')) {
       const body = await request.json().catch(() => ({}));
-      const result = regenerateDraftPart(draft, body?.part, { adminSecret: body?.adminSecret });
+      const result = regenerateDraftParts(draft, body?.parts ?? body?.part, {
+        adminSecret: body?.adminSecret,
+      });
       if (!result.ok) {
         return Response.json(result, { status: result.error === 'forbidden' ? 403 : 400 });
       }
@@ -194,6 +196,7 @@ export class MiltyDraft {
       return Response.json({
         ok: true,
         draft: publicDraftView(draft, { adminSecret: body.adminSecret }),
+        parts: result.parts,
       });
     }
 

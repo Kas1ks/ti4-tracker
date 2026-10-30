@@ -5,6 +5,7 @@ import {
   claimPlayer,
   createDraftDocument,
   regenerateDraftPart,
+  regenerateDraftParts,
   snakeOrder,
   unclaimPlayer,
   undoLastPick,
@@ -106,10 +107,17 @@ describe('draftEngine', () => {
     });
     for (const id of draft.playerOrder) claimPlayer(draft, { playerId: id });
 
-    const slices = regenerateDraftPart(draft, 'slices', { adminSecret: draft.adminSecret });
-    expect(slices.ok).toBe(true);
-    const factions = regenerateDraftPart(draft, 'factions', { adminSecret: draft.adminSecret });
-    expect(factions.ok).toBe(true);
+    const beforeFactions = new Set(draft.factionPool.map((f) => f.id));
+    const multi = regenerateDraftParts(draft, ['slices', 'factions', 'order'], {
+      adminSecret: draft.adminSecret,
+    });
+    expect(multi.ok).toBe(true);
+    expect(multi.parts).toEqual(['slices', 'factions', 'order']);
+    const afterFactions = draft.factionPool.map((f) => f.id);
+    expect(afterFactions).toHaveLength(5);
+    // Prefer non-overlapping races when the set is large enough.
+    expect(afterFactions.every((id) => !beforeFactions.has(id))).toBe(true);
+
     const beforeOrder = [...draft.playerOrder];
     const order = regenerateDraftPart(draft, 'order', { adminSecret: draft.adminSecret });
     expect(order.ok).toBe(true);

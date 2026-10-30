@@ -3,6 +3,15 @@ import { isCloudConfigured } from '../config';
 import { stampGameState } from '../game/gameState';
 import { rememberObjectiveIds } from '../game/objectiveHistory';
 import { buildGameRecord, normalizeHistory } from '../analytics/gameRecord';
+import {
+  enqueuePendingStat,
+  loadLocalGameSummary,
+  loadPendingStats,
+  mergeStatsHistory,
+  pendingOnlyCount,
+  prunePendingAgainstCloud,
+  savePendingStats,
+} from '../analytics/localStatsQueue';
 import { getHostWriteToken, setHostWriteToken } from '../sync/hostWriteToken';
 import { verifyHostSecret } from '../sync/roomApi';
 import {
@@ -18,7 +27,9 @@ import { cloudErrorMessage } from '../utils/cloudErrors';
 /** Stats, cloud saves and end-of-game upload — everything that talks to /api. */
 export function useCloudGame({ game, dispatch, getPlayerScore, uiAlert, uiConfirm, uiPrompt }) {
   const [globalHistory, setGlobalHistory] = useState([]);
+  const [pendingLocalCount, setPendingLocalCount] = useState(0);
   const [isStatsLoading, setIsStatsLoading] = useState(false);
+  const [isPendingUploading, setIsPendingUploading] = useState(false);
   const gameRef = useRef(game);
   gameRef.current = game;
 
@@ -50,17 +61,77 @@ export function useCloudGame({ game, dispatch, getPlayerScore, uiAlert, uiConfir
     }
   };
 
-  /** Load company history for the /stats page. */
+  /** Load company history for the /stats page (cloud + local pending bridge). */
   const loadStatsHistory = async () => {
     setIsStatsLoading(true);
     try {
-      const raw = isCloudConfigured ? await fetchCloudStats() : [];
-      setGlobalHistory(normalizeHistory(raw));
+      let cloud = [];
+      if (isCloudConfigured) {
+        try {
+          cloud = await fetchCloudStats();
+        } catch (err) {
+          console.error(err);
+          cloud = [];
+        }
+      }
+      const pending = prunePendingAgainstCloud(cloud);
+      const summary = loadLocalGameSummary();
+      const merged = mergeStatsHistory(cloud, pending, summary);
+      setGlobalHistory(merged);
+      setPendingLocalCount(pendingOnlyCount(cloud, pending));
     } catch (err) {
       console.error(err);
-      setGlobalHistory([]);
+      const pending = loadPendingStats();
+      const summary = loadLocalGameSummary();
+      setGlobalHistory(mergeStatsHistory([], pending, summary));
+      setPendingLocalCount(pending.length);
     } finally {
       setIsStatsLoading(false);
+    }
+  };
+
+  /** Upload pending local game records into company cloud history. */
+  const uploadPendingStats = async () => {
+    if (!isCloudConfigured) {
+      await uiAlert('Облачная статистика не настроена.', { variant: 'danger', title: 'Облако' });
+      return;
+    }
+    const pending = loadPendingStats();
+    if (!pending.length) {
+      await uiAlert('Локальная очередь пуста.', { variant: 'info', title: 'Статистика' });
+      return;
+    }
+    const token = await ensureWriteToken();
+    if (!token) return;
+
+    setIsPendingUploading(true);
+    try {
+      const remaining = [];
+      let uploaded = 0;
+      for (const record of pending) {
+        try {
+          await postGameRecord(record, { createSecret: token });
+          uploaded += 1;
+        } catch (err) {
+          console.error(err);
+          remaining.push(record);
+        }
+      }
+      savePendingStats(remaining);
+      await loadStatsHistory();
+      if (remaining.length) {
+        await uiAlert(
+          `Загружено ${uploaded} из ${pending.length}. Остались в очереди: ${remaining.length}.`,
+          { title: 'Частичная загрузка', variant: 'danger' },
+        );
+      } else {
+        await uiAlert(`В облако загружено партий: ${uploaded}.`, {
+          title: 'Готово',
+          variant: 'success',
+        });
+      }
+    } finally {
+      setIsPendingUploading(false);
     }
   };
 
@@ -121,32 +192,40 @@ export function useCloudGame({ game, dispatch, getPlayerScore, uiAlert, uiConfir
     localStorage.setItem('ti4_gameSummary', JSON.stringify(gameRecord));
 
     if (!isCloudConfigured) {
-      await uiAlert('Партия сохранена только на этом устройстве. Облачная статистика не настроена.', {
-        title: 'Локальное сохранение',
-        variant: 'info',
-      });
+      enqueuePendingStat(gameRecord);
+      await uiAlert(
+        'Партия сохранена на этом устройстве и попадёт в /stats локально. Облако не настроено.',
+        {
+          title: 'Локальное сохранение',
+          variant: 'info',
+        },
+      );
       return true;
     }
 
     try {
       const token = await ensureWriteToken();
       if (!token) {
+        enqueuePendingStat(gameRecord);
         await uiAlert(
-          'Итоги партии сохранены на этом устройстве. Облачная запись отменена (нет кода доступа).',
+          'Итоги сохранены локально (очередь для /stats). Облачная запись отменена — нет кода доступа.',
           { title: 'Локальное сохранение', variant: 'info' },
         );
         return true;
       }
       await postGameRecord(gameRecord, { createSecret: token });
+      // Successful cloud write — keep pending clean if this id was queued earlier.
+      prunePendingAgainstCloud([gameRecord]);
       await uiAlert('Партия успешно сохранена в общую статистику!', {
         title: 'Сохранено',
         variant: 'success',
       });
       return true;
     } catch (err) {
-      // Local summary is already written — still allow exit so the host is not stuck.
+      // Local summary + pending queue — still allow exit so the host is not stuck.
+      enqueuePendingStat(gameRecord);
       await uiAlert(
-        `${cloudErrorMessage(err, 'Не удалось сохранить в облако')}\n\nИтоги партии сохранены на этом устройстве. Можно выйти.`,
+        `${cloudErrorMessage(err, 'Не удалось сохранить в облако')}\n\nИтоги сохранены на устройстве и ждут загрузки в /stats. Можно выйти.`,
         {
           title: 'Облако недоступно',
           variant: 'danger',
@@ -203,8 +282,11 @@ export function useCloudGame({ game, dispatch, getPlayerScore, uiAlert, uiConfir
 
   return {
     globalHistory,
+    pendingLocalCount,
     isStatsLoading,
+    isPendingUploading,
     loadStatsHistory,
+    uploadPendingStats,
     deleteSingleGame,
     clearAllStats,
     saveGameToCloud,

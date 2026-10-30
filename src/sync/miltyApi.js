@@ -79,10 +79,14 @@ export async function undoMilty(id, body) {
 }
 
 export async function regenMilty(id, body) {
+  const payload = {
+    adminSecret: body?.adminSecret,
+    parts: body?.parts ?? (body?.part != null ? [body.part] : undefined),
+  };
   const res = await fetch(`/api/milty/${encodeURIComponent(id)}/regen`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
+    body: JSON.stringify(payload),
   });
   const data = await readJson(res);
   if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);

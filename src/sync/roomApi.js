@@ -53,11 +53,14 @@ export async function undoMiltyInRoom(roomId, { hostKey }) {
   return res.json();
 }
 
-export async function regenMiltyInRoom(roomId, { hostKey, part }) {
+export async function regenMiltyInRoom(roomId, { hostKey, part, parts }) {
   const res = await fetch(`/api/rooms/${encodeURIComponent(roomId)}/milty/regen`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ hostKey, part }),
+    body: JSON.stringify({
+      hostKey,
+      parts: parts ?? (part != null ? [part] : undefined),
+    }),
   });
   if (!res.ok) throw new Error(await readError(res));
   return res.json();

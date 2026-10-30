@@ -3,7 +3,7 @@ import {
   claimPlayer,
   createDraftDocument,
   publicDraftView,
-  regenerateDraftPart,
+  regenerateDraftParts,
   unclaimPlayer,
   undoLastPick,
 } from '../../src/milty/draftEngine.js';
@@ -115,13 +115,15 @@ export function memoryMiltyUndo(id, body) {
 export function memoryMiltyRegen(id, body) {
   const draft = get(id);
   if (!draft) return { ok: false, error: 'not-found' };
-  const result = regenerateDraftPart(draft, body?.part, { adminSecret: body?.adminSecret });
+  const parts = body?.parts ?? body?.part;
+  const result = regenerateDraftParts(draft, parts, { adminSecret: body?.adminSecret });
   if (!result.ok) return result;
   put(draft);
   notify(draft.id, { type: 'state', draft: publicDraftView(draft) });
   return {
     ok: true,
     draft: publicDraftView(draft, { adminSecret: body.adminSecret }),
+    parts: result.parts,
   };
 }
 

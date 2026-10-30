@@ -153,11 +153,13 @@ function secondaryEngagementForEntries(entries) {
       const byId = seat.playerId != null && p.playerId === seat.playerId;
       return byName || byId;
     });
-    if (!mine.length) return;
+    // Only secondary actions count toward 2° engagement.
+    const secondary = mine.filter((p) => p.role === 'secondary');
+    if (!secondary.length) return;
     gamesWithPlays += 1;
-    mine.forEach((p) => {
-      if (p.role === 'secondary' || p.choice === 'play') secondaryPlays += 1;
-      if (p.role === 'pass' || p.choice === 'pass' || p.passed) secondaryPasses += 1;
+    secondary.forEach((p) => {
+      if (p.outcome === 'passed') secondaryPasses += 1;
+      else secondaryPlays += 1;
     });
   });
   const opportunities = secondaryPlays + secondaryPasses;

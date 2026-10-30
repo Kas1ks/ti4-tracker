@@ -25,6 +25,7 @@ export {
   regenerateFactions,
   regeneratePlayerOrder,
   regenerateDraftPart,
+  regenerateDraftParts,
   assembleResult,
   snakeOrder,
   updateCurrentPlayer,

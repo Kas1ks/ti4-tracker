@@ -425,13 +425,19 @@ export class GameRoom {
       }
       const regen = await regenMiltyInEnv(this.env, room.milty.draftId, {
         part: body.part,
+        parts: body.parts,
         adminSecret: room.milty.adminSecret,
       });
       if (!regen?.ok) {
         return Response.json({ error: regen?.error || 'regen-failed' }, { status: 400 });
       }
       this.broadcast({ type: 'milty', draft: regen.draft, milty: publicRoomView(room).milty });
-      return Response.json({ ok: true, draft: regen.draft, room: publicRoomView(room) });
+      return Response.json({
+        ok: true,
+        draft: regen.draft,
+        room: publicRoomView(room),
+        parts: regen.parts,
+      });
     }
 
     if (method === 'POST' && path.endsWith('/release-seat')) {

@@ -325,64 +325,84 @@ function assertCanRegen(draft) {
   return { ok: true };
 }
 
-/** Host: regenerate slice pool. Only before the first pick. */
-export function regenerateSlices(draft, { adminSecret } = {}) {
-  const auth = assertAdmin(draft, adminSecret);
-  if (!auth.ok) return auth;
-  const gate = assertCanRegen(draft);
-  if (!gate.ok) return gate;
-  try {
-    if (!draft.settings.customSlices?.length) {
-      const seed = randomSeed();
-      draft.settings.seed = seed;
-      const { slices, seed: used } = generateSlicePool({ ...draft.settings, seed });
-      draft.settings.seed = used;
-      draft.slicePool = slices.map(serializeSlice);
-    }
-  } catch (err) {
-    return { ok: false, error: String(err?.message || err || 'regen-slices-failed') };
-  }
-  draft.seq += 1;
-  return { ok: true, draft };
+function mutateRegenSlices(draft) {
+  if (draft.settings.customSlices?.length) return;
+  const seed = randomSeed();
+  draft.settings.seed = seed;
+  const { slices, seed: used } = generateSlicePool({ ...draft.settings, seed });
+  draft.settings.seed = used;
+  draft.slicePool = slices.map(serializeSlice);
 }
 
-/** Host: regenerate faction pool. Only before the first pick. */
-export function regenerateFactions(draft, { adminSecret } = {}) {
-  const auth = assertAdmin(draft, adminSecret);
-  if (!auth.ok) return auth;
-  const gate = assertCanRegen(draft);
-  if (!gate.ok) return gate;
-  try {
-    const factionSeed = randomSeed();
-    const factions = generateFactionPool({ ...draft.settings, seed: factionSeed });
-    draft.factionPool = factions.map(serializeFaction);
-  } catch (err) {
-    return { ok: false, error: String(err?.message || err || 'regen-factions-failed') };
+function mutateRegenFactions(draft) {
+  const previousIds = (draft.factionPool || []).map((f) => f.id);
+  const factionSeed = randomSeed();
+  const factions = generateFactionPool(
+    { ...draft.settings, seed: factionSeed },
+    { excludeIds: previousIds },
+  );
+  draft.factionPool = factions.map(serializeFaction);
+}
+
+function mutateRegenOrder(draft) {
+  shuffleInPlace(draft.playerOrder, createRng(randomSeed()));
+  updateCurrentPlayer(draft);
+}
+
+function normalizeRegenParts(parts) {
+  const raw = Array.isArray(parts) ? parts : (parts != null ? [parts] : []);
+  const allowed = new Set(['slices', 'factions', 'order']);
+  const out = [];
+  for (const part of raw) {
+    const key = String(part || '');
+    if (!allowed.has(key)) continue;
+    if (!out.includes(key)) out.push(key);
   }
-  draft.seq += 1;
-  return { ok: true, draft };
+  return out;
+}
+
+/** Host: regenerate slice pool. Only before the first pick. */
+export function regenerateSlices(draft, { adminSecret } = {}) {
+  return regenerateDraftParts(draft, ['slices'], { adminSecret });
+}
+
+/** Host: regenerate faction pool (prefers new races). Only before the first pick. */
+export function regenerateFactions(draft, { adminSecret } = {}) {
+  return regenerateDraftParts(draft, ['factions'], { adminSecret });
 }
 
 /** Host: reshuffle draft (snake) player order. Only before the first pick. */
 export function regeneratePlayerOrder(draft, { adminSecret } = {}) {
+  return regenerateDraftParts(draft, ['order'], { adminSecret });
+}
+
+/**
+ * Host: regenerate one or more parts in a single confirm.
+ * @param {'slices'|'factions'|'order'|Array<'slices'|'factions'|'order'>} parts
+ */
+export function regenerateDraftParts(draft, parts, { adminSecret } = {}) {
   const auth = assertAdmin(draft, adminSecret);
   if (!auth.ok) return auth;
   const gate = assertCanRegen(draft);
   if (!gate.ok) return gate;
-  shuffleInPlace(draft.playerOrder, createRng(randomSeed()));
-  updateCurrentPlayer(draft);
+  const list = normalizeRegenParts(parts);
+  if (!list.length) return { ok: false, error: 'bad-part' };
+  try {
+    if (list.includes('slices')) mutateRegenSlices(draft);
+    if (list.includes('factions')) mutateRegenFactions(draft);
+    if (list.includes('order')) mutateRegenOrder(draft);
+  } catch (err) {
+    return { ok: false, error: String(err?.message || err || 'regen-failed') };
+  }
   draft.seq += 1;
-  return { ok: true, draft };
+  return { ok: true, draft, parts: list };
 }
 
 /**
  * @param {'slices'|'factions'|'order'} part
  */
 export function regenerateDraftPart(draft, part, { adminSecret } = {}) {
-  if (part === 'slices') return regenerateSlices(draft, { adminSecret });
-  if (part === 'factions') return regenerateFactions(draft, { adminSecret });
-  if (part === 'order') return regeneratePlayerOrder(draft, { adminSecret });
-  return { ok: false, error: 'bad-part' };
+  return regenerateDraftParts(draft, part, { adminSecret });
 }
 
 /** Assemble final seating: position → player with faction + slice. */

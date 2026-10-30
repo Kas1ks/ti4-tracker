@@ -207,7 +207,7 @@ export async function memoryMiltyUndo(roomId, { hostKey } = {}, env = {}) {
   return { ok: true, draft: undone.draft, room };
 }
 
-export async function memoryMiltyRegen(roomId, { hostKey, part } = {}, env = {}) {
+export async function memoryMiltyRegen(roomId, { hostKey, part, parts } = {}, env = {}) {
   const key = String(roomId || '').toUpperCase();
   const room = purgeIfExpired(key);
   if (!room) return { ok: false, error: 'not-found' };
@@ -215,11 +215,12 @@ export async function memoryMiltyRegen(roomId, { hostKey, part } = {}, env = {})
   if (!room.milty?.draftId) return { ok: false, error: 'no-milty' };
   const regen = await regenMiltyInEnv(env, room.milty.draftId, {
     part,
+    parts,
     adminSecret: room.milty.adminSecret,
   });
   if (!regen?.ok) return { ok: false, error: regen?.error || 'regen-failed' };
   notify(key, { type: 'milty', draft: regen.draft, milty: publicRoomView(room).milty });
-  return { ok: true, draft: regen.draft, room };
+  return { ok: true, draft: regen.draft, room, parts: regen.parts };
 }
 
 export async function memoryReleaseSeat(roomId, body, env = {}) {
