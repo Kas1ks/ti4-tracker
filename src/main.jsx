@@ -1,11 +1,12 @@
+// Capture beforeinstallprompt BEFORE anything else (Android Chrome fires it early).
+import './pwaInstallCapture.js';
+
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
 import { registerSW } from 'virtual:pwa-register';
 import App from './App';
 import './styles.css';
-// Side-effect: capture beforeinstallprompt before React mounts (Android Chrome).
-import './pwaInstallCapture.js';
 
 registerSW({ immediate: true });
 

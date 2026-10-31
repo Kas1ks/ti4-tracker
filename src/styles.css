@@ -11601,16 +11601,8 @@ body {
   color: var(--game-gold-bright);
 }
 
-/* Lock document scroll only on hub home — Milty/lobby/game still need page scroll */
-body.hub-cinematic:has(.hub-shell--home) {
-  overflow: hidden;
-  height: 100dvh;
-  height: 100svh;
-}
-body.hub-cinematic:has(.hub-shell--home) #root {
-  height: 100%;
-  overflow: hidden;
-}
+/* No document scroll lock on hub — content (PWA banner + dock) must be able to scroll.
+   Phantom overflow from HUD SVG bloom is clipped via .hub-hud { overflow: hidden }. */
 body.hub-cinematic .modal-overlay {
   background: rgba(0, 0, 0, 0.78);
 }
@@ -14193,11 +14185,6 @@ i.pcbat-btn-ico {
 .hub-shell--home {
   position: relative;
   padding: 0;
-  height: 100%;
-  overflow-x: hidden;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  -webkit-overflow-scrolling: touch;
 }
 
 /* —— Top / bottom HUD wires traced from reference crops —— */
@@ -15536,12 +15523,6 @@ i.pcbat-btn-ico {
     flex-direction: column;
     min-height: 100svh;
   }
-  .hub-shell--home {
-    height: 100%;
-    /* Keep shell as scrollport when PWA banner / dock overflow the viewport */
-    overflow-y: auto;
-    -webkit-overflow-scrolling: touch;
-  }
 
   .hub-sidebar {
     width: 100%;
@@ -15622,15 +15603,14 @@ i.pcbat-btn-ico {
 
   .hub-home {
     gap: 1.15rem;
-    padding: 0.35rem 1.1rem 1rem;
-    justify-content: space-between;
-    /* Grow with content (banner + dock); still fill short screens via min-height */
+    padding: 0.35rem 1.1rem calc(1rem + env(safe-area-inset-bottom, 0px));
+    justify-content: flex-start;
     flex: 1 0 auto;
-    min-height: 100%;
+    min-height: auto;
   }
 
   .hub-home-center {
-    flex: 1 1 auto;
+    flex: 0 0 auto;
     min-height: auto;
     align-items: center;
     padding: 0.35rem 0 0.25rem;

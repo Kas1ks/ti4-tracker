@@ -2,7 +2,8 @@ import { usePwaInstall } from '../hooks/usePwaInstall';
 
 /**
  * Install hint on the hub.
- * Native «Установить» only on HTTPS Android; on LAN http we show menu steps + app icon.
+ * Native «Установить» only when Chrome fired beforeinstallprompt.
+ * Otherwise Android gets short menu steps (not an always-on fake install button).
  * @param {{ variant?: 'default' | 'hub' }} props
  */
 export function PwaInstallBanner({ variant = 'default' }) {
@@ -27,9 +28,9 @@ export function PwaInstallBanner({ variant = 'default' }) {
   } else if (canNativePrompt) {
     body = 'Добавьте приложение на главный экран — быстрее заходить в комнату за столом.';
   } else if (!isSecureContext) {
-    body = 'Нужен https (или localhost). На http:// в локальной сети Chrome часто не даёт кнопку «Установить» — откройте прод или меню ⋮ → «Установить приложение».';
+    body = 'Для кнопки «Установить» нужен https. На http: меню Chrome ⋮ → «Установить приложение».';
   } else {
-    body = 'Chrome ещё не предложил установку (уже стояло / мало визитов / кэш). Меню ⋮ справа вверху → «Установить приложение» или «Добавить на главный экран».';
+    body = 'Chrome не предложил установку. Меню ⋮ → «Установить приложение» / «Добавить на главный экран».';
   }
 
   const isHub = variant === 'hub';
@@ -62,7 +63,7 @@ export function PwaInstallBanner({ variant = 'default' }) {
             {body}
           </p>
           <div className="mt-2.5 flex flex-wrap gap-2">
-            {canNativePrompt && (
+            {canNativePrompt ? (
               <button
                 type="button"
                 onClick={() => promptInstall()}
@@ -74,8 +75,8 @@ export function PwaInstallBanner({ variant = 'default' }) {
               >
                 Установить
               </button>
-            )}
-            {showManualAndroid && (
+            ) : null}
+            {showManualAndroid ? (
               <span
                 className={
                   isHub
@@ -86,7 +87,7 @@ export function PwaInstallBanner({ variant = 'default' }) {
                 <i className="fa-solid fa-ellipsis-vertical mr-1.5" aria-hidden="true" />
                 Меню Chrome → на экран
               </span>
-            )}
+            ) : null}
             <button
               type="button"
               onClick={dismiss}
