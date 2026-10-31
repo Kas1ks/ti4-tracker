@@ -21219,28 +21219,45 @@ body.hub-cinematic .game-header,
   overflow-x: clip;
   overflow-y: visible;
 }
-/* Mobile: shell is the scrollport so draft content can scroll under hub-cinematic */
-@media (max-width: 899px) {
-  body.hub-cinematic:has(.milty-draft) {
+/* Mobile Milty:
+   Draft/status/slices → document scroll (inner scrollports break on OEM Chrome).
+   Map tab only → locked viewport. */
+@media (max-width: 900px) {
+  body.hub-cinematic:has(.milty-draft):not(:has(.milty-draft__stage--map)) {
+    overflow-x: hidden;
+    overflow-y: auto;
+    height: auto;
+    min-height: 100dvh;
+    min-height: 100svh;
+    -webkit-overflow-scrolling: touch;
+  }
+  body.hub-cinematic:has(.milty-draft):not(:has(.milty-draft__stage--map)) #root {
+    height: auto;
+    min-height: 100%;
+    overflow: visible;
+  }
+  .milty-draft.hub-shell:not(:has(.milty-draft__stage--map)) {
+    height: auto;
+    max-height: none;
+    min-height: 100dvh;
+    min-height: 100svh;
+    overflow-x: clip;
+    overflow-y: visible;
+  }
+
+  body.hub-cinematic:has(.milty-draft__stage--map) {
     overflow: hidden;
     height: 100dvh;
     height: 100svh;
   }
-  body.hub-cinematic:has(.milty-draft) #root {
+  body.hub-cinematic:has(.milty-draft__stage--map) #root {
     height: 100%;
     overflow: hidden;
   }
-  .milty-draft.hub-shell {
+  .milty-draft.hub-shell:has(.milty-draft__stage--map) {
     height: 100%;
     max-height: 100%;
     min-height: 0;
-    overflow-x: hidden;
-    overflow-y: auto;
-    overscroll-behavior: contain;
-    -webkit-overflow-scrolling: touch;
-  }
-  /* Map tab: keep locked viewport, no page scroll inside shell */
-  .milty-draft.hub-shell:has(.milty-draft__stage--map) {
     overflow: hidden;
   }
 }
