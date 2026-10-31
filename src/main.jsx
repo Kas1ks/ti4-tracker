@@ -8,7 +8,13 @@ import { registerSW } from 'virtual:pwa-register';
 import App from './App';
 import './styles.css';
 
-registerSW({ immediate: true });
+registerSW({
+  immediate: true,
+  onRegisteredSW(_url, registration) {
+    // Kick SW activation — Chrome often fires beforeinstallprompt only after control.
+    registration?.update?.().catch(() => {});
+  },
+});
 
 // Browsers cache favicons aggressively — force the tab icon once per load.
 (() => {

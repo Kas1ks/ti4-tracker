@@ -196,16 +196,19 @@ export default defineConfig(({ mode }) => ({
         'pwa/apple-touch-icon-a.png',
       ],
       manifest: {
+        id: '/',
         name: 'TI4 Tracker',
         short_name: 'TI4 Tracker',
         description: 'Companion for live Twilight Imperium 4 games',
         theme_color: '#0f172a',
         background_color: '#020617',
         display: 'standalone',
+        display_override: ['standalone', 'minimal-ui', 'browser'],
         orientation: 'any',
         start_url: '/',
         scope: '/',
         lang: 'ru',
+        prefer_related_applications: false,
         categories: ['games', 'utilities'],
         icons: [
           {

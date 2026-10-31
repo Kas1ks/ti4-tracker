@@ -1,9 +1,10 @@
+import { useState } from 'react';
 import { usePwaInstall } from '../hooks/usePwaInstall';
 
 /**
  * Install hint on the hub.
- * Native «Установить» only when Chrome fired beforeinstallprompt.
- * Otherwise Android gets short menu steps (not an always-on fake install button).
+ * Android: «Установить» while the app is not installed (not standalone).
+ * Uses Chrome native prompt when beforeinstallprompt is available.
  * @param {{ variant?: 'default' | 'hub' }} props
  */
 export function PwaInstallBanner({ variant = 'default' }) {
@@ -11,12 +12,14 @@ export function PwaInstallBanner({ variant = 'default' }) {
     showBanner,
     showIosHint,
     showIosSafariHint,
-    showManualAndroid,
+    showInstallButton,
     canNativePrompt,
     isSecureContext,
+    swReady,
     promptInstall,
     dismiss,
   } = usePwaInstall();
+  const [fallbackHint, setFallbackHint] = useState(null);
 
   if (!showBanner) return null;
 
@@ -28,12 +31,33 @@ export function PwaInstallBanner({ variant = 'default' }) {
   } else if (canNativePrompt) {
     body = 'Добавьте приложение на главный экран — быстрее заходить в комнату за столом.';
   } else if (!isSecureContext) {
-    body = 'Для кнопки «Установить» нужен https. На http: меню Chrome ⋮ → «Установить приложение».';
+    body = 'Откройте сайт по https — иначе Chrome не даст установить приложение.';
+  } else if (!swReady) {
+    body = 'Подготавливаем установку… через пару секунд нажмите «Установить».';
   } else {
-    body = 'Chrome не предложил установку. Меню ⋮ → «Установить приложение» / «Добавить на главный экран».';
+    body = 'Нажмите «Установить». Если окно Chrome не откроется — меню ⋮ → «Установить приложение».';
   }
 
+  if (fallbackHint) body = fallbackHint;
+
   const isHub = variant === 'hub';
+  const installBtnClass = isHub
+    ? 'rounded-lg bg-[var(--hub-gold)] px-3 py-1.5 text-[11px] font-bold text-[#1a1408] hover:brightness-110 transition'
+    : 'rounded-xl bg-cyan-500 px-3 py-1.5 text-[11px] font-bold text-slate-950 hover:bg-cyan-400 transition';
+  const ghostBtnClass = isHub
+    ? 'rounded-lg border border-white/10 bg-transparent px-3 py-1.5 text-[11px] font-bold text-[var(--hub-muted)] hover:text-white transition'
+    : 'rounded-xl border border-slate-600 bg-slate-900 px-3 py-1.5 text-[11px] font-bold text-slate-400 hover:text-slate-200 transition';
+
+  const onInstallClick = async () => {
+    setFallbackHint(null);
+    const result = await promptInstall();
+    if (result?.ok || result?.reason === 'dismissed') return;
+    setFallbackHint(
+      isSecureContext
+        ? 'Chrome не открыл окно установки. Меню ⋮ (справа вверху) → «Установить приложение».'
+        : 'Нужен https. Либо меню Chrome ⋮ → «Добавить на главный экран».',
+    );
+  };
 
   return (
     <div
@@ -63,40 +87,12 @@ export function PwaInstallBanner({ variant = 'default' }) {
             {body}
           </p>
           <div className="mt-2.5 flex flex-wrap gap-2">
-            {canNativePrompt ? (
-              <button
-                type="button"
-                onClick={() => promptInstall()}
-                className={
-                  isHub
-                    ? 'rounded-lg bg-[var(--hub-gold)] px-3 py-1.5 text-[11px] font-bold text-[#1a1408] hover:brightness-110 transition'
-                    : 'rounded-xl bg-cyan-500 px-3 py-1.5 text-[11px] font-bold text-slate-950 hover:bg-cyan-400 transition'
-                }
-              >
+            {showInstallButton ? (
+              <button type="button" onClick={onInstallClick} className={installBtnClass}>
                 Установить
               </button>
             ) : null}
-            {showManualAndroid ? (
-              <span
-                className={
-                  isHub
-                    ? 'inline-flex items-center rounded-lg border border-[var(--hub-border-soft)] bg-black/40 px-3 py-1.5 text-[11px] font-bold text-[var(--hub-gold)]/90'
-                    : 'inline-flex items-center rounded-xl border border-cyan-700/60 bg-slate-950/80 px-3 py-1.5 text-[11px] font-bold text-cyan-200'
-                }
-              >
-                <i className="fa-solid fa-ellipsis-vertical mr-1.5" aria-hidden="true" />
-                Меню Chrome → на экран
-              </span>
-            ) : null}
-            <button
-              type="button"
-              onClick={dismiss}
-              className={
-                isHub
-                  ? 'rounded-lg border border-white/10 bg-transparent px-3 py-1.5 text-[11px] font-bold text-[var(--hub-muted)] hover:text-white transition'
-                  : 'rounded-xl border border-slate-600 bg-slate-900 px-3 py-1.5 text-[11px] font-bold text-slate-400 hover:text-slate-200 transition'
-              }
-            >
+            <button type="button" onClick={dismiss} className={ghostBtnClass}>
               Скрыть
             </button>
           </div>
