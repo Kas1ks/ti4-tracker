@@ -14181,7 +14181,9 @@ i.pcbat-btn-ico {
   display: flex;
   color: #f3f4f6;
   box-sizing: border-box;
-  overflow-x: hidden;
+  /* clip (not hidden): avoids forcing overflow-y:auto, which traps mobile page scroll */
+  overflow-x: clip;
+  overflow-y: visible;
 }
 
 .hub-shell--column {
@@ -14192,6 +14194,7 @@ i.pcbat-btn-ico {
   position: relative;
   padding: 0;
   height: 100%;
+  overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
@@ -21205,8 +21208,10 @@ body.hub-cinematic .game-header,
 /* ——— Milty draft page ——— */
 .milty-draft {
   min-height: 100dvh;
+  min-height: 100svh;
   max-width: 100%;
-  overflow-x: hidden;
+  overflow-x: clip;
+  overflow-y: visible;
   color: #e2e8f0;
 }
 .milty-draft__stage {
@@ -21220,7 +21225,33 @@ body.hub-cinematic .game-header,
   display: flex;
   flex-direction: column;
   gap: 0.95rem;
-  overflow-x: hidden;
+  overflow-x: clip;
+  overflow-y: visible;
+}
+/* Mobile: shell is the scrollport so draft content can scroll under hub-cinematic */
+@media (max-width: 899px) {
+  body.hub-cinematic:has(.milty-draft) {
+    overflow: hidden;
+    height: 100dvh;
+    height: 100svh;
+  }
+  body.hub-cinematic:has(.milty-draft) #root {
+    height: 100%;
+    overflow: hidden;
+  }
+  .milty-draft.hub-shell {
+    height: 100%;
+    max-height: 100%;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+  /* Map tab: keep locked viewport, no page scroll inside shell */
+  .milty-draft.hub-shell:has(.milty-draft__stage--map) {
+    overflow: hidden;
+  }
 }
 .milty-draft__topbar {
   max-width: 100%;
