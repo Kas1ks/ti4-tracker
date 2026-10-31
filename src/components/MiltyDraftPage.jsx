@@ -707,6 +707,7 @@ export function MiltyDraftPage({ roomBinding = null, liveDraftFromRoom = null } 
   return (
     <div className="milty-draft hub-shell hub-shell--column">
       <HubCosmosBackdrop />
+      <div className="milty-draft__scroll">
       <div className={`milty-draft__stage${activePage === 'map' ? ' milty-draft__stage--map' : ''}`}>
         <header className="milty-draft__topbar">
           <div className="milty-draft__brand">
@@ -880,10 +881,12 @@ export function MiltyDraftPage({ roomBinding = null, liveDraftFromRoom = null } 
             <button
               type="button"
               className="milty-draft-tool milty-draft-tool--exit"
+              aria-label={inRoom ? 'Выйти' : 'Назад'}
+              title={inRoom ? 'Выйти' : 'Назад'}
               onClick={() => (roomBinding?.onLeave ? roomBinding.onLeave() : navigate('/'))}
             >
               <i className="fa-solid fa-right-from-bracket" aria-hidden="true" />
-              {inRoom ? 'Выйти' : 'Назад'}
+              <span className="milty-draft-tool__label">{inRoom ? 'Выйти' : 'Назад'}</span>
             </button>
           </div>
         </header>
@@ -891,10 +894,15 @@ export function MiltyDraftPage({ roomBinding = null, liveDraftFromRoom = null } 
         {activePage === 'draft' && (
           <>
             <div className="milty-draft__overview">
-              <section className="milty-draft__panel milty-draft__status">
-                <h2 className="milty-draft-label">Статус</h2>
+              <section className={`milty-draft__panel milty-draft__status${isMyTurn ? ' is-your-turn' : ''}`}>
+                <h2 className="milty-draft-label">
+                  Статус
+                  {isMyTurn ? (
+                    <span className="milty-draft-label__hint is-your-turn">Ваш ход</span>
+                  ) : null}
+                </h2>
                 <div
-                  className={`milty-draft-status__body${draft.done ? ' is-done' : ''}`}
+                  className={`milty-draft-status__body${draft.done ? ' is-done' : ''}${isMyTurn ? ' is-your-turn' : ''}`}
                   style={{ '--status-progress': statusProgress }}
                 >
                   <div className="milty-draft-status__row">
@@ -1374,6 +1382,7 @@ export function MiltyDraftPage({ roomBinding = null, liveDraftFromRoom = null } 
         <p className="milty-draft-foot">
           Inspired by miltydraft / shenanigans-be. Неофициальный фанатский инструмент. Тайлы: milty.shenanigans.be.
         </p>
+      </div>
       </div>
 
       {referenceFaction ? (

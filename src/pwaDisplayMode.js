@@ -1,6 +1,6 @@
 /**
  * Mark installed-app display modes on <html>.
- * Standalone WebAPK/TWA often won't scroll the document — pages need an inner scrollport.
+ * Standalone WebAPK often won't scroll the document — pages need an inner scrollport.
  */
 const CLASS = 'ti4-standalone';
 
@@ -26,6 +26,10 @@ if (typeof window !== 'undefined') {
   modes.forEach((mode) => {
     const mq = window.matchMedia?.(`(display-mode: ${mode})`);
     mq?.addEventListener?.('change', sync);
+  });
+  window.addEventListener('pageshow', sync);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') sync();
   });
 }
 

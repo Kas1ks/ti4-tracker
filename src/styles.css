@@ -20590,25 +20590,26 @@ body.hub-cinematic .game-header,
 .milty-turn-card__badge {
   display: none;
 }
-/* Mark your seat without «вы» / «ход» labels */
+/* Mark your seat without «вы» / «ход» labels — keep quieter than current-turn gold */
 .milty-turn-card.is-you {
-  border-color: rgba(56, 189, 248, 0.7);
-  background: rgba(14, 165, 233, 0.12);
-  box-shadow: inset 3px 0 0 #38bdf8;
+  border-color: rgba(56, 189, 248, 0.32);
+  background: rgba(14, 165, 233, 0.05);
+  box-shadow: inset 2px 0 0 rgba(56, 189, 248, 0.45);
 }
 .milty-turn-card.is-you .milty-turn-card__name-text {
   color: #7dd3fc;
+  opacity: 0.85;
 }
 .milty-turn-card.is-you .milty-turn-card__idx {
-  color: #0c4a6e;
-  background: #38bdf8;
-  border-color: #7dd3fc;
+  color: rgba(186, 230, 253, 0.9);
+  background: rgba(14, 116, 144, 0.45);
+  border-color: rgba(56, 189, 248, 0.35);
 }
 .milty-turn-card.is-you.is-current {
   border-color: rgba(240, 215, 140, 0.7);
   background: rgba(201, 162, 39, 0.16);
   box-shadow:
-    inset 3px 0 0 #38bdf8,
+    inset 2px 0 0 rgba(56, 189, 248, 0.4),
     inset 0 0 0 1px rgba(240, 215, 140, 0.1);
 }
 .milty-turn-card.is-you.is-current .milty-turn-card__name-text {
@@ -21220,39 +21221,121 @@ body.hub-cinematic .game-header,
   overflow-y: visible;
 }
 /*
- * Milty scroll (critical):
- * overflow-x: hidden|clip on html/body/.hub-shell makes overflow-y compute to auto,
- * creating nested scrollports that eat touch pans on mobile. Draft tabs must use
- * the document as the ONLY vertical scrollport; map tab locks the viewport.
- * Classes set by MiltyDraftPage on <html>: .milty-page / .milty-page--map
+ * Milty scroll: dedicated .milty-draft__scroll port.
+ * Document scroll is unreliable in installed PWA (standalone WebAPK).
+ * Classes on <html>: .milty-page / .milty-page--map / .ti4-standalone
  */
-html.milty-page:not(.milty-page--map),
-html.milty-page:not(.milty-page--map) body {
+.milty-draft__scroll {
+  width: 100%;
+  min-width: 0;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/*
+ * Phone + PWA: pin html/body/#root to the viewport, then scroll ONLY .milty-draft__scroll.
+ * If the scrollport height grows with content (maxScroll=0), pans do nothing.
+ */
+@media (max-width: 900px) {
+  html.milty-page:not(.milty-page--map) {
+    height: 100% !important;
+    height: 100dvh !important;
+    height: 100svh !important;
+    max-height: 100svh !important;
+    overflow: hidden !important;
+  }
+  html.milty-page:not(.milty-page--map) body {
+    height: 100% !important;
+    max-height: 100% !important;
+    overflow: hidden !important;
+    overscroll-behavior: none;
+    touch-action: manipulation;
+    position: relative;
+  }
+  html.milty-page:not(.milty-page--map) #root {
+    height: 100% !important;
+    max-height: 100% !important;
+    overflow: hidden !important;
+    display: flex;
+    flex-direction: column;
+  }
+  html.milty-page:not(.milty-page--map) .milty-draft.hub-shell {
+    position: relative;
+    flex: 1 1 auto;
+    width: 100%;
+    height: 100% !important;
+    max-height: 100% !important;
+    min-height: 0 !important;
+    overflow: hidden !important;
+    display: flex;
+    flex-direction: column;
+  }
+  html.milty-page:not(.milty-page--map) .milty-draft__scroll {
+    position: absolute;
+    inset: 0;
+    flex: none;
+    width: auto;
+    height: auto;
+    min-height: 0;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+    touch-action: pan-y;
+  }
+  html.milty-page:not(.milty-page--map) .milty-draft__stage {
+    overflow: visible !important;
+    height: auto !important;
+    max-height: none !important;
+  }
+}
+
+/* Standalone PWA any width: same absolute scrollport */
+html.ti4-standalone.milty-page:not(.milty-page--map) {
+  height: 100% !important;
+  height: 100dvh !important;
+  height: 100svh !important;
+  max-height: 100svh !important;
+  overflow: hidden !important;
+}
+html.ti4-standalone.milty-page:not(.milty-page--map) body {
+  height: 100% !important;
+  max-height: 100% !important;
+  overflow: hidden !important;
+  overscroll-behavior: none;
+  position: relative;
+}
+html.ti4-standalone.milty-page:not(.milty-page--map) #root {
+  height: 100% !important;
+  max-height: 100% !important;
+  overflow: hidden !important;
+  display: flex;
+  flex-direction: column;
+}
+html.ti4-standalone.milty-page:not(.milty-page--map) .milty-draft.hub-shell {
+  position: relative;
+  flex: 1 1 auto;
+  width: 100%;
+  height: 100% !important;
+  max-height: 100% !important;
+  min-height: 0 !important;
+  overflow: hidden !important;
+  display: flex;
+  flex-direction: column;
+}
+html.ti4-standalone.milty-page:not(.milty-page--map) .milty-draft__scroll {
+  position: absolute;
+  inset: 0;
   overflow-x: hidden !important;
-  overflow-y: scroll !important;
-  height: auto !important;
-  max-height: none !important;
-  overscroll-behavior-y: auto;
-  touch-action: pan-x pan-y pinch-zoom;
-  -ms-touch-action: pan-x pan-y pinch-zoom;
+  overflow-y: auto !important;
+  overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
 }
-html.milty-page:not(.milty-page--map) #root {
+html.ti4-standalone.milty-page:not(.milty-page--map) .milty-draft__stage {
   overflow: visible !important;
   height: auto !important;
   max-height: none !important;
-  min-height: 100%;
-}
-html.milty-page:not(.milty-page--map) .milty-draft.hub-shell,
-html.milty-page:not(.milty-page--map) .milty-draft__stage {
-  /* Must NOT be a scrollport — both axes visible */
-  overflow: visible !important;
-  height: auto !important;
-  max-height: none !important;
-}
-html.milty-page:not(.milty-page--map) .milty-draft.hub-shell {
-  min-height: 100dvh;
-  min-height: 100svh;
 }
 
 html.milty-page--map,
@@ -21270,38 +21353,19 @@ html.milty-page--map .milty-draft.hub-shell {
   max-height: 100% !important;
   min-height: 0 !important;
   overflow: hidden !important;
+  display: flex;
+  flex-direction: column;
 }
-
-/*
- * Installed PWA (html.ti4-standalone): document scroll often does nothing.
- * Use an explicit inner scrollport instead.
- */
-html.ti4-standalone.milty-page:not(.milty-page--map),
-html.ti4-standalone.milty-page:not(.milty-page--map) body {
-  overflow: hidden !important;
-  height: 100% !important;
-  height: 100dvh !important;
-  height: 100svh !important;
-  overscroll-behavior: none;
+html.milty-page--map .milty-draft__scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
-html.ti4-standalone.milty-page:not(.milty-page--map) #root {
-  height: 100% !important;
-  overflow: hidden !important;
-}
-html.ti4-standalone.milty-page:not(.milty-page--map) .milty-draft.hub-shell {
-  height: 100% !important;
-  max-height: 100% !important;
-  min-height: 0 !important;
-  overflow-x: hidden !important;
-  overflow-y: auto !important;
-  overscroll-behavior: contain;
-  -webkit-overflow-scrolling: touch;
-  touch-action: pan-x pan-y pinch-zoom;
-}
-html.ti4-standalone.milty-page:not(.milty-page--map) .milty-draft__stage {
-  overflow: visible !important;
-  height: auto !important;
-  max-height: none !important;
+html.milty-page--map .milty-draft__stage--map {
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 html.ti4-standalone body.hub-cinematic:has(.hub-shell--home) {
@@ -21408,6 +21472,68 @@ html.ti4-standalone .hub-shell--home {
   justify-content: flex-end;
   gap: 0.35rem;
   justify-self: end;
+}
+
+/* Phone only: exit = icon; wifi on tabs row, right edge.
+   Desktop / tablet (≥700px) unchanged. */
+@media (max-width: 699px) {
+  .milty-draft__topbar {
+    --milty-phone-ctrl-h: 2.4rem;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      'brand exit'
+      'tabs conn'
+      'extra extra';
+    column-gap: 0.45rem;
+    row-gap: 0.55rem;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+  }
+  .milty-draft__topbar .milty-draft-tool--exit .milty-draft-tool__label {
+    display: none;
+  }
+  .milty-draft__topbar .milty-page-tabs {
+    width: auto;
+    max-width: 100%;
+    min-width: 0;
+    flex-wrap: wrap;
+    overflow: visible;
+    gap: 0.35rem;
+    justify-self: start;
+    align-items: center;
+  }
+  .milty-draft__topbar .milty-page-tab {
+    flex: 0 0 auto;
+    box-sizing: border-box;
+    height: var(--milty-phone-ctrl-h);
+    min-height: var(--milty-phone-ctrl-h);
+    padding: 0 0.7rem;
+    font-size: 0.72rem;
+    letter-spacing: 0.04em;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .milty-draft__topbar .milty-draft-tool--exit,
+  .milty-draft__topbar .milty-draft-tool--conn {
+    box-sizing: border-box;
+    width: var(--milty-phone-ctrl-h);
+    min-width: var(--milty-phone-ctrl-h);
+    height: var(--milty-phone-ctrl-h);
+    min-height: var(--milty-phone-ctrl-h);
+    padding: 0;
+    border-radius: 10px;
+    font-size: 0.72rem;
+    gap: 0;
+  }
+  .milty-draft__topbar .milty-draft__codes {
+    grid-area: conn;
+    flex-wrap: nowrap;
+    justify-self: end;
+    align-self: center;
+  }
 }
 .milty-draft__codes-wide {
   display: none;
@@ -21705,6 +21831,26 @@ html.ti4-standalone .hub-shell--home {
   border: 1px solid rgba(100, 116, 139, 0.4);
   background: rgba(15, 23, 42, 0.45);
   color: rgba(148, 163, 184, 0.9);
+}
+.milty-draft-label__hint.is-your-turn {
+  border: 1px solid rgba(240, 215, 140, 0.55);
+  background: rgba(201, 162, 39, 0.22);
+  color: #f0d78c;
+}
+.milty-draft__status.is-your-turn {
+  border-color: rgba(240, 215, 140, 0.55);
+  background: rgba(201, 162, 39, 0.1);
+  box-shadow:
+    0 0 0 1px rgba(240, 215, 140, 0.1),
+    0 16px 36px rgba(0, 0, 0, 0.28),
+    inset 0 1px 0 rgba(240, 215, 140, 0.08);
+}
+.milty-draft-status__body.is-your-turn .milty-draft-status__dial {
+  border-color: rgba(240, 215, 140, 0.85);
+  box-shadow: inset 0 0 0 1px rgba(240, 215, 140, 0.14);
+}
+.milty-draft-status__body.is-your-turn .milty-draft-status__turn strong {
+  color: #f0d78c;
 }
 .milty-draft__col.is-pick-open {
   border-color: rgba(52, 211, 153, 0.55);
