@@ -135,16 +135,19 @@ export function usePwaInstall() {
     return { ok: false, reason: 'dismissed' };
   };
 
-  const canNativePrompt = Boolean(deferred) && !installed;
+  const standaloneNow = isStandaloneDisplay();
+  const canNativePrompt = Boolean(deferred) && !standaloneNow;
   const ios = isIos();
   const iosSafari = isIosSafari();
   const mobile = isMobileViewport();
 
-  // Never hint inside an installed / home-screen session.
-  const showBanner = !installed && !dismissed && mobile && !isStandaloneDisplay();
+  // Live check only: hide when already running as installed app, or user dismissed.
+  // Do NOT use ti4_pwa_installed for visibility — that flag survives uninstall /
+  // opening the same origin in a normal browser tab and wrongly hid the banner.
+  const showBanner = !dismissed && mobile && !standaloneNow;
 
   return {
-    installed,
+    installed: standaloneNow || installed,
     dismissed,
     canNativePrompt,
     showIosHint: ios,
