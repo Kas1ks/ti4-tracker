@@ -214,9 +214,17 @@ export function MiltyDraftPage({ roomBinding = null, liveDraftFromRoom = null } 
   });
 
   useEffect(() => {
+    document.documentElement.classList.add('milty-page');
     document.body.classList.add('hub-cinematic');
-    return () => document.body.classList.remove('hub-cinematic');
+    return () => {
+      document.documentElement.classList.remove('milty-page', 'milty-page--map');
+      document.body.classList.remove('hub-cinematic');
+    };
   }, []);
+
+  useEffect(() => {
+    document.documentElement.classList.toggle('milty-page--map', pageTab === 'map');
+  }, [pageTab]);
 
   useEffect(() => {
     if (roomBinding) {

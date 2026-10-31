@@ -21219,47 +21219,57 @@ body.hub-cinematic .game-header,
   overflow-x: clip;
   overflow-y: visible;
 }
-/* Mobile Milty:
-   Draft/status/slices → document scroll (inner scrollports break on OEM Chrome).
-   Map tab only → locked viewport. */
-@media (max-width: 900px) {
-  body.hub-cinematic:has(.milty-draft):not(:has(.milty-draft__stage--map)) {
-    overflow-x: hidden;
-    overflow-y: auto;
-    height: auto;
-    min-height: 100dvh;
-    min-height: 100svh;
-    -webkit-overflow-scrolling: touch;
-  }
-  body.hub-cinematic:has(.milty-draft):not(:has(.milty-draft__stage--map)) #root {
-    height: auto;
-    min-height: 100%;
-    overflow: visible;
-  }
-  .milty-draft.hub-shell:not(:has(.milty-draft__stage--map)) {
-    height: auto;
-    max-height: none;
-    min-height: 100dvh;
-    min-height: 100svh;
-    overflow-x: clip;
-    overflow-y: visible;
-  }
+/*
+ * Milty scroll (critical):
+ * overflow-x: hidden|clip on html/body/.hub-shell makes overflow-y compute to auto,
+ * creating nested scrollports that eat touch pans on mobile. Draft tabs must use
+ * the document as the ONLY vertical scrollport; map tab locks the viewport.
+ * Classes set by MiltyDraftPage on <html>: .milty-page / .milty-page--map
+ */
+html.milty-page:not(.milty-page--map),
+html.milty-page:not(.milty-page--map) body {
+  overflow-x: hidden !important;
+  overflow-y: scroll !important;
+  height: auto !important;
+  max-height: none !important;
+  overscroll-behavior-y: auto;
+  touch-action: pan-x pan-y pinch-zoom;
+  -ms-touch-action: pan-x pan-y pinch-zoom;
+  -webkit-overflow-scrolling: touch;
+}
+html.milty-page:not(.milty-page--map) #root {
+  overflow: visible !important;
+  height: auto !important;
+  max-height: none !important;
+  min-height: 100%;
+}
+html.milty-page:not(.milty-page--map) .milty-draft.hub-shell,
+html.milty-page:not(.milty-page--map) .milty-draft__stage {
+  /* Must NOT be a scrollport — both axes visible */
+  overflow: visible !important;
+  height: auto !important;
+  max-height: none !important;
+}
+html.milty-page:not(.milty-page--map) .milty-draft.hub-shell {
+  min-height: 100dvh;
+  min-height: 100svh;
+}
 
-  body.hub-cinematic:has(.milty-draft__stage--map) {
-    overflow: hidden;
-    height: 100dvh;
-    height: 100svh;
-  }
-  body.hub-cinematic:has(.milty-draft__stage--map) #root {
-    height: 100%;
-    overflow: hidden;
-  }
-  .milty-draft.hub-shell:has(.milty-draft__stage--map) {
-    height: 100%;
-    max-height: 100%;
-    min-height: 0;
-    overflow: hidden;
-  }
+html.milty-page--map,
+html.milty-page--map body {
+  overflow: hidden !important;
+  height: 100dvh !important;
+  height: 100svh !important;
+}
+html.milty-page--map #root {
+  height: 100% !important;
+  overflow: hidden !important;
+}
+html.milty-page--map .milty-draft.hub-shell {
+  height: 100% !important;
+  max-height: 100% !important;
+  min-height: 0 !important;
+  overflow: hidden !important;
 }
 .milty-draft__topbar {
   max-width: 100%;
