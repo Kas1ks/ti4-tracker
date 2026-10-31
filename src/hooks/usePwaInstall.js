@@ -1,4 +1,9 @@
 import { useEffect, useState } from 'react';
+import {
+  clearDeferredInstallPrompt,
+  getDeferredInstallPrompt,
+  onDeferredInstallPrompt,
+} from '../pwaInstallCapture.js';
 
 const DISMISS_KEY = 'ti4_pwa_install_dismissed';
 const INSTALLED_KEY = 'ti4_pwa_installed';
@@ -69,7 +74,7 @@ function isMobileViewport() {
  * On LAN http:// the native prompt often never fires — still show manual steps.
  */
 export function usePwaInstall() {
-  const [deferred, setDeferred] = useState(null);
+  const [deferred, setDeferred] = useState(() => getDeferredInstallPrompt());
   const [installed, setInstalled] = useState(
     () => isStandaloneDisplay() || readInstalledFlag(),
   );
@@ -79,6 +84,7 @@ export function usePwaInstall() {
     const markInstalled = () => {
       writeInstalledFlag();
       setInstalled(true);
+      clearDeferredInstallPrompt();
       setDeferred(null);
     };
 
@@ -86,15 +92,13 @@ export function usePwaInstall() {
       markInstalled();
     }
 
-    const onBeforeInstall = (event) => {
-      event.preventDefault();
-      setDeferred(event);
-    };
+    const unsubPrompt = onDeferredInstallPrompt((prompt) => {
+      setDeferred(prompt);
+    });
+
     const onInstalled = () => {
       markInstalled();
     };
-
-    window.addEventListener('beforeinstallprompt', onBeforeInstall);
     window.addEventListener('appinstalled', onInstalled);
 
     const medias = ['standalone', 'fullscreen', 'minimal-ui', 'window-controls-overlay']
@@ -106,7 +110,7 @@ export function usePwaInstall() {
     medias.forEach((mq) => mq.addEventListener?.('change', onMode));
 
     return () => {
-      window.removeEventListener('beforeinstallprompt', onBeforeInstall);
+      unsubPrompt();
       window.removeEventListener('appinstalled', onInstalled);
       medias.forEach((mq) => mq.removeEventListener?.('change', onMode));
     };
@@ -123,9 +127,11 @@ export function usePwaInstall() {
   };
 
   const promptInstall = async () => {
-    if (!deferred) return { ok: false, reason: 'unavailable' };
-    deferred.prompt();
-    const choice = await deferred.userChoice;
+    const promptEvent = deferred || getDeferredInstallPrompt();
+    if (!promptEvent) return { ok: false, reason: 'unavailable' };
+    promptEvent.prompt();
+    const choice = await promptEvent.userChoice;
+    clearDeferredInstallPrompt();
     setDeferred(null);
     if (choice?.outcome === 'accepted') {
       writeInstalledFlag();

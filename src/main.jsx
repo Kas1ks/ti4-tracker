@@ -4,6 +4,8 @@ import { BrowserRouter } from 'react-router-dom';
 import { registerSW } from 'virtual:pwa-register';
 import App from './App';
 import './styles.css';
+// Side-effect: capture beforeinstallprompt before React mounts (Android Chrome).
+import './pwaInstallCapture.js';
 
 registerSW({ immediate: true });
 

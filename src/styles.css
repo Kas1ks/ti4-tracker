@@ -15538,6 +15538,9 @@ i.pcbat-btn-ico {
   }
   .hub-shell--home {
     height: 100%;
+    /* Keep shell as scrollport when PWA banner / dock overflow the viewport */
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
   }
 
   .hub-sidebar {
@@ -15621,11 +15624,14 @@ i.pcbat-btn-ico {
     gap: 1.15rem;
     padding: 0.35rem 1.1rem 1rem;
     justify-content: space-between;
-    min-height: 0;
+    /* Grow with content (banner + dock); still fill short screens via min-height */
+    flex: 1 0 auto;
+    min-height: 100%;
   }
 
   .hub-home-center {
     flex: 1 1 auto;
+    min-height: auto;
     align-items: center;
     padding: 0.35rem 0 0.25rem;
   }
@@ -15732,6 +15738,7 @@ i.pcbat-btn-ico {
   }
 
   .hub-home-bottom {
+    flex-shrink: 0;
     gap: 0.85rem;
   }
 
