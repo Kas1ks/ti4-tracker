@@ -29,6 +29,14 @@ function readDismissed() {
   }
 }
 
+function readInstalledFlag() {
+  try {
+    return localStorage.getItem(INSTALLED_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
 function writeInstalledFlag() {
   try {
     localStorage.setItem(INSTALLED_KEY, '1');
@@ -56,69 +64,135 @@ function isMobileViewport() {
     || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent || '');
 }
 
+function manifestUrlForRelatedApps() {
+  if (typeof window === 'undefined') return '';
+  try {
+    return new URL('manifest.webmanifest', window.location.origin).href;
+  } catch {
+    return `${window.location.origin}/manifest.webmanifest`;
+  }
+}
+
+/**
+ * Chrome Android: detect installed PWA even from a normal browser tab.
+ * Requires manifest related_applications[{ platform: 'webapp', url }].
+ */
+async function probeRelatedWebAppInstalled() {
+  if (typeof navigator === 'undefined' || !navigator.getInstalledRelatedApps) {
+    return false;
+  }
+  try {
+    const apps = await navigator.getInstalledRelatedApps();
+    if (!Array.isArray(apps) || apps.length === 0) return false;
+    const manifestHref = manifestUrlForRelatedApps();
+    return apps.some((app) => {
+      if (app?.platform !== 'webapp') return false;
+      if (!app.url) return true;
+      try {
+        return new URL(app.url, window.location.origin).href === manifestHref
+          || app.url === '/'
+          || app.url.endsWith('manifest.webmanifest');
+      } catch {
+        return true;
+      }
+    });
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * IMPORTANT: call promptInstallFromGesture() only from a sync click handler.
+ * Any await before event.prompt() drops Chrome's user-activation → install UI never opens.
+ */
+export function promptInstallFromGesture() {
+  const promptEvent = getDeferredInstallPrompt();
+  if (!promptEvent?.prompt) {
+    return { ok: false, reason: 'unavailable', choice: null };
+  }
+  try {
+    // Must stay synchronous relative to the click (no await above this line).
+    promptEvent.prompt();
+    const choice = promptEvent.userChoice || Promise.resolve({ outcome: 'dismissed' });
+    return {
+      ok: true,
+      reason: 'prompted',
+      choice: Promise.resolve(choice).then((result) => {
+        clearDeferredInstallPrompt();
+        if (result?.outcome === 'accepted') writeInstalledFlag();
+        return result;
+      }),
+    };
+  } catch {
+    return { ok: false, reason: 'unavailable', choice: null };
+  }
+}
+
 /**
  * PWA install UX.
- * - Banner when mobile + not running as installed app + not dismissed.
- * - Native prompt when Chrome fired beforeinstallprompt.
- * - Android still exposes «Установить» when app is not installed (standalone),
- *   even if BIP is late/missing — click uses native prompt when available.
+ * Android: banner + «Установить» while not installed (BIP optional — guide on fail).
+ * Hide when already installed — including normal Chrome tab (relatedApps / flag).
  */
 export function usePwaInstall() {
   const [deferred, setDeferred] = useState(() => getDeferredInstallPrompt());
   const [dismissed, setDismissed] = useState(() => readDismissed());
-  const [swReady, setSwReady] = useState(() => (
-    typeof navigator !== 'undefined' && !!navigator.serviceWorker?.controller
-  ));
+  const [relatedInstalled, setRelatedInstalled] = useState(false);
+  const [flagInstalled, setFlagInstalled] = useState(() => readInstalledFlag());
 
   useEffect(() => {
-    if (isStandaloneDisplay()) {
+    let cancelled = false;
+
+    const markInstalled = () => {
       writeInstalledFlag();
       clearDeferredInstallPrompt();
       setDeferred(null);
-    }
+      setFlagInstalled(true);
+    };
+
+    const refreshRelated = async () => {
+      const found = await probeRelatedWebAppInstalled();
+      if (cancelled) return;
+      setRelatedInstalled(found);
+      if (found) {
+        writeInstalledFlag();
+        setFlagInstalled(true);
+        clearDeferredInstallPrompt();
+        setDeferred(null);
+      }
+    };
+
+    if (isStandaloneDisplay()) markInstalled();
 
     const unsubPrompt = onDeferredInstallPrompt((prompt) => {
       setDeferred(prompt);
     });
 
-    const onInstalled = () => {
-      writeInstalledFlag();
-      clearDeferredInstallPrompt();
-      setDeferred(null);
-    };
+    const onInstalled = () => markInstalled();
     window.addEventListener('appinstalled', onInstalled);
 
     const medias = ['standalone', 'fullscreen', 'minimal-ui', 'window-controls-overlay']
       .map((mode) => window.matchMedia?.(`(display-mode: ${mode})`))
       .filter(Boolean);
     const onMode = () => {
-      if (isStandaloneDisplay()) onInstalled();
+      if (isStandaloneDisplay()) markInstalled();
     };
     medias.forEach((mq) => mq.addEventListener?.('change', onMode));
 
-    let cancelled = false;
-    if (navigator.serviceWorker) {
-      navigator.serviceWorker.ready.then(() => {
-        if (!cancelled) setSwReady(true);
-      }).catch(() => {});
-      const onController = () => {
-        if (!cancelled) setSwReady(true);
-      };
-      navigator.serviceWorker.addEventListener('controllerchange', onController);
-      return () => {
-        cancelled = true;
-        unsubPrompt();
-        window.removeEventListener('appinstalled', onInstalled);
-        medias.forEach((mq) => mq.removeEventListener?.('change', onMode));
-        navigator.serviceWorker.removeEventListener('controllerchange', onController);
-      };
-    }
+    const onVis = () => {
+      if (document.visibilityState === 'visible') refreshRelated();
+    };
+    const onFocus = () => refreshRelated();
+    document.addEventListener('visibilitychange', onVis);
+    window.addEventListener('focus', onFocus);
+    refreshRelated();
 
     return () => {
       cancelled = true;
       unsubPrompt();
       window.removeEventListener('appinstalled', onInstalled);
       medias.forEach((mq) => mq.removeEventListener?.('change', onMode));
+      document.removeEventListener('visibilitychange', onVis);
+      window.removeEventListener('focus', onFocus);
     };
   }, []);
 
@@ -131,46 +205,25 @@ export function usePwaInstall() {
     }
   };
 
-  const promptInstall = async () => {
-    const promptEvent = deferred || getDeferredInstallPrompt();
-    if (!promptEvent?.prompt) return { ok: false, reason: 'unavailable' };
-    try {
-      promptEvent.prompt();
-      const choice = await promptEvent.userChoice;
-      clearDeferredInstallPrompt();
-      setDeferred(null);
-      if (choice?.outcome === 'accepted') {
-        writeInstalledFlag();
-        return { ok: true };
-      }
-      return { ok: false, reason: 'dismissed' };
-    } catch {
-      return { ok: false, reason: 'unavailable' };
-    }
-  };
-
   const standaloneNow = isStandaloneDisplay();
   const ios = isIos();
   const iosSafari = isIosSafari();
   const mobile = isMobileViewport();
-  const canNativePrompt = Boolean(deferred || getDeferredInstallPrompt()) && !standaloneNow;
-
-  // Not installed (browser tab) on mobile → show banner.
-  const showBanner = !dismissed && mobile && !standaloneNow;
-
-  // Android: Install CTA whenever app is not installed. iOS has no native prompt API.
+  const installed = standaloneNow || relatedInstalled || flagInstalled;
+  const canNativePrompt = Boolean(deferred || getDeferredInstallPrompt()) && !installed;
+  // Banner while not installed (Android always gets Install; iOS Share hint).
+  const showBanner = !dismissed && mobile && !installed;
   const showInstallButton = showBanner && !ios;
 
   return {
-    installed: standaloneNow,
+    installed,
     dismissed,
     canNativePrompt,
     showIosHint: ios,
     showIosSafariHint: iosSafari,
     showInstallButton,
     showBanner,
-    swReady,
-    promptInstall,
+    promptInstallFromGesture,
     dismiss,
     isSecureContext: typeof window !== 'undefined' ? window.isSecureContext : false,
   };

@@ -15604,14 +15604,16 @@ i.pcbat-btn-ico {
   .hub-home {
     gap: 1.15rem;
     padding: 0.35rem 1.1rem calc(1rem + env(safe-area-inset-bottom, 0px));
-    justify-content: flex-start;
-    flex: 1 0 auto;
-    min-height: auto;
+    /* Keep dock (Статистика / Руководство / …) at the bottom of the viewport,
+       not glued under Create / Join CTAs. */
+    justify-content: space-between;
+    flex: 1 1 auto;
+    min-height: 0;
   }
 
   .hub-home-center {
-    flex: 0 0 auto;
-    min-height: auto;
+    flex: 1 1 auto;
+    min-height: 0;
     align-items: center;
     padding: 0.35rem 0 0.25rem;
   }
@@ -15718,7 +15720,9 @@ i.pcbat-btn-ico {
   }
 
   .hub-home-bottom {
+    flex: 0 0 auto;
     flex-shrink: 0;
+    margin-top: auto;
     gap: 0.85rem;
   }
 

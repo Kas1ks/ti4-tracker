@@ -209,6 +209,13 @@ export default defineConfig(({ mode }) => ({
         scope: '/',
         lang: 'ru',
         prefer_related_applications: false,
+        // Lets getInstalledRelatedApps() see this PWA from a normal Chrome tab.
+        related_applications: [
+          {
+            platform: 'webapp',
+            url: '/manifest.webmanifest',
+          },
+        ],
         categories: ['games', 'utilities'],
         icons: [
           {
