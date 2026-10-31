@@ -11601,13 +11601,13 @@ body {
   color: var(--game-gold-bright);
 }
 
-/* Lock document scroll on hub — shell scrolls only when content is taller */
-body.hub-cinematic {
+/* Lock document scroll only on hub home — Milty/lobby/game still need page scroll */
+body.hub-cinematic:has(.hub-shell--home) {
   overflow: hidden;
   height: 100dvh;
   height: 100svh;
 }
-body.hub-cinematic #root {
+body.hub-cinematic:has(.hub-shell--home) #root {
   height: 100%;
   overflow: hidden;
 }
@@ -14178,14 +14178,10 @@ i.pcbat-btn-ico {
   width: 100%;
   min-height: 100dvh;
   min-height: 100svh;
-  height: 100%;
   display: flex;
   color: #f3f4f6;
   box-sizing: border-box;
   overflow-x: hidden;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  -webkit-overflow-scrolling: touch;
 }
 
 .hub-shell--column {
@@ -14195,6 +14191,10 @@ i.pcbat-btn-ico {
 .hub-shell--home {
   position: relative;
   padding: 0;
+  height: 100%;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
 }
 
 /* —— Top / bottom HUD wires traced from reference crops —— */
@@ -15532,6 +15532,8 @@ i.pcbat-btn-ico {
   .hub-shell {
     flex-direction: column;
     min-height: 100svh;
+  }
+  .hub-shell--home {
     height: 100%;
   }
 
