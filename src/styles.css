@@ -21341,14 +21341,22 @@ html.ti4-standalone.milty-page:not(.milty-page--map) .milty-draft__stage {
 html.milty-page--map,
 html.milty-page--map body {
   overflow: hidden !important;
+  height: 100% !important;
   height: 100dvh !important;
   height: 100svh !important;
+  max-height: 100svh !important;
 }
 html.milty-page--map #root {
   height: 100% !important;
+  max-height: 100% !important;
   overflow: hidden !important;
+  display: flex;
+  flex-direction: column;
 }
 html.milty-page--map .milty-draft.hub-shell {
+  position: relative;
+  flex: 1 1 auto;
+  width: 100%;
   height: 100% !important;
   max-height: 100% !important;
   min-height: 0 !important;
@@ -21357,15 +21365,29 @@ html.milty-page--map .milty-draft.hub-shell {
   flex-direction: column;
 }
 html.milty-page--map .milty-draft__scroll {
-  flex: 1 1 auto;
-  min-height: 0;
+  position: absolute;
+  inset: 0;
   overflow: hidden;
   display: flex;
   flex-direction: column;
+  min-width: 0;
+  width: auto;
 }
 html.milty-page--map .milty-draft__stage--map {
   flex: 1 1 auto;
   min-height: 0;
+  min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
+}
+html.milty-page--map .milty-draft__panel--map {
+  min-width: 0;
+  width: 100%;
+}
+html.milty-page--map .milty-galaxy {
+  width: 100%;
+  max-width: 100%;
+  overflow: hidden;
 }
 
 /*
@@ -21451,10 +21473,14 @@ html.ti4-standalone .hub-shell--home .hub-home-bottom {
 .milty-draft__panel--map .milty-galaxy-wrap {
   flex: 1 1 auto;
   min-height: 12rem;
+  min-width: 0;
+  overflow: hidden;
 }
 .milty-draft__panel--map .milty-galaxy {
   flex: 1 1 auto;
   min-height: 10rem;
+  min-width: 0;
+  overflow: hidden;
 }
 .milty-draft__panel--map .milty-draft-hint--map {
   flex-shrink: 0;

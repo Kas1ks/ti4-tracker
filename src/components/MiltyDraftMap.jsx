@@ -65,22 +65,31 @@ export function MiltyDraftMap({ draft }) {
     if (!el || !bounds) return undefined;
 
     const update = () => {
-      const cw = el.clientWidth;
-      const ch = el.clientHeight;
+      const cs = getComputedStyle(el);
+      const padX = (parseFloat(cs.paddingLeft) || 0) + (parseFloat(cs.paddingRight) || 0);
+      const padY = (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.paddingBottom) || 0);
+      const cw = el.clientWidth - padX;
+      const ch = el.clientHeight - padY;
       if (cw < 8 || !bounds.width || !bounds.height) return;
-      // Fit both axes so the galaxy sits on one screen (tiny scroll only if needed).
-      const availH = ch > 48
-        ? ch
-        : Math.max(220, window.innerHeight * 0.68);
+      // Fit both axes into the content box (padding subtracted) so the galaxy
+      // sits on one screen with no scroll. Wait for real height; early 0 collapses.
+      const availH = ch > 48 ? ch : Math.max(220, window.innerHeight * 0.55);
       const fit = Math.min(cw / bounds.width, availH / bounds.height);
-      setScale(Math.max(0.12, fit * 0.98));
+      setScale(Math.max(0.12, fit * 0.96));
     };
 
-    update();
+    // Double rAF: milty-page--map flex height settles after paint.
+    let raf = requestAnimationFrame(() => {
+      raf = requestAnimationFrame(() => {
+        update();
+        raf = 0;
+      });
+    });
     const ro = new ResizeObserver(update);
     ro.observe(el);
     window.addEventListener('resize', update);
     return () => {
+      if (raf) cancelAnimationFrame(raf);
       ro.disconnect();
       window.removeEventListener('resize', update);
     };
