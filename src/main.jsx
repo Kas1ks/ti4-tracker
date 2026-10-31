@@ -1,5 +1,7 @@
 // Capture beforeinstallprompt BEFORE anything else (Android Chrome fires it early).
 import './pwaInstallCapture.js';
+// Mark installed PWA (standalone) — document scroll is unreliable there.
+import './pwaDisplayMode.js';
 
 import React from 'react';
 import { createRoot } from 'react-dom/client';

@@ -21271,6 +21271,59 @@ html.milty-page--map .milty-draft.hub-shell {
   min-height: 0 !important;
   overflow: hidden !important;
 }
+
+/*
+ * Installed PWA (html.ti4-standalone): document scroll often does nothing.
+ * Use an explicit inner scrollport instead.
+ */
+html.ti4-standalone.milty-page:not(.milty-page--map),
+html.ti4-standalone.milty-page:not(.milty-page--map) body {
+  overflow: hidden !important;
+  height: 100% !important;
+  height: 100dvh !important;
+  height: 100svh !important;
+  overscroll-behavior: none;
+}
+html.ti4-standalone.milty-page:not(.milty-page--map) #root {
+  height: 100% !important;
+  overflow: hidden !important;
+}
+html.ti4-standalone.milty-page:not(.milty-page--map) .milty-draft.hub-shell {
+  height: 100% !important;
+  max-height: 100% !important;
+  min-height: 0 !important;
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-x pan-y pinch-zoom;
+}
+html.ti4-standalone.milty-page:not(.milty-page--map) .milty-draft__stage {
+  overflow: visible !important;
+  height: auto !important;
+  max-height: none !important;
+}
+
+html.ti4-standalone body.hub-cinematic:has(.hub-shell--home) {
+  overflow: hidden !important;
+  height: 100dvh !important;
+  height: 100svh !important;
+}
+html.ti4-standalone body.hub-cinematic:has(.hub-shell--home) #root {
+  height: 100% !important;
+  overflow: hidden !important;
+}
+html.ti4-standalone .hub-shell--home {
+  height: 100% !important;
+  max-height: 100% !important;
+  min-height: 0 !important;
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+}
+
 .milty-draft__topbar {
   max-width: 100%;
   min-width: 0;
