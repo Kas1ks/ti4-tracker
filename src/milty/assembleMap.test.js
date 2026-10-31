@@ -68,4 +68,31 @@ describe('assembleMap', () => {
     expect(map.cells[19].playerName).toBe('A');
     expect(sliceCells.every((c) => c.tileId != null)).toBe(true);
   });
+
+  it('rotates players around home seats without changing draft data', () => {
+    const draft = createDraftDocument({
+      playerNames: ['A', 'B', 'C', 'D', 'E', 'F'],
+      numberOfSlices: 6,
+      numberOfFactions: 7,
+      seed: 3,
+      minLegendaries: 0,
+      minTwoWormholes: false,
+      presetDraftOrder: true,
+    });
+    draft.playerOrder.forEach((pid, i) => {
+      draft.players[pid].position = i;
+      draft.players[pid].slice = i;
+    });
+    const homes = layoutForPlayers(6).homeWorlds;
+    const base = assembleDraftMap(draft);
+    expect(base.cells[homes[0]].playerName).toBe('A');
+    expect(base.cells[homes[1]].playerName).toBe('B');
+
+    const cw = assembleDraftMap(draft, { seatOffset: 1 });
+    // Clockwise: seat slot 0 shows previous last seat's player (F), slot 1 shows A.
+    expect(cw.cells[homes[0]].playerName).toBe('F');
+    expect(cw.cells[homes[1]].playerName).toBe('A');
+    expect(cw.cells[homes[0]].seatIndex).toBe(5);
+    expect(draft.players[draft.playerOrder[0]].position).toBe(0);
+  });
 });

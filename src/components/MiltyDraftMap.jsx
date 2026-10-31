@@ -8,13 +8,26 @@ const TILE_H = 97;
 
 /**
  * Assembled milty galaxy: Mecatol + slices on a real hex grid, with hyperlanes for <6 players.
+ * Seat rotation is view-only: cycles players around fixed home slots.
  */
 export function MiltyDraftMap({ draft }) {
-  const assembled = useMemo(() => (draft ? assembleDraftMap(draft) : null), [draft]);
+  const seatCount = draft?.playerOrder?.length || 0;
+  const [seatOffset, setSeatOffset] = useState(0);
+  const assembled = useMemo(
+    () => (draft ? assembleDraftMap(draft, { seatOffset }) : null),
+    [draft, seatOffset],
+  );
   const offsets = useMemo(() => calculateOffsets(TILE_W, TILE_H), []);
   const [zoomId, setZoomId] = useState(null);
   const viewportRef = useRef(null);
   const [scale, setScale] = useState(1);
+
+  useEffect(() => {
+    setSeatOffset((prev) => {
+      if (seatCount <= 0) return 0;
+      return ((prev % seatCount) + seatCount) % seatCount;
+    });
+  }, [seatCount]);
 
   const bounds = useMemo(() => {
     if (!assembled) return null;
@@ -88,78 +101,121 @@ export function MiltyDraftMap({ draft }) {
   const { minX, minY, pad, width, height } = bounds;
   const scaledW = width * scale;
   const scaledH = height * scale;
+  const canRotate = seatCount > 1;
+
+  const rotateCw = () => {
+    if (!canRotate) return;
+    setSeatOffset((prev) => (prev + 1) % seatCount);
+    setZoomId(null);
+  };
+  const rotateCcw = () => {
+    if (!canRotate) return;
+    setSeatOffset((prev) => (prev - 1 + seatCount) % seatCount);
+    setZoomId(null);
+  };
 
   return (
-    <div className="milty-galaxy" ref={viewportRef}>
-      <div className="milty-galaxy__frame" style={{ width: scaledW, height: scaledH }}>
-        <div
-          className="milty-galaxy__board"
-          style={{
-            width,
-            height,
-            transform: `scale(${scale})`,
-          }}
+    <div className="milty-galaxy-wrap">
+      <div className="milty-galaxy-toolbar" role="toolbar" aria-label="Поворот карты по местам">
+        <button
+          type="button"
+          className="milty-galaxy-rotate"
+          onClick={rotateCcw}
+          disabled={!canRotate}
+          title="Против часовой (сдвиг мест)"
+          aria-label="Повернуть карту против часовой стрелки"
         >
-          {assembled.cells.map((cell) => {
-            if (cell.tileId == null && cell.kind === 'empty') return null;
-            const [dx, dy] = offsets[cell.index];
-            const left = dx - minX + pad;
-            const top = dy - minY + pad;
-            const zoomed = zoomId === cell.index;
-            const showLabel = cell.kind === 'home' && cell.playerName;
-            return (
-              <div
-                key={cell.index}
-                className={`milty-galaxy__tile milty-galaxy__tile--${cell.kind}${zoomed ? ' is-zoomed' : ''}`}
-                style={{ left, top, width: TILE_W, height: TILE_H }}
-                title={cell.tileId != null ? `Система ${cell.tileId}` : undefined}
-                role={cell.tileId != null ? 'button' : undefined}
-                tabIndex={cell.tileId != null ? 0 : undefined}
-                onClick={(e) => {
-                  if (cell.tileId == null) return;
-                  e.stopPropagation();
-                  setZoomId((prev) => (prev === cell.index ? null : cell.index));
-                }}
-                onKeyDown={(e) => {
-                  if (cell.tileId == null) return;
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault();
+          <i className="fa-solid fa-rotate-left" aria-hidden="true" />
+          <span>Против</span>
+        </button>
+        <span className="milty-galaxy-rotate__meta" title="Сдвиг мест относительно Speaker">
+          Места
+          {seatOffset > 0 ? ` · +${seatOffset}` : ''}
+        </span>
+        <button
+          type="button"
+          className="milty-galaxy-rotate"
+          onClick={rotateCw}
+          disabled={!canRotate}
+          title="По часовой (сдвиг мест)"
+          aria-label="Повернуть карту по часовой стрелке"
+        >
+          <i className="fa-solid fa-rotate-right" aria-hidden="true" />
+          <span>По час.</span>
+        </button>
+      </div>
+
+      <div className="milty-galaxy" ref={viewportRef}>
+        <div className="milty-galaxy__frame" style={{ width: scaledW, height: scaledH }}>
+          <div
+            className="milty-galaxy__board"
+            style={{
+              width,
+              height,
+              transform: `scale(${scale})`,
+            }}
+          >
+            {assembled.cells.map((cell) => {
+              if (cell.tileId == null && cell.kind === 'empty') return null;
+              const [dx, dy] = offsets[cell.index];
+              const left = dx - minX + pad;
+              const top = dy - minY + pad;
+              const zoomed = zoomId === cell.index;
+              const showLabel = cell.kind === 'home' && cell.playerName;
+              return (
+                <div
+                  key={cell.index}
+                  className={`milty-galaxy__tile milty-galaxy__tile--${cell.kind}${zoomed ? ' is-zoomed' : ''}`}
+                  style={{ left, top, width: TILE_W, height: TILE_H }}
+                  title={cell.tileId != null ? `Система ${cell.tileId}` : undefined}
+                  role={cell.tileId != null ? 'button' : undefined}
+                  tabIndex={cell.tileId != null ? 0 : undefined}
+                  onClick={(e) => {
+                    if (cell.tileId == null) return;
+                    e.stopPropagation();
                     setZoomId((prev) => (prev === cell.index ? null : cell.index));
-                  }
-                }}
-              >
-                {cell.tileId != null ? (
-                  <img
-                    className="milty-galaxy__img"
-                    src={tileImageUrl(cell.tileId)}
-                    alt=""
-                    draggable={false}
-                    style={{ transform: `rotate(${(cell.rotation || 0) * 60}deg)` }}
-                  />
-                ) : (
-                  <span className="milty-galaxy__ph" />
-                )}
-                {cell.tileId != null ? (
-                  <span className="milty-galaxy__id">{cell.tileId}</span>
-                ) : null}
-                {showLabel ? (
-                  <span className="milty-galaxy__name">{cell.playerName}</span>
-                ) : null}
-                {cell.kind === 'home' && cell.seatIndex === 0 ? (
-                  <span className="milty-galaxy__spk">Spk</span>
-                ) : null}
-                {cell.tileId != null ? (
-                  <img
-                    className="milty-galaxy__zoom"
-                    src={tileImageUrl(cell.tileId)}
-                    alt=""
-                    draggable={false}
-                    style={{ transform: `translate(-50%, -50%) rotate(${(cell.rotation || 0) * 60}deg)` }}
-                  />
-                ) : null}
-              </div>
-            );
-          })}
+                  }}
+                  onKeyDown={(e) => {
+                    if (cell.tileId == null) return;
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      setZoomId((prev) => (prev === cell.index ? null : cell.index));
+                    }
+                  }}
+                >
+                  {cell.tileId != null ? (
+                    <img
+                      className="milty-galaxy__img"
+                      src={tileImageUrl(cell.tileId)}
+                      alt=""
+                      draggable={false}
+                      style={{ transform: `rotate(${(cell.rotation || 0) * 60}deg)` }}
+                    />
+                  ) : (
+                    <span className="milty-galaxy__ph" />
+                  )}
+                  {cell.tileId != null ? (
+                    <span className="milty-galaxy__id">{cell.tileId}</span>
+                  ) : null}
+                  {showLabel ? (
+                    <span className="milty-galaxy__name">{cell.playerName}</span>
+                  ) : null}
+                  {cell.kind === 'home' && cell.seatIndex === 0 ? (
+                    <span className="milty-galaxy__spk">Spk</span>
+                  ) : null}
+                  {cell.tileId != null ? (
+                    <img
+                      className="milty-galaxy__zoom"
+                      src={tileImageUrl(cell.tileId)}
+                      alt=""
+                      draggable={false}
+                      style={{ transform: `translate(-50%, -50%) rotate(${(cell.rotation || 0) * 60}deg)` }}
+                    />
+                  ) : null}
+                </div>
+              );
+            })}
+          </div>
         </div>
       </div>
     </div>

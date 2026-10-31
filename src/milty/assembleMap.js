@@ -190,7 +190,20 @@ export function calculateOffsets(width, height, maxRing = MAX_RING) {
 export const BOARD_SIZE = axialByPosition.length;
 
 /**
+ * Normalize a seat rotation offset into `0 .. n-1`.
+ * Positive = clockwise around the table (by seats).
+ */
+export function normalizeSeatOffset(offset, seatCount) {
+  const n = Math.max(0, Number(seatCount) || 0);
+  if (n <= 0) return 0;
+  const raw = Number(offset) || 0;
+  return ((raw % n) + n) % n;
+}
+
+/**
  * Build placed tiles for the draft map view.
+ * @param {object} draft
+ * @param {{ seatOffset?: number }} [opts] View-only rotation by table seats.
  * @returns {{
  *   cells: Array<{
  *     index: number,
@@ -203,10 +216,12 @@ export const BOARD_SIZE = axialByPosition.length;
  *     seatIndex?: number|null,
  *   }>,
  *   homeWorlds: number[],
+ *   seatOffset: number,
  * }}
  */
-export function assembleDraftMap(draft) {
+export function assembleDraftMap(draft, opts = {}) {
   const n = draft?.playerOrder?.length || 0;
+  const seatOffset = normalizeSeatOffset(opts.seatOffset, n);
   const layout = layoutForPlayers(n);
   const cells = Array.from({ length: BOARD_SIZE }, (_, index) => {
     const [q, r] = axialByPosition[index];
@@ -240,13 +255,15 @@ export function assembleDraftMap(draft) {
 
   layout.homeWorlds.forEach((homePos, seatIndex) => {
     if (seatIndex >= n) return;
-    const player = byPosition[seatIndex];
+    // Rotate players around fixed home slots (view-only).
+    const sourceSeat = (seatIndex - seatOffset + n) % n;
+    const player = byPosition[sourceSeat];
     const slots = sliceSlotsForHome(homePos);
     if (!slots) return;
 
     if (cells[homePos] && cells[homePos].kind !== 'hyperlane') {
       cells[homePos].kind = 'home';
-      cells[homePos].seatIndex = seatIndex;
+      cells[homePos].seatIndex = sourceSeat;
       cells[homePos].playerName = player?.name || null;
       if (player?.faction != null) {
         const fac = (draft.factionPool || []).find((f) => f.id === player.faction);
@@ -267,10 +284,14 @@ export function assembleDraftMap(draft) {
       if (tid == null) return;
       cells[boardIdx].tileId = tid;
       cells[boardIdx].kind = 'slice';
-      cells[boardIdx].seatIndex = seatIndex;
+      cells[boardIdx].seatIndex = sourceSeat;
       cells[boardIdx].playerName = player.name;
     });
   });
 
-  return { cells, homeWorlds: layout.homeWorlds.slice(0, n) };
+  return {
+    cells,
+    homeWorlds: layout.homeWorlds.slice(0, n),
+    seatOffset,
+  };
 }
