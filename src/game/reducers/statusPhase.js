@@ -151,7 +151,9 @@ function currentScoringPlayerId(scoring) {
 }
 
 function isScoringTurn(scoring, playerId) {
-  return currentScoringPlayerId(scoring) === playerId;
+  const currentId = currentScoringPlayerId(scoring);
+  if (currentId == null || playerId == null) return false;
+  return String(currentId) === String(playerId);
 }
 
 function finishScoringIfComplete(state) {

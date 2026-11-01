@@ -52,6 +52,12 @@ function playerGateMessage(error) {
       return 'Цвет можно выбрать только до начала партии.';
     case 'not-your-seat':
       return 'Можно менять только своё место.';
+    case 'wrong-secret-phase':
+      return 'Эту секретку нельзя засчитать сейчас (нужна фаза действия / статуса / политики).';
+    case 'secret-not-in-hand':
+      return 'Этой секретки нет в вашей руке.';
+    case 'secret-cap':
+      return 'Лимит сыгранных секретных целей.';
     case 'forbidden':
       return 'Это действие сейчас недоступно.';
     default:

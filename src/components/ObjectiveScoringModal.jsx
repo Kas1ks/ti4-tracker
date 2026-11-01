@@ -73,16 +73,19 @@ export function ObjectiveScoringModal({
   const currentPlayer = players.find((p) => p.id === currentId) || null;
   const currentResponse = currentId != null ? scoring?.responses?.[currentId] : null;
 
-  const isMySeat = seatPlayerId != null && seatPlayerId === currentId;
+  const isMySeat = seatPlayerId != null && currentId != null
+    && String(seatPlayerId) === String(currentId);
   const canActOnCurrent = !!currentPlayer
     && currentResponse?.status === 'pending'
     && (canScoreAny || isMySeat);
 
   const viewingSelf = seatPlayerId != null && !canScoreAny;
-  const myResponse = viewingSelf ? scoring?.responses?.[seatPlayerId] : null;
+  const myResponse = viewingSelf
+    ? (scoring?.responses?.[seatPlayerId] ?? scoring?.responses?.[String(seatPlayerId)])
+    : null;
   const waitingMyTurn = viewingSelf
     && myResponse?.status === 'pending'
-    && seatPlayerId !== currentId;
+    && String(seatPlayerId) !== String(currentId);
   const iAmDone = viewingSelf && (myResponse?.status === 'done' || myResponse?.status === 'passed');
 
   const stages = [

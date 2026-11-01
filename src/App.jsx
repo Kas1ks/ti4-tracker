@@ -278,7 +278,7 @@ function App() {
   );
   const teLeaders = select.expeditionLeaders(game);
   const mySeatPlayer = isPlayerClient && perms?.seatPlayerId != null
-    ? players.find(p => p.id === perms.seatPlayerId)
+    ? players.find((p) => String(p.id) === String(perms.seatPlayerId))
     : null;
   const myStartingTechResponse = mySeatPlayer && startingTechDraft?.active
     ? startingTechDraft.responses?.[mySeatPlayer.id]
@@ -1209,6 +1209,7 @@ function App() {
                     cardId,
                   })}
                   isPoliticsActive={!!isPoliticsActive}
+                  statusPhaseShow={!!showStatusPhaseModal}
                   onScoreSecret={(playerId, cardId) => dispatch({
                     type: 'SCORE_SECRET',
                     playerId,

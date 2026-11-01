@@ -189,18 +189,23 @@ export function authorizeAction({ role, seatPlayerId, action, state }) {
     }
 
     case 'SCORE_SECRET': {
-      if (action.playerId !== seatPlayerId) return { ok: false, error: 'not-your-objective' };
+      if (String(action.playerId) !== String(seatPlayerId)) {
+        return { ok: false, error: 'not-your-objective' };
+      }
       // Status scoring window (existing flow).
       if (state.statusPhase?.scoring?.active) {
         const scoring = state.statusPhase.scoring;
         const currentId = scoring.orderIds?.[scoring.currentIdx];
-        if (currentId !== seatPlayerId) return { ok: false, error: 'not-your-scoring-turn' };
-        const response = scoring.responses?.[seatPlayerId];
+        if (String(currentId) !== String(seatPlayerId)) {
+          return { ok: false, error: 'not-your-scoring-turn' };
+        }
+        const response = scoring.responses?.[seatPlayerId]
+          ?? scoring.responses?.[String(seatPlayerId)];
         if (!response || response.status !== 'pending') return { ok: false, error: 'scoring-locked' };
         return { ok: true };
       }
       // Mid-phase: action secrets in action phase, agenda secrets in politics.
-      const player = (state.players || []).find((p) => p.id === seatPlayerId);
+      const player = (state.players || []).find((p) => String(p.id) === String(seatPlayerId));
       if (!player || player.eliminated) return { ok: false, error: 'not-your-seat' };
       const hand = Array.isArray(player.secretHand) ? player.secretHand : [];
       if (!hand.includes(action.cardId)) return { ok: false, error: 'secret-not-in-hand' };
@@ -210,8 +215,23 @@ export function authorizeAction({ role, seatPlayerId, action, state }) {
       const card = secretObjectiveById.get(action.cardId);
       if (!card) return { ok: false, error: 'unknown-secret' };
       const politics = !!state.meta?.isPoliticsActive;
-      const inAction = !!state.round?.active && !politics && !state.statusPhase?.show;
-      if (card.phase === 'action' && inAction) return { ok: true };
+      // Action phase: live round, not politics, not objective scoring.
+      // Ignore statusPhase.show — it can remain true while a turn is still live
+      // and was blocking legitimate action-secret scores.
+      const inAction = !!state.round?.active
+        && !politics
+        && !state.statusPhase?.scoring?.active;
+      if (card.phase === 'action' && inAction) {
+        const ap = activePlayer(state);
+        if (!ap || String(ap.id) !== String(seatPlayerId)) {
+          return { ok: false, error: 'not-your-turn' };
+        }
+        const passedMap = state.round?.passed || {};
+        if (passedMap[seatPlayerId] || passedMap[String(seatPlayerId)]) {
+          return { ok: false, error: 'not-your-turn' };
+        }
+        return { ok: true };
+      }
       if (card.phase === 'agenda' && politics) return { ok: true };
       return { ok: false, error: 'wrong-secret-phase' };
     }
@@ -221,12 +241,17 @@ export function authorizeAction({ role, seatPlayerId, action, state }) {
     case 'UNSCORE_SECRET':
     case 'CONFIRM_OBJECTIVE_SCORING':
     case 'PASS_OBJECTIVE_SCORING': {
-      if (action.playerId !== seatPlayerId) return { ok: false, error: 'not-your-objective' };
+      if (String(action.playerId) !== String(seatPlayerId)) {
+        return { ok: false, error: 'not-your-objective' };
+      }
       if (!state.statusPhase?.scoring?.active) return { ok: false, error: 'scoring-closed' };
       const scoring = state.statusPhase.scoring;
       const currentId = scoring.orderIds?.[scoring.currentIdx];
-      if (currentId !== seatPlayerId) return { ok: false, error: 'not-your-scoring-turn' };
-      const response = scoring.responses?.[seatPlayerId];
+      if (String(currentId) !== String(seatPlayerId)) {
+        return { ok: false, error: 'not-your-scoring-turn' };
+      }
+      const response = scoring.responses?.[seatPlayerId]
+        ?? scoring.responses?.[String(seatPlayerId)];
       if (!response || response.status !== 'pending') return { ok: false, error: 'scoring-locked' };
       return { ok: true };
     }

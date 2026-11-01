@@ -163,24 +163,32 @@ function startRound(state, at = Date.now()) {
       : [],
   }));
 
-  return withRound(next, {
-    active: true,
-    turnOrderIds: ordered.map(p => p.id),
-    activeTurnIdx: 0,
-    passed: {},
-    turnTime: 0,
-    turnStartedAt: at,
-    roundStartedAt: at,
-    turnPausedAccum: 0,
-    strategyActionTaken: false,
-    secretExchangeUsed: false,
-    expeditionClaimedThisTurn: false,
-    expeditionClaimedSliceId: null,
-    strategyResolution: { ...EMPTY_STRATEGY_RESOLUTION },
-    imperialClaim: { ...EMPTY_IMPERIAL_CLAIM },
-    techResearch: { ...EMPTY_TECH_RESEARCH, picks: [], queueIds: [], byPlayer: {} },
-    combat: { ...EMPTY_COMBAT },
-  });
+  return withStatusPhase(
+    withRound(next, {
+      active: true,
+      turnOrderIds: ordered.map(p => p.id),
+      activeTurnIdx: 0,
+      passed: {},
+      turnTime: 0,
+      turnStartedAt: at,
+      roundStartedAt: at,
+      turnPausedAccum: 0,
+      strategyActionTaken: false,
+      secretExchangeUsed: false,
+      expeditionClaimedThisTurn: false,
+      expeditionClaimedSliceId: null,
+      strategyResolution: { ...EMPTY_STRATEGY_RESOLUTION },
+      imperialClaim: { ...EMPTY_IMPERIAL_CLAIM },
+      techResearch: { ...EMPTY_TECH_RESEARCH, picks: [], queueIds: [], byPlayer: {} },
+      combat: { ...EMPTY_COMBAT },
+    }),
+    {
+      show: false,
+      scoring: { active: false, responses: {}, orderIds: [], currentIdx: 0 },
+      objectiveRevealed: false,
+      revealShow: null,
+    },
+  );
 }
 
 function combatOf(state) {

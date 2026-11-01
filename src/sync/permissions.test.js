@@ -701,6 +701,44 @@ describe('authorizeAction', () => {
       state: live,
     })).toEqual({ ok: false, error: 'game-active' });
   });
+
+  it('allows action-phase SCORE_SECRET on own turn with string seat id', () => {
+    const state = normalizeGameState({
+      isGameActive: true,
+      players: [
+        {
+          ...player(1, 'A'),
+          secretHand: ['spark_a_rebellion'],
+          secrets: 0,
+        },
+        player(2, 'B'),
+      ],
+      speakerId: 1,
+      round: {
+        active: true,
+        turnOrderIds: [1, 2],
+        activeTurnIdx: 0,
+        passed: {},
+      },
+      statusPhase: { show: false, scoring: { active: false } },
+      meta: { isPoliticsActive: false },
+      secretObjectives: { dealStarted: true, draftPending: false, scored: [], deck: [] },
+    });
+
+    expect(authorizeAction({
+      role: ROLES.PLAYER,
+      seatPlayerId: '1',
+      action: { type: 'SCORE_SECRET', playerId: 1, cardId: 'spark_a_rebellion' },
+      state,
+    }).ok).toBe(true);
+
+    expect(authorizeAction({
+      role: ROLES.PLAYER,
+      seatPlayerId: '1',
+      action: { type: 'SCORE_SECRET', playerId: 1, cardId: 'adapt_new_strategies' },
+      state,
+    })).toEqual({ ok: false, error: 'secret-not-in-hand' });
+  });
 });
 
 describe('can (UI capabilities)', () => {

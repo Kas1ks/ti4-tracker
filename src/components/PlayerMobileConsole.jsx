@@ -95,6 +95,7 @@ export function PlayerMobileConsole({
   secretExchangeUsed = false,
   onExchangeSecret,
   isPoliticsActive = false,
+  statusPhaseShow = false,
   onScoreSecret,
   uiConfirm,
 }) {
@@ -104,8 +105,16 @@ export function PlayerMobileConsole({
   const [tableSortMode, setTableSortMode] = useState('initiative');
   const [techSheetPlayerId, setTechSheetPlayerId] = useState(null);
   const scoringActive = !!scoring?.active;
-  const myResponse = me ? scoring?.responses?.[me.id] : null;
-  const isMyTurn = !!(me && activePlayer && activePlayer.id === me.id && !passed[me.id]);
+  const myResponse = me
+    ? (scoring?.responses?.[me.id] ?? scoring?.responses?.[String(me.id)])
+    : null;
+  const hasPassed = !!(me && (passed?.[me.id] || passed?.[String(me.id)]));
+  const isMyTurn = !!(
+    me
+    && activePlayer
+    && String(activePlayer.id) === String(me.id)
+    && !hasPassed
+  );
 
   const openObjectives = (type = 'public', subtype = 'mine') => {
     setObjType(type);
@@ -201,9 +210,11 @@ export function PlayerMobileConsole({
             onObjTypeChange={setObjType}
             onObjSubtypeChange={setObjSubtype}
             scoringActive={scoringActive}
+            statusPhaseShow={statusPhaseShow}
             myResponse={myResponse}
             roundActive={roundActive}
             isPoliticsActive={isPoliticsActive}
+            isMyTurn={isMyTurn}
             onScoreSecret={onScoreSecret}
             uiConfirm={uiConfirm}
           />
@@ -807,9 +818,11 @@ function ObjectivesTab({
   onObjTypeChange,
   onObjSubtypeChange,
   scoringActive,
+  statusPhaseShow = false,
   myResponse,
   roundActive = false,
   isPoliticsActive = false,
+  isMyTurn = false,
   onScoreSecret,
   uiConfirm,
 }) {
@@ -819,7 +832,7 @@ function ObjectivesTab({
 
   useEffect(() => {
     setPickSecret(false);
-  }, [objType, objSubtype, roundActive, isPoliticsActive, scoringActive, me?.id]);
+  }, [objType, objSubtype, roundActive, isPoliticsActive, scoringActive, statusPhaseShow, me?.id]);
 
   if (!me) {
     return <div className="text-sm text-slate-500 text-center py-8">Место не назначено</div>;
@@ -837,8 +850,14 @@ function ObjectivesTab({
   const isPersonal = !isSecretType && isMine;
   const mySecretHand = Array.isArray(me?.secretHand) ? me.secretHand : [];
   const atSecretCap = (me.secrets || 0) >= secretCapOf(me);
+  // Action phase = live round, not politics, not status scoring window.
+  // Do NOT require !statusPhaseShow: that flag can stick true and falsely
+  // disable action secrets while the round is still live on a player's turn.
   const inActionPhase = !!roundActive && !isPoliticsActive && !scoringActive;
   const inPoliticsPhase = !!isPoliticsActive && !scoringActive;
+  const actionSecretsInHand = mySecretHand.filter(
+    (cardId) => secretObjectiveById.get(cardId)?.phase === 'action',
+  );
   const scorableSecrets = mySecretHand.filter((cardId) => {
     const card = secretObjectiveById.get(cardId);
     if (!card) return false;
@@ -846,10 +865,14 @@ function ObjectivesTab({
     if (inPoliticsPhase && card.phase === 'agenda') return true;
     return false;
   });
+  const statusOnlyInHand = mySecretHand.length > 0
+    && actionSecretsInHand.length === 0
+    && mySecretHand.every((id) => secretObjectiveById.get(id)?.phase === 'status');
   const canScoreSecretNow = !atSecretCap
     && scorableSecrets.length > 0
     && typeof onScoreSecret === 'function'
-    && !scoringBusy;
+    && !scoringBusy
+    && (inPoliticsPhase || (inActionPhase && isMyTurn));
 
   const toggleExpand = (id) => {
     setExpanded(prev => ({ ...prev, [id]: !prev[id] }));
@@ -972,7 +995,11 @@ function ObjectivesTab({
               atSecretCap
                 ? 'Лимит сыгранных секреток'
                 : !inActionPhase && !inPoliticsPhase
-                  ? 'Доступно в фазе действий или политики'
+                  ? 'Доступно в фазе действий (свой ход) или политики'
+                  : inActionPhase && !isMyTurn
+                    ? 'Секретку действия можно засчитать в свой ход'
+                  : statusOnlyInHand
+                    ? 'В руке только секретки статуса — засчитываются в фазе статуса'
                   : scorableSecrets.length === 0
                     ? 'Нет секреток текущей фазы'
                     : pickSecret
@@ -984,6 +1011,21 @@ function ObjectivesTab({
           >
             {pickSecret ? 'Отмена' : 'Достичь секретку'}
           </button>
+          {!canScoreSecretNow && !pickSecret && (
+            <p className="text-[11px] text-amber-400/90 px-0.5">
+              {atSecretCap
+                ? 'Лимит сыгранных секреток исчерпан.'
+                : !inActionPhase && !inPoliticsPhase
+                  ? 'Сейчас не фаза действий/политики — кнопка недоступна.'
+                  : inActionPhase && !isMyTurn
+                    ? 'Дождитесь своего хода, чтобы засчитать секретку действия.'
+                  : statusOnlyInHand
+                    ? 'В руке секретки фазы «Статус». Их засчитывают в окне скоринга статуса, не сейчас.'
+                  : scorableSecrets.length === 0
+                    ? 'В руке нет секретки для текущей фазы (нужна «Действие» или «Политика»).'
+                    : null}
+            </p>
+          )}
           {pickSecret && (
             <p className="text-[11px] text-emerald-400/90 px-0.5">
               Выберите секретку фазы {inPoliticsPhase ? 'политики' : 'действий'} — затем подтвердите
