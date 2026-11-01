@@ -1,13 +1,20 @@
 import {
   adminPinMatches,
-  getCloudBin,
   isJsonBinConfigured,
   makeSaveCode,
   resolveAdminPin,
   resolveBinId,
   resolveMasterKey,
-  withCloudBinLock,
 } from './jsonbin.js';
+import {
+  appendGameRecord,
+  clearCloudHistory,
+  deleteCloudHistoryId,
+  getCloudBin,
+  hasStatsStore,
+  isCloudStatsConfigured,
+  putCloudSave,
+} from './stats/statsBin.js';
 import { handleRoomsApi } from './rooms/roomsApi.js';
 import { handleMiltyApi } from './milty/miltyApi.js';
 import { assertRoomCreateAllowed, resolveRoomCreateSecret } from './rooms/roomCreateAuth.js';
@@ -87,7 +94,9 @@ export async function handleApi(request, env) {
   if (method === 'GET' && pathname === '/api/health') {
     return json({
       ok: true,
-      cloudConfigured: isJsonBinConfigured(env),
+      cloudConfigured: isCloudStatsConfigured(env),
+      statsStore: hasStatsStore(env) ? 'durable-object' : 'memory',
+      jsonbinConfigured: isJsonBinConfigured(env),
       rooms: Boolean(env?.GAME_ROOMS) ? 'durable-object' : 'memory',
       roomDirectory: Boolean(env?.ROOM_DIRECTORY),
       hasBinId: Boolean(resolveBinId(env)),
@@ -141,13 +150,14 @@ export async function handleApi(request, env) {
     return json({ ok: true });
   }
 
-  if (!isJsonBinConfigured(env)) {
+  if (!isCloudStatsConfigured(env)) {
     return json({
       error: 'not-configured',
+      hasStatsStore: hasStatsStore(env),
       hasBinId: Boolean(resolveBinId(env)),
       hasMasterKey: Boolean(resolveMasterKey(env)),
       hasAdminPin: Boolean(resolveAdminPin(env)),
-      hint: 'Add Worker runtime Secrets JSONBIN_BIN_ID + JSONBIN_MASTER_KEY (no VITE_ prefix in production).',
+      hint: 'StatsStore Durable Object binding STATS_STORE is required in production.',
     }, 503);
   }
 
@@ -165,9 +175,7 @@ export async function handleApi(request, env) {
       if (!gate.ok) return json({ error: gate.error }, gate.status);
       const gameRecord = extractGameRecord(body);
       if (!gameRecord) return json({ error: 'invalid-body' }, 400);
-      await withCloudBinLock(env, ({ history }) => {
-        history.unshift(gameRecord);
-      });
+      await appendGameRecord(env, gameRecord);
       return json({ ok: true }, 201);
     }
 
@@ -183,9 +191,7 @@ export async function handleApi(request, env) {
       }
       let code = typeof body?.code === 'string' ? body.code.trim() : '';
       if (!code) code = makeSaveCode();
-      await withCloudBinLock(env, ({ saves }) => {
-        saves[code] = snap;
-      });
+      await putCloudSave(env, code, snap);
       return json({ code }, 201);
     }
 
@@ -206,9 +212,7 @@ export async function handleApi(request, env) {
       if (!adminPinMatches(env, body?.pin)) {
         return json({ error: 'unauthorized' }, 401);
       }
-      await withCloudBinLock(env, ({ history }) => {
-        history.length = 0;
-      });
+      await clearCloudHistory(env);
       return json({ ok: true, history: [] });
     }
 
@@ -221,13 +225,7 @@ export async function handleApi(request, env) {
         return json({ error: 'unauthorized' }, 401);
       }
       const gameIdRaw = decodeURIComponent(gameMatch[1]);
-      const gameId = Number(gameIdRaw);
-      const updated = await withCloudBinLock(env, ({ history }) => {
-        const next = history.filter((g) => String(g.id) !== String(gameIdRaw) && g.id !== gameId);
-        history.length = 0;
-        history.push(...next);
-        return [...next];
-      });
+      const updated = await deleteCloudHistoryId(env, gameIdRaw);
       return json({ ok: true, history: updated });
     }
 

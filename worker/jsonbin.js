@@ -62,7 +62,8 @@ export function adminPinMatches(env, pin) {
   return Boolean(expected) && typeof pin === 'string' && timingSafeEqualString(pin, expected);
 }
 
-export async function getCloudBin(env) {
+/** One-shot / rare bootstrap read from JSONBin (not the hot path). */
+export async function fetchJsonBinBin(env) {
   const binId = resolveBinId(env);
   const masterKey = resolveMasterKey(env);
   const response = await fetch(`${binUrl(binId)}/latest`, {
@@ -72,44 +73,10 @@ export async function getCloudBin(env) {
   if (!response.ok) {
     throw new Error(`jsonbin-get-${response.status}`);
   }
-  return parseCloudBin(await response.json());
-}
-
-export async function putCloudBin(env, { history, saves }) {
-  const binId = resolveBinId(env);
-  const masterKey = resolveMasterKey(env);
-  const response = await fetch(binUrl(binId), {
-    method: 'PUT',
-    headers: headers(masterKey),
-    body: JSON.stringify({ history, saves }),
-  });
-  if (!response.ok) {
-    throw new Error(`jsonbin-put-${response.status}`);
-  }
-}
-
-/** Per-isolate serial queue so concurrent get→mutate→put do not clobber each other. */
-let cloudWriteChain = Promise.resolve();
-
-/**
- * Serialize read-modify-write against the shared bin.
- * @template T
- * @param {object} env
- * @param {(bin: { history: any[], saves: Record<string, any> }) => T | Promise<T>} mutator
- * @returns {Promise<T>}
- */
-export function withCloudBinLock(env, mutator) {
-  const run = cloudWriteChain.then(async () => {
-    const bin = await getCloudBin(env);
-    const history = Array.isArray(bin.history) ? bin.history.slice() : [];
-    const saves = bin.saves && typeof bin.saves === 'object' ? { ...bin.saves } : {};
-    const result = await mutator({ history, saves });
-    await putCloudBin(env, { history, saves });
-    return result;
-  });
-  // Keep the chain alive even if a write fails.
-  cloudWriteChain = run.then(() => undefined, () => undefined);
-  return run;
+  const payload = await response.json();
+  // JSONBin v3 wraps as { record: ... }
+  const record = payload?.record ?? payload;
+  return parseCloudBin(record);
 }
 
 export function makeSaveCode() {

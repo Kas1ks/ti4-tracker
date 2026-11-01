@@ -108,23 +108,28 @@ export function useCloudGame({ game, dispatch, getPlayerScore, uiAlert, uiConfir
     try {
       const remaining = [];
       let uploaded = 0;
+      let lastError = null;
       for (const record of pending) {
         try {
           await postGameRecord(record, { createSecret: token });
           uploaded += 1;
         } catch (err) {
           console.error(err);
+          lastError = err;
           remaining.push(record);
         }
       }
       savePendingStats(remaining);
-      await loadStatsHistory();
       if (remaining.length) {
+        const why = cloudErrorMessage(lastError, 'Не удалось сохранить в облако');
         await uiAlert(
-          `Загружено ${uploaded} из ${pending.length}. Остались в очереди: ${remaining.length}.`,
+          `Загружено ${uploaded} из ${pending.length}. Остались в очереди: ${remaining.length}.\n\n${why}`,
           { title: 'Частичная загрузка', variant: 'danger' },
         );
+        // Do not immediately reload cloud history after a failed upload —
+        // that adds another failing GET on the same upstream.
       } else {
+        await loadStatsHistory();
         await uiAlert(`В облако загружено партий: ${uploaded}.`, {
           title: 'Готово',
           variant: 'success',
