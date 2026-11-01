@@ -1209,6 +1209,7 @@ function App() {
                     cardId,
                   })}
                   isPoliticsActive={!!isPoliticsActive}
+                  showPoliticsModal={!!showPoliticsModal}
                   statusPhaseShow={!!showStatusPhaseModal}
                   onScoreSecret={(playerId, cardId) => dispatch({
                     type: 'SCORE_SECRET',

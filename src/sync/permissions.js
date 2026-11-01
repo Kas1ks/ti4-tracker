@@ -5,6 +5,7 @@ import {
   currentDraftPlayerId,
   currentVoterId,
   isStrategyCardPlayed,
+  playersNotPassed,
 } from '../game/selectors.js';
 import { isVictoryActionAllowed, isVictoryReached } from '../game/victory.js';
 import { NEUTRAL_OPPONENT_ID } from '../data/neutralUnits.js';
@@ -214,16 +215,20 @@ export function authorizeAction({ role, seatPlayerId, action, state }) {
       }
       const card = secretObjectiveById.get(action.cardId);
       if (!card) return { ok: false, error: 'unknown-secret' };
-      const politics = !!state.meta?.isPoliticsActive;
-      // Action phase: live round, not politics, not objective scoring.
-      // Do not require "your turn" here — TI4 action secrets are scored when
-      // fulfilled during the action phase; turn detection was falsely blocking.
-      // Ignore sticky statusPhase.show (same bug as the grey mobile button).
+      // meta.isPoliticsActive = "politics enabled for this game", NOT "in agenda now".
+      // Using it here blocked all action secrets in PoK games (wrong-secret-phase).
+      const inAgenda = !!state.politics?.showModal;
+      const scoringOpen = !!state.statusPhase?.scoring?.active;
+      // Live action: round on, agenda closed, scoring closed. Prefer "someone still
+      // acting" so a sticky statusPhase.show during turns does not block; after
+      // everyone passed (status checklist) action secrets are closed.
+      const someoneActing = playersNotPassed(state).length > 0;
       const inAction = !!state.round?.active
-        && !politics
-        && !state.statusPhase?.scoring?.active;
+        && !inAgenda
+        && !scoringOpen
+        && (someoneActing || !state.statusPhase?.show);
       if (card.phase === 'action' && inAction) return { ok: true };
-      if (card.phase === 'agenda' && politics) return { ok: true };
+      if (card.phase === 'agenda' && inAgenda && !scoringOpen) return { ok: true };
       return { ok: false, error: 'wrong-secret-phase' };
     }
 

@@ -702,7 +702,47 @@ describe('authorizeAction', () => {
     })).toEqual({ ok: false, error: 'game-active' });
   });
 
-  it('allows action-phase SCORE_SECRET with string seat id even if status show stuck', () => {
+  it('allows action-phase SCORE_SECRET even when politics track is enabled', () => {
+    const state = normalizeGameState({
+      isGameActive: true,
+      players: [
+        {
+          ...player(1, 'A'),
+          secretHand: ['spark_a_rebellion'],
+          secrets: 0,
+        },
+        player(2, 'B'),
+      ],
+      speakerId: 1,
+      round: {
+        active: true,
+        turnOrderIds: [1, 2],
+        activeTurnIdx: 1,
+        passed: {},
+      },
+      statusPhase: { show: false, scoring: { active: false } },
+      // isPoliticsActive means "game uses agenda", not "agenda is open now".
+      meta: { isPoliticsActive: true },
+      politics: { showModal: false },
+      secretObjectives: { dealStarted: true, draftPending: false, scored: [], deck: [] },
+    });
+
+    expect(authorizeAction({
+      role: ROLES.PLAYER,
+      seatPlayerId: '1',
+      action: { type: 'SCORE_SECRET', playerId: 1, cardId: 'spark_a_rebellion' },
+      state,
+    }).ok).toBe(true);
+
+    expect(authorizeAction({
+      role: ROLES.PLAYER,
+      seatPlayerId: '1',
+      action: { type: 'SCORE_SECRET', playerId: 1, cardId: 'adapt_new_strategies' },
+      state,
+    })).toEqual({ ok: false, error: 'secret-not-in-hand' });
+  });
+
+  it('allows action SCORE_SECRET if status show stuck but someone still acting', () => {
     const state = normalizeGameState({
       isGameActive: true,
       players: [
@@ -721,7 +761,8 @@ describe('authorizeAction', () => {
         passed: {},
       },
       statusPhase: { show: true, scoring: { active: false } },
-      meta: { isPoliticsActive: false },
+      meta: { isPoliticsActive: true },
+      politics: { showModal: false },
       secretObjectives: { dealStarted: true, draftPending: false, scored: [], deck: [] },
     });
 
@@ -731,13 +772,38 @@ describe('authorizeAction', () => {
       action: { type: 'SCORE_SECRET', playerId: 1, cardId: 'spark_a_rebellion' },
       state,
     }).ok).toBe(true);
+  });
+
+  it('blocks action SCORE_SECRET during status checklist after all passed', () => {
+    const state = normalizeGameState({
+      isGameActive: true,
+      players: [
+        {
+          ...player(1, 'A'),
+          secretHand: ['spark_a_rebellion'],
+          secrets: 0,
+        },
+        player(2, 'B'),
+      ],
+      speakerId: 1,
+      round: {
+        active: true,
+        turnOrderIds: [1, 2],
+        activeTurnIdx: 0,
+        passed: { 1: true, 2: true },
+      },
+      statusPhase: { show: true, scoring: { active: false } },
+      meta: { isPoliticsActive: true },
+      politics: { showModal: false },
+      secretObjectives: { dealStarted: true, draftPending: false, scored: [], deck: [] },
+    });
 
     expect(authorizeAction({
       role: ROLES.PLAYER,
       seatPlayerId: '1',
-      action: { type: 'SCORE_SECRET', playerId: 1, cardId: 'adapt_new_strategies' },
+      action: { type: 'SCORE_SECRET', playerId: 1, cardId: 'spark_a_rebellion' },
       state,
-    })).toEqual({ ok: false, error: 'secret-not-in-hand' });
+    })).toEqual({ ok: false, error: 'wrong-secret-phase' });
   });
 });
 

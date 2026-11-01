@@ -94,7 +94,7 @@ export function PlayerMobileConsole({
   mecatolControllerId = null,
   secretExchangeUsed = false,
   onExchangeSecret,
-  isPoliticsActive = false,
+  showPoliticsModal = false,
   statusPhaseShow = false,
   onScoreSecret,
   uiConfirm,
@@ -213,7 +213,9 @@ export function PlayerMobileConsole({
             statusPhaseShow={statusPhaseShow}
             myResponse={myResponse}
             roundActive={roundActive}
-            isPoliticsActive={isPoliticsActive}
+            showPoliticsModal={showPoliticsModal}
+            passed={passed}
+            statusPhaseShow={statusPhaseShow}
             isMyTurn={isMyTurn}
             onScoreSecret={onScoreSecret}
             uiConfirm={uiConfirm}
@@ -821,7 +823,8 @@ function ObjectivesTab({
   statusPhaseShow = false,
   myResponse,
   roundActive = false,
-  isPoliticsActive = false,
+  showPoliticsModal = false,
+  passed = {},
   isMyTurn = false,
   onScoreSecret,
   uiConfirm,
@@ -832,7 +835,7 @@ function ObjectivesTab({
 
   useEffect(() => {
     setPickSecret(false);
-  }, [objType, objSubtype, roundActive, isPoliticsActive, scoringActive, statusPhaseShow, me?.id]);
+  }, [objType, objSubtype, roundActive, showPoliticsModal, scoringActive, statusPhaseShow, me?.id]);
 
   if (!me) {
     return <div className="text-sm text-slate-500 text-center py-8">Место не назначено</div>;
@@ -850,11 +853,16 @@ function ObjectivesTab({
   const isPersonal = !isSecretType && isMine;
   const mySecretHand = Array.isArray(me?.secretHand) ? me.secretHand : [];
   const atSecretCap = (me.secrets || 0) >= secretCapOf(me);
-  // Action phase = live round, not politics, not status scoring window.
-  // Do NOT require !statusPhaseShow: that flag can stick true and falsely
-  // disable action secrets while the round is still live on a player's turn.
-  const inActionPhase = !!roundActive && !isPoliticsActive && !scoringActive;
-  const inPoliticsPhase = !!isPoliticsActive && !scoringActive;
+  // showPoliticsModal = agenda UI open. Do NOT use meta.isPoliticsActive — that
+  // flag means "politics enabled for the game" and stays on all game long.
+  const someoneActing = activeSeats.some(
+    (p) => !(passed?.[p.id] || passed?.[String(p.id)]),
+  );
+  const inActionPhase = !!roundActive
+    && !showPoliticsModal
+    && !scoringActive
+    && (someoneActing || !statusPhaseShow);
+  const inPoliticsPhase = !!showPoliticsModal && !scoringActive;
   const actionSecretsInHand = mySecretHand.filter(
     (cardId) => secretObjectiveById.get(cardId)?.phase === 'action',
   );
@@ -1015,7 +1023,7 @@ function ObjectivesTab({
               {atSecretCap
                 ? 'Лимит сыгранных секреток исчерпан.'
                 : !inActionPhase && !inPoliticsPhase
-                  ? `Сейчас не фаза действий/политики (раунд:${roundActive ? 'да' : 'нет'}, политика:${isPoliticsActive ? 'да' : 'нет'}, скоринг:${scoringActive ? 'да' : 'нет'}).`
+                  ? `Сейчас не фаза действий/политики (раунд:${roundActive ? 'да' : 'нет'}, agenda:${showPoliticsModal ? 'да' : 'нет'}, скоринг:${scoringActive ? 'да' : 'нет'}, статус:${statusPhaseShow ? 'да' : 'нет'}).`
                   : statusOnlyInHand
                     ? 'В руке секретки фазы «Статус». Их засчитывают в окне скоринга статуса, не сейчас.'
                   : scorableSecrets.length === 0
