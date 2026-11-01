@@ -216,22 +216,13 @@ export function authorizeAction({ role, seatPlayerId, action, state }) {
       if (!card) return { ok: false, error: 'unknown-secret' };
       const politics = !!state.meta?.isPoliticsActive;
       // Action phase: live round, not politics, not objective scoring.
-      // Ignore statusPhase.show — it can remain true while a turn is still live
-      // and was blocking legitimate action-secret scores.
+      // Do not require "your turn" here — TI4 action secrets are scored when
+      // fulfilled during the action phase; turn detection was falsely blocking.
+      // Ignore sticky statusPhase.show (same bug as the grey mobile button).
       const inAction = !!state.round?.active
         && !politics
         && !state.statusPhase?.scoring?.active;
-      if (card.phase === 'action' && inAction) {
-        const ap = activePlayer(state);
-        if (!ap || String(ap.id) !== String(seatPlayerId)) {
-          return { ok: false, error: 'not-your-turn' };
-        }
-        const passedMap = state.round?.passed || {};
-        if (passedMap[seatPlayerId] || passedMap[String(seatPlayerId)]) {
-          return { ok: false, error: 'not-your-turn' };
-        }
-        return { ok: true };
-      }
+      if (card.phase === 'action' && inAction) return { ok: true };
       if (card.phase === 'agenda' && politics) return { ok: true };
       return { ok: false, error: 'wrong-secret-phase' };
     }

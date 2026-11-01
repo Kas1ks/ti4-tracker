@@ -868,11 +868,12 @@ function ObjectivesTab({
   const statusOnlyInHand = mySecretHand.length > 0
     && actionSecretsInHand.length === 0
     && mySecretHand.every((id) => secretObjectiveById.get(id)?.phase === 'status');
+  // Enable whenever phase matches — do not gate on isMyTurn (was greying out
+  // the button even with action secrets in hand during a live action round).
   const canScoreSecretNow = !atSecretCap
     && scorableSecrets.length > 0
     && typeof onScoreSecret === 'function'
-    && !scoringBusy
-    && (inPoliticsPhase || (inActionPhase && isMyTurn));
+    && !scoringBusy;
 
   const toggleExpand = (id) => {
     setExpanded(prev => ({ ...prev, [id]: !prev[id] }));
@@ -995,9 +996,7 @@ function ObjectivesTab({
               atSecretCap
                 ? 'Лимит сыгранных секреток'
                 : !inActionPhase && !inPoliticsPhase
-                  ? 'Доступно в фазе действий (свой ход) или политики'
-                  : inActionPhase && !isMyTurn
-                    ? 'Секретку действия можно засчитать в свой ход'
+                  ? 'Доступно в фазе действий или политики'
                   : statusOnlyInHand
                     ? 'В руке только секретки статуса — засчитываются в фазе статуса'
                   : scorableSecrets.length === 0
@@ -1016,13 +1015,11 @@ function ObjectivesTab({
               {atSecretCap
                 ? 'Лимит сыгранных секреток исчерпан.'
                 : !inActionPhase && !inPoliticsPhase
-                  ? 'Сейчас не фаза действий/политики — кнопка недоступна.'
-                  : inActionPhase && !isMyTurn
-                    ? 'Дождитесь своего хода, чтобы засчитать секретку действия.'
+                  ? `Сейчас не фаза действий/политики (раунд:${roundActive ? 'да' : 'нет'}, политика:${isPoliticsActive ? 'да' : 'нет'}, скоринг:${scoringActive ? 'да' : 'нет'}).`
                   : statusOnlyInHand
                     ? 'В руке секретки фазы «Статус». Их засчитывают в окне скоринга статуса, не сейчас.'
                   : scorableSecrets.length === 0
-                    ? 'В руке нет секретки для текущей фазы (нужна «Действие» или «Политика»).'
+                    ? `В руке ${mySecretHand.length}, action:${actionSecretsInHand.length}, но фаза не подходит.`
                     : null}
             </p>
           )}

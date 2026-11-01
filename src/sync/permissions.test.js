@@ -702,7 +702,7 @@ describe('authorizeAction', () => {
     })).toEqual({ ok: false, error: 'game-active' });
   });
 
-  it('allows action-phase SCORE_SECRET on own turn with string seat id', () => {
+  it('allows action-phase SCORE_SECRET with string seat id even if status show stuck', () => {
     const state = normalizeGameState({
       isGameActive: true,
       players: [
@@ -717,10 +717,10 @@ describe('authorizeAction', () => {
       round: {
         active: true,
         turnOrderIds: [1, 2],
-        activeTurnIdx: 0,
+        activeTurnIdx: 1,
         passed: {},
       },
-      statusPhase: { show: false, scoring: { active: false } },
+      statusPhase: { show: true, scoring: { active: false } },
       meta: { isPoliticsActive: false },
       secretObjectives: { dealStarted: true, draftPending: false, scored: [], deck: [] },
     });
