@@ -12,6 +12,15 @@ import {
 /** Current on-disk / cloud schema for finished-game analytics snapshots. */
 export const GAME_RECORD_SCHEMA_VERSION = 4;
 
+/** Stored when the game ends without anyone reaching targetScore. */
+export const NO_WINNER_LABEL = 'Без победителя';
+
+function normalizeWinnerLabel(raw) {
+  const w = String(raw || '').trim();
+  if (!w || w === '—' || w === 'Ничья') return NO_WINNER_LABEL;
+  return w;
+}
+
 function factionName(factionId) {
   return ALL_FACTIONS.find(f => f.id === factionId)?.name || factionId || '';
 }
@@ -220,7 +229,7 @@ export function normalizeGameRecord(raw) {
     roundsCount: asNumber(raw.roundsCount, 0),
     playerCount: asNumber(raw.playerCount, players.length),
     roundTimes,
-    winner: raw.winner || '—',
+    winner: normalizeWinnerLabel(raw.winner),
     winningFaction: raw.winningFaction || '',
     expansions,
     objectives,
@@ -285,7 +294,7 @@ export function buildGameRecord(state, winnerPlayer, getPlayerScore) {
     roundsCount: roundNumber,
     playerCount: players.length,
     roundTimes: finalizeRoundTimes(state),
-    winner: winnerPlayer ? winnerPlayer.name : 'Ничья',
+    winner: winnerPlayer ? winnerPlayer.name : NO_WINNER_LABEL,
     winningFaction: winnerPlayer ? factionName(winnerPlayer.factionId) : '',
     expansions: {
       pok: !!meta.usePok,

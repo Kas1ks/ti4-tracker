@@ -59,3 +59,21 @@ export function victoryWinners(state) {
 export function isVictoryReached(state) {
   return victoryWinners(state).length > 0;
 }
+
+/**
+ * Winner for analytics / end-game save: only players who reached targetScore.
+ * Highest score wins ties among those at/above target. Null = no winner
+ * (early end / abandoned game — do not pick the VP leader).
+ */
+export function resolveStatsWinner(state, getPlayerScore) {
+  const scoreOf = typeof getPlayerScore === 'function'
+    ? getPlayerScore
+    : (id) => playerScore(state, id);
+  const eligible = victoryWinners(state);
+  if (!eligible.length) return null;
+  return [...eligible].sort((a, b) => {
+    const diff = scoreOf(b.id) - scoreOf(a.id);
+    if (diff !== 0) return diff;
+    return Number(a.id) - Number(b.id);
+  })[0];
+}

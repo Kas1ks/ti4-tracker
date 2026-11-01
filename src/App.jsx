@@ -1451,7 +1451,7 @@ function App() {
           <EndGameModal
             showEndGameModal={ui.showEndGameModal}
             setShowEndGameModal={ui.setShowEndGameModal}
-            players={players}
+            game={game}
             getPlayerScore={getPlayerScore}
             saveGameToCloud={cloud.saveGameToCloud}
             setShowGameSummaryModal={ui.setShowGameSummaryModal}

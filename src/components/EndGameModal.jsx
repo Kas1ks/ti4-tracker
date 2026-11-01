@@ -1,10 +1,11 @@
 import { useEscapeKey } from '../hooks/useEscapeKey';
 import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
+import { resolveStatsWinner } from '../game/victory';
 
 export function EndGameModal({
   showEndGameModal,
   setShowEndGameModal,
-  players,
+  game,
   getPlayerScore,
   saveGameToCloud,
   setShowGameSummaryModal,
@@ -14,9 +15,8 @@ export function EndGameModal({
   useBodyScrollLock(!!showEndGameModal);
 
   const saveAndExit = async () => {
-    const sorted = [...players].sort((a, b) => getPlayerScore(b.id) - getPlayerScore(a.id));
-    const topPlayer = sorted[0];
-    const winner = topPlayer && getPlayerScore(topPlayer.id) > 0 ? topPlayer : null;
+    // Only count a winner if someone reached targetScore — never the VP leader alone.
+    const winner = resolveStatsWinner(game, getPlayerScore);
 
     const saved = await saveGameToCloud(winner);
     if (!saved) return;
@@ -31,6 +31,9 @@ export function EndGameModal({
     setShowEndGameModal(false);
     await resetGameState();
   };
+
+  const targetScore = Number(game?.meta?.targetScore);
+  const hasTargetWinner = !!resolveStatsWinner(game, getPlayerScore);
 
   return (
     <>
@@ -51,6 +54,11 @@ export function EndGameModal({
               <p className="text-xs md:text-sm text-slate-400 mt-2">
                 Выберите, нужно ли сохранить результаты этой игры в общую статистику компании.
               </p>
+              {!hasTargetWinner && Number.isFinite(targetScore) && targetScore > 0 && (
+                <p className="text-xs text-amber-400/90 mt-3">
+                  Никто не достиг цели {targetScore} ПО — партия сохранится без победителя.
+                </p>
+              )}
             </div>
 
             <div className="space-y-3 pt-2">
