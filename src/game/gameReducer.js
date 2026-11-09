@@ -125,6 +125,21 @@ function bankRoundTime(state, at) {
   );
 }
 
+/**
+ * First Mecatol take unlocks agenda for the rest of the game (status → politics).
+ * Only fires when the board had no custodians/controller yet and politics is still off.
+ * Later transfers / manual SET_MECATOL_CONTROLLER do not flip the switch back on.
+ */
+function withPoliticsAfterFirstMecatol(state, nextVpTrack) {
+  const prev = state.vpTrack || {};
+  const boardWasEmpty = prev.custodiansPlayerId == null && prev.mecatolControllerId == null;
+  const gainsControl = nextVpTrack?.mecatolControllerId != null
+    || nextVpTrack?.custodiansPlayerId != null;
+  const base = { ...state, vpTrack: nextVpTrack };
+  if (!boardWasEmpty || !gainsControl || state.meta?.isPoliticsActive) return base;
+  return withMeta(base, { isPoliticsActive: true });
+}
+
 /** End of round: agenda phase if one is pending, otherwise the status checklist. */
 function endRound(state, at = Date.now()) {
   let next = bankActivePlayerTime(state, at);
@@ -1028,8 +1043,11 @@ function startStrategyResolution(state, cardId, at = Date.now(), { peekFirst = f
 }
 
 /**
- * Politics primary: put peeked agendas on top/bottom (in listed order).
- * placements: [{ cardId, dest: 'top'|'bottom' }, ...] — applied sequentially.
+ * Politics primary: put peeked agendas on top/bottom.
+ * placements: [{ cardId, dest: 'top'|'bottom' }, ...]
+ * Among "top" cards, list order = draw order (first draws next).
+ * Among "bottom" cards, list order = near→deep (last is deepest).
+ * Sequential push-to-top would reverse two "top" cards — avoid that.
  */
 function commitPoliticsPeek(state, placements) {
   const resolution = strategyResolutionOf(state);
@@ -1041,22 +1059,20 @@ function commitPoliticsPeek(state, placements) {
     const list = Array.isArray(placements) ? placements : [];
     if (list.length !== peek.length) return state;
     const seen = new Set();
+    const tops = [];
+    const bottoms = [];
     for (const row of list) {
       const id = String(row?.cardId || '');
       const dest = row?.dest === 'bottom' ? 'bottom' : 'top';
       if (!id || !peek.includes(id) || seen.has(id)) return state;
-      if (dest !== 'top' && dest !== 'bottom') return state;
       seen.add(id);
+      if (dest === 'bottom') bottoms.push(id);
+      else tops.push(id);
     }
     if (seen.size !== peek.length) return state;
 
-    let deck = [...(state.politics?.agendaDeck || [])];
-    for (const row of list) {
-      const id = String(row.cardId);
-      if (row.dest === 'bottom') deck = [...deck, id];
-      else deck = [id, ...deck];
-    }
-    state = withPolitics(state, { agendaDeck: deck });
+    const rest = [...(state.politics?.agendaDeck || [])];
+    state = withPolitics(state, { agendaDeck: [...tops, ...rest, ...bottoms] });
   }
 
   // Keep secondary answers already made during peek; unlock primary to played/pass.
@@ -1875,15 +1891,12 @@ export function gameReducer(state, action) {
       // Gaining Mecatol points transfers the control token (VP custodians stay).
       if (delta > 0) {
         const track = next.vpTrack || {};
-        next = {
-          ...next,
-          vpTrack: {
-            ...track,
-            custodiansPlayerId: track.custodiansPlayerId ?? null,
-            mecatolControllerId: playerId,
-            supportHolders: { ...(track.supportHolders || {}) },
-          },
-        };
+        next = withPoliticsAfterFirstMecatol(next, {
+          ...track,
+          custodiansPlayerId: track.custodiansPlayerId ?? null,
+          mecatolControllerId: playerId,
+          supportHolders: { ...(track.supportHolders || {}) },
+        });
       }
       return next;
     }
@@ -1899,18 +1912,16 @@ export function gameReducer(state, action) {
       // First claim: award VP + control. Later / same-seat toggle: control only
       // (VP never moves once awarded; host can clear VP by toggling first holder off).
       if (currentVp == null) {
-        return {
-          ...state,
-          vpTrack: {
-            ...track,
-            custodiansPlayerId: playerId,
-            mecatolControllerId: playerId,
-            supportHolders: { ...(track.supportHolders || {}) },
-          },
-        };
+        return withPoliticsAfterFirstMecatol(state, {
+          ...track,
+          custodiansPlayerId: playerId,
+          mecatolControllerId: playerId,
+          supportHolders: { ...(track.supportHolders || {}) },
+        });
       }
       if (playerId != null && currentVp === playerId && action.force !== true) {
         // Legacy toggle-off of the original claim clears VP; control follows.
+        // Politics stays on — agenda remains available after first Mecatol take.
         return {
           ...state,
           vpTrack: {
@@ -1938,15 +1949,12 @@ export function gameReducer(state, action) {
         return state;
       }
       const track = state.vpTrack || { supportHolders: {} };
-      return {
-        ...state,
-        vpTrack: {
-          ...track,
-          custodiansPlayerId: track.custodiansPlayerId ?? null,
-          mecatolControllerId: playerId,
-          supportHolders: { ...(track.supportHolders || {}) },
-        },
-      };
+      return withPoliticsAfterFirstMecatol(state, {
+        ...track,
+        custodiansPlayerId: track.custodiansPlayerId ?? null,
+        mecatolControllerId: playerId,
+        supportHolders: { ...(track.supportHolders || {}) },
+      });
     }
 
     case 'SET_SUPPORT': {

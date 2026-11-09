@@ -94,12 +94,27 @@ function confirmStatusPhase(state) {
 
   const oneVoteLaw = !!next.politics?.oneVoteLaw;
   const step = oneVoteLaw ? 'VOTE' : 'SETUP';
-  const agendaDeck = buildShuffledAgendaDeck(!!next.meta?.usePok);
+  const activeLaws = Array.isArray(next.politics?.activeLaws) ? next.politics.activeLaws : [];
+  const inPlay = new Set(activeLaws.map((l) => String(l.id)));
+
+  // Keep Politics peek order + prior discards. Never wipe the deck each status confirm
+  // (that made peeked placements disappear and reshuffled resolved agendas back in).
+  let deck = Array.isArray(next.politics?.agendaDeck)
+    ? next.politics.agendaDeck.filter((id) => !inPlay.has(String(id)))
+    : [];
+  let discard = Array.isArray(next.politics?.agendaDiscard)
+    ? next.politics.agendaDiscard.filter((id) => !inPlay.has(String(id)))
+    : [];
+
+  if (deck.length === 0 && discard.length === 0) {
+    deck = buildShuffledAgendaDeck(!!next.meta?.usePok).filter(
+      (id) => !inPlay.has(String(id)),
+    );
+  }
+
   let agendas = [emptyAgenda()];
-  let deck = agendaDeck;
-  let discard = [];
   if (step === 'VOTE') {
-    const drawn = drawIntoAgenda(emptyAgenda(), agendaDeck, [], { state: next });
+    const drawn = drawIntoAgenda(emptyAgenda(), deck, discard, { state: next });
     agendas = [drawn.agenda];
     deck = drawn.agendaDeck;
     discard = drawn.agendaDiscard;
@@ -114,7 +129,7 @@ function confirmStatusPhase(state) {
     agendaDeck: deck,
     agendaDiscard: discard,
     // Preserve lasting laws across agenda phases.
-    activeLaws: Array.isArray(next.politics?.activeLaws) ? next.politics.activeLaws : [],
+    activeLaws,
   });
 }
 

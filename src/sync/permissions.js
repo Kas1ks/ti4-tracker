@@ -147,7 +147,10 @@ export function authorizeAction({ role, seatPlayerId, action, state }) {
     case 'SELECT_MISCOUNT_LAW':
     case 'SET_SPEAKER_AGENDA_DECISION': {
       // Speaker flips agendas / picks Miscount law / breaks ties.
-      if (state.politics?.showModal && state.meta.speakerId === seatPlayerId) {
+      if (
+        state.politics?.showModal
+        && String(state.meta?.speakerId) === String(seatPlayerId)
+      ) {
         return { ok: true };
       }
       return { ok: false, error: 'forbidden' };

@@ -24,6 +24,10 @@ class_name = "MiltyDraft"
 name = "STATS_STORE"
 class_name = "StatsStore"
 
+[[durable_objects.bindings]]
+name = "RATE_LIMIT"
+class_name = "RateLimitGate"
+
 [[migrations]]
 tag = "v1-game-rooms"
 new_sqlite_classes = ["GameRoom"]
@@ -39,6 +43,10 @@ new_sqlite_classes = ["MiltyDraft"]
 [[migrations]]
 tag = "v4-stats-store"
 new_sqlite_classes = ["StatsStore"]
+
+[[migrations]]
+tag = "v5-rate-limit"
+new_sqlite_classes = ["RateLimitGate"]
 
 # Staging / previous prod snapshot:
 #   https://ti4-tracker-dv.skvcom1.workers.dev
@@ -68,6 +76,10 @@ class_name = "MiltyDraft"
 name = "STATS_STORE"
 class_name = "StatsStore"
 
+[[env.dev.durable_objects.bindings]]
+name = "RATE_LIMIT"
+class_name = "RateLimitGate"
+
 [[env.dev.migrations]]
 tag = "v1-game-rooms"
 new_sqlite_classes = ["GameRoom"]
@@ -83,3 +95,7 @@ new_sqlite_classes = ["MiltyDraft"]
 [[env.dev.migrations]]
 tag = "v4-stats-store"
 new_sqlite_classes = ["StatsStore"]
+
+[[env.dev.migrations]]
+tag = "v5-rate-limit"
+new_sqlite_classes = ["RateLimitGate"]

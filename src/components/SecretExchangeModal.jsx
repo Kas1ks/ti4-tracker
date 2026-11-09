@@ -112,9 +112,12 @@ export function SecretExchangeModal({
   useEffect(() => {
     if (!awaitingIncoming || !player) return;
     const before = handBeforeRef.current;
-    const remaining = before.filter((id) => id !== outgoingId);
+    // Must be a card that was NOT in the hand before the swap.
+    // Using "not in remaining" incorrectly treats the still-present outgoing
+    // card as "new" on the first render after awaitingIncoming flips, then
+    // never corrects — flip shows old title/desc while the hand is already new.
     const next = (Array.isArray(player.secretHand) ? player.secretHand : [])
-      .find((id) => !remaining.includes(id));
+      .find((id) => id && id !== outgoingId && !before.includes(id));
     if (!next) return;
     setIncomingId(next);
     setIncomingFlipped(false);

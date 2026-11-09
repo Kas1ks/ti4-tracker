@@ -28,6 +28,13 @@ import {
 import { logRoomEvent, measureMs } from './roomLog.js';
 import { notifyNeedsAction, removePushSub, upsertPushSub } from './pushNotify.js';
 import { undoStackDepth } from '../../src/sync/undoStack';
+import { buildAdminRoomSnapshot } from './adminRoomSnapshot.js';
+import {
+  noteAdminEventOnRoom,
+  roleConnectSummary,
+  roleDisconnectSummary,
+  summarizeActionType,
+} from './adminEvents.js';
 
 /**
  * Process-local rooms for Vite `npm run dev`.
@@ -373,6 +380,16 @@ export function memoryApplyAction(roomId, action, auth, env = {}) {
   if (result.roomEnded) {
     saved = { ...saved, pushSubs: {} };
   }
+  const actorSession = sessionAuthFromRoom(saved, auth?.sessionToken);
+  if (!result.noop) {
+    saved = noteAdminEventOnRoom(saved, {
+      kind: 'action',
+      summary: summarizeActionType(action?.type),
+      actionType: action?.type || null,
+      role: actorSession?.role || null,
+      seatPlayerId: actorSession?.seatPlayerId ?? null,
+    });
+  }
   rooms.set(key, saved);
   if (!result.noop) {
     notify(key, {
@@ -419,7 +436,6 @@ export function memoryApplyAction(roomId, action, auth, env = {}) {
     sseListeners: listeners.get(key)?.size || 0,
     roomEnded: !!result.roomEnded,
   });
-  const actorSession = sessionAuthFromRoom(saved, auth?.sessionToken);
   return {
     ...result,
     room: saved,
@@ -468,6 +484,17 @@ export function memorySubscribe(roomId, callback, session = null) {
   if (!listeners.has(key)) listeners.set(key, new Set());
   const client = { callback, session: session || null };
   listeners.get(key).add(client);
+  const role = session?.role || ROLES.VIEWER;
+  const seatPlayerId = session?.seatPlayerId ?? null;
+  const live = rooms.get(key);
+  if (live) {
+    rooms.set(key, noteAdminEventOnRoom(live, {
+      kind: 'connect',
+      summary: roleConnectSummary(role, seatPlayerId),
+      role,
+      seatPlayerId,
+    }));
+  }
   logRoomEvent('sse_connect', {
     backend: 'memory',
     roomId: key,
@@ -477,6 +504,15 @@ export function memorySubscribe(roomId, callback, session = null) {
     const set = listeners.get(key);
     if (!set) return;
     set.delete(client);
+    const still = rooms.get(key);
+    if (still) {
+      rooms.set(key, noteAdminEventOnRoom(still, {
+        kind: 'disconnect',
+        summary: roleDisconnectSummary(role, seatPlayerId),
+        role,
+        seatPlayerId,
+      }));
+    }
     logRoomEvent('sse_disconnect', {
       backend: 'memory',
       roomId: key,
@@ -506,6 +542,109 @@ export function memoryListHubCards() {
     return tb - ta;
   });
   return cards;
+}
+
+/**
+ * Admin monitor: every live memory room id (incl. milty drafting / host-offline).
+ * @returns {string[]}
+ */
+export function memoryListAllRoomIds() {
+  const ids = [];
+  for (const roomId of [...rooms.keys()]) {
+    const room = purgeIfExpired(roomId);
+    if (!room?.roomId) continue;
+    ids.push(String(room.roomId).toUpperCase());
+  }
+  return ids;
+}
+
+/**
+ * Secret-free admin snapshot for one memory room (SSE listeners as clients).
+ * @param {string} roomId
+ */
+export function memoryAdminRoomSnapshot(roomId) {
+  const room = memoryGetRoom(roomId);
+  if (!room) return null;
+  const key = String(room.roomId || roomId).toUpperCase();
+  const set = listeners.get(key);
+  const clients = set
+    ? [...set].map((c) => ({
+      role: c.session?.role || 'viewer',
+      seatPlayerId: c.session?.seatPlayerId ?? null,
+      isAdmin: c.session?.role === ROLES.ADMIN,
+    }))
+    : [];
+  return buildAdminRoomSnapshot(room, clients, { events: room.adminEvents });
+}
+
+/**
+ * Admin monitor: force-delete a memory room and notify SSE clients.
+ * @param {string} roomId
+ */
+export function memoryAdminCloseRoom(roomId) {
+  const key = String(roomId || '').toUpperCase();
+  const room = rooms.get(key);
+  if (!room) return { ok: false, error: 'not-found' };
+  notify(key, {
+    type: 'state',
+    seq: room.seq,
+    state: room.state,
+    roomEnded: true,
+    adminClosed: true,
+  });
+  logRoomEvent('admin_close', {
+    backend: 'memory',
+    roomId: key,
+    sseListeners: listeners.get(key)?.size || 0,
+  });
+  rooms.delete(key);
+  listeners.delete(key);
+  return { ok: true, roomId: key };
+}
+
+/**
+ * Admin monitor: free a claimed seat (uses room hostKey internally).
+ * @param {string} roomId
+ * @param {*} seatPlayerId
+ * @param {object} [env]
+ */
+export async function memoryAdminKickSeat(roomId, seatPlayerId, env = {}) {
+  const key = String(roomId || '').toUpperCase();
+  const room = purgeIfExpired(key);
+  if (!room) return { ok: false, error: 'not-found' };
+  const released = releaseSeat(room, seatPlayerId, { hostKey: room.hostKey });
+  if (!released.ok) return released;
+  let nextRoom = noteAdminEventOnRoom(released.room, {
+    kind: 'admin',
+    summary: `админ освободил место ${released.seatPlayerId}`,
+    seatPlayerId: released.seatPlayerId,
+    actionType: 'ADMIN_KICK',
+  });
+  if (isMiltyDrafting(nextRoom)) {
+    const unbound = await unbindMiltySeat(env, nextRoom, released.seatPlayerId);
+    nextRoom = unbound.room;
+  }
+  rooms.set(key, nextRoom);
+  const releasedView = publicRoomView(nextRoom);
+  notify(key, {
+    type: 'seats',
+    claimedSeats: releasedView.claimedSeats,
+    securedSeats: releasedView.securedSeats,
+    reclaimed: true,
+    released: true,
+    adminKick: true,
+    seatPlayerId: released.seatPlayerId,
+    revokedSessionToken: released.revokedSessionToken || null,
+  });
+  if (isMiltyDrafting(nextRoom)) {
+    const snap = await getMiltyInEnv(env, nextRoom.milty.draftId);
+    if (snap?.ok) notify(key, { type: 'milty', draft: snap.draft, milty: releasedView.milty });
+  }
+  return {
+    ok: true,
+    seatPlayerId: released.seatPlayerId,
+    room: memoryAdminRoomSnapshot(key),
+  };
 }
 
 export function memoryAdminSession(roomId) {

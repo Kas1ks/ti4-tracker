@@ -695,6 +695,71 @@ describe('round and turn order', () => {
     expect(state.round.strategyResolution.responses[2]).toBe('passed');
   });
 
+  it('Politics peek: both on top keep list order as next draws (no reverse)', () => {
+    let state = gameWith([
+      player(1, 'A', { cards: [STRATEGY_CARDS[2]], lastMinInitiative: 1 }),
+      player(2, 'B', { cards: [STRATEGY_CARDS[0]], lastMinInitiative: 2 }),
+    ]);
+    state = {
+      ...state,
+      politics: {
+        ...state.politics,
+        agendaDeck: ['mutiny', 'fleet_regulations', 'arms_reduction', 'imperial_arbiter'],
+        agendaDiscard: [],
+        activeLaws: [],
+      },
+    };
+    state = dispatch(state, { type: 'START_ROUND' });
+    state = dispatch(state, { type: 'PLAY_STRATEGY', cardId: 3 });
+    expect(state.round.strategyResolution.peekCards).toEqual(['mutiny', 'fleet_regulations']);
+    expect(state.politics.agendaDeck).toEqual(['arms_reduction', 'imperial_arbiter']);
+
+    // Default UI order = peek order, both top → original tops restored in order.
+    state = dispatch(state, {
+      type: 'COMMIT_POLITICS_PEEK',
+      placements: [
+        { cardId: 'mutiny', dest: 'top' },
+        { cardId: 'fleet_regulations', dest: 'top' },
+      ],
+    });
+    expect(state.politics.agendaDeck).toEqual([
+      'mutiny',
+      'fleet_regulations',
+      'arms_reduction',
+      'imperial_arbiter',
+    ]);
+  });
+
+  it('Politics peek: both on bottom append in list order', () => {
+    let state = gameWith([
+      player(1, 'A', { cards: [STRATEGY_CARDS[2]], lastMinInitiative: 1 }),
+      player(2, 'B', { cards: [STRATEGY_CARDS[0]], lastMinInitiative: 2 }),
+    ]);
+    state = {
+      ...state,
+      politics: {
+        ...state.politics,
+        agendaDeck: ['mutiny', 'fleet_regulations', 'arms_reduction'],
+        agendaDiscard: [],
+        activeLaws: [],
+      },
+    };
+    state = dispatch(state, { type: 'START_ROUND' });
+    state = dispatch(state, { type: 'PLAY_STRATEGY', cardId: 3 });
+    state = dispatch(state, {
+      type: 'COMMIT_POLITICS_PEEK',
+      placements: [
+        { cardId: 'mutiny', dest: 'bottom' },
+        { cardId: 'fleet_regulations', dest: 'bottom' },
+      ],
+    });
+    expect(state.politics.agendaDeck).toEqual([
+      'arms_reduction',
+      'mutiny',
+      'fleet_regulations',
+    ]);
+  });
+
   it('plays each strategy card separately when a player holds two', () => {
     let state = gameWith([
       player(1, 'A', { cards: [STRATEGY_CARDS[0], STRATEGY_CARDS[3]], lastMinInitiative: 1 }),
@@ -2580,6 +2645,42 @@ describe('custodians and support VP', () => {
     state = dispatch(state, { type: 'SET_CUSTODIANS', playerId: 1 });
     expect(state.vpTrack.custodiansPlayerId).toBeNull();
     expect(playerScore(state, 1)).toBe(1);
+  });
+
+  it('auto-enables politics on first Mecatol claim and keeps it after clear', () => {
+    let state = gameWith([player(1, 'A'), player(2, 'B')], { isGameActive: true });
+    expect(state.meta.isPoliticsActive).toBe(false);
+
+    state = dispatch(state, { type: 'SET_CUSTODIANS', playerId: 1 });
+    expect(state.meta.isPoliticsActive).toBe(true);
+    expect(state.vpTrack.mecatolControllerId).toBe(1);
+
+    // Transfer control — politics already on, stays on.
+    state = dispatch(state, { type: 'SET_MECATOL_CONTROLLER', playerId: 2 });
+    expect(state.vpTrack.mecatolControllerId).toBe(2);
+    expect(state.meta.isPoliticsActive).toBe(true);
+
+    // Clear original custodians claim — agenda remains available.
+    state = dispatch(state, { type: 'SET_CUSTODIANS', playerId: 1 });
+    expect(state.vpTrack.custodiansPlayerId).toBeNull();
+    expect(state.meta.isPoliticsActive).toBe(true);
+
+    // Host turned politics off after Mecatol was already taken: moving the
+    // control token must not force the switch back on.
+    state = dispatch(state, { type: 'TOGGLE_POLITICS_ACTIVE' });
+    expect(state.meta.isPoliticsActive).toBe(false);
+    state = {
+      ...state,
+      meta: { ...state.meta, isPoliticsActive: false },
+      vpTrack: {
+        ...state.vpTrack,
+        custodiansPlayerId: 1,
+        mecatolControllerId: 1,
+      },
+    };
+    state = dispatch(state, { type: 'SET_MECATOL_CONTROLLER', playerId: 2 });
+    expect(state.vpTrack.mecatolControllerId).toBe(2);
+    expect(state.meta.isPoliticsActive).toBe(false);
   });
 });
 

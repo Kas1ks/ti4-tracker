@@ -204,4 +204,56 @@ export function subscribeRoom(roomId, onMessage, onStatus, { sessionToken } = {}
   };
 }
 
+/**
+ * Admin monitor: live rooms + SSE clients. Requires ADMIN_PIN.
+ * @param {string} pin
+ * @param {{ roomId?: string }} [opts]
+ */
+export async function fetchAdminRooms(pin, { roomId } = {}) {
+  const path = roomId
+    ? `/api/admin/rooms/${encodeURIComponent(roomId)}`
+    : '/api/admin/rooms';
+  const res = await fetch(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ pin: pin ?? '' }),
+  });
+  if (!res.ok) {
+    const err = new Error(await readError(res));
+    err.status = res.status;
+    throw err;
+  }
+  return res.json();
+}
+
+/** Admin: force-close a live room. */
+export async function adminCloseRoom(pin, roomId) {
+  const res = await fetch(`/api/admin/rooms/${encodeURIComponent(roomId)}/close`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ pin: pin ?? '' }),
+  });
+  if (!res.ok) {
+    const err = new Error(await readError(res));
+    err.status = res.status;
+    throw err;
+  }
+  return res.json();
+}
+
+/** Admin: free a claimed seat in a live room. */
+export async function adminKickSeat(pin, roomId, seatPlayerId) {
+  const res = await fetch(`/api/admin/rooms/${encodeURIComponent(roomId)}/kick`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ pin: pin ?? '', seatPlayerId }),
+  });
+  if (!res.ok) {
+    const err = new Error(await readError(res));
+    err.status = res.status;
+    throw err;
+  }
+  return res.json();
+}
+
 export { LOCAL_ONLY_ACTIONS };

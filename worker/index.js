@@ -3,8 +3,9 @@ import { GameRoom } from './rooms/GameRoom.js';
 import { RoomDirectory } from './rooms/RoomDirectory.js';
 import { MiltyDraft } from './milty/MiltyDraft.js';
 import { StatsStore } from './stats/StatsStore.js';
+import { RateLimitGate } from './rateLimit/RateLimitGate.js';
 
-export { GameRoom, RoomDirectory, MiltyDraft, StatsStore };
+export { GameRoom, RoomDirectory, MiltyDraft, StatsStore, RateLimitGate };
 
 export default {
   async fetch(request, env) {

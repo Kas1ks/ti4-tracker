@@ -32,8 +32,8 @@ test.describe('live room UI smoke', () => {
     const roomId = match[1].toUpperCase();
     await success.getByRole('button', { name: 'OK' }).click();
 
-    // Host lands on setup (exact: room code also appears in footer note)
-    await expect(host.getByRole('main').getByText(roomId, { exact: true })).toBeVisible();
+    // Host lands on setup — room code is shown as «Комната: CODE»
+    await expect(host.getByRole('main').getByText(new RegExp(`Комната:\\s*${roomId}`))).toBeVisible();
 
     const guest = await browser.newPage();
     await guest.goto('/');
@@ -43,7 +43,7 @@ test.describe('live room UI smoke', () => {
     await guest.getByRole('button', { name: 'Войти зрителем' }).click();
 
     await expect(guest.getByText('Ожидайте, пока хост')).toBeVisible();
-    await expect(guest.getByRole('main').getByText(roomId, { exact: true })).toBeVisible();
+    await expect(guest.getByRole('main').getByText(roomId)).toBeVisible();
 
     await guest.locator('button.guest-lobby-leave').click();
     await expect(guest.getByRole('button', { name: 'Создать партию' })).toBeVisible();

@@ -451,4 +451,71 @@ describe('agenda deck in politics phase', () => {
       expect.arrayContaining(['covert_legislation', 'fleet_regulations']),
     );
   });
+
+  it('SET_SPEAKER_AGENDA_DECISION breaks 0–0 and enacts law on For', () => {
+    let state = voting();
+    state = {
+      ...state,
+      politics: {
+        ...state.politics,
+        agendaDeck: ['fleet_regulations', 'mutiny'],
+        agendaDiscard: [],
+        activeLaws: [],
+        agendas: [emptyAgenda()],
+        currentAgendaIndex: 0,
+      },
+    };
+    state = gameReducer(state, { type: 'SET_POLITICS_STEP', step: 'VOTE' });
+    state = openLaw(state);
+
+    // Both abstain → speaker break required
+    state = gameReducer(state, {
+      type: 'SET_VOTE', playerId: 1, vote: { choice: 'abstain', amount: 0 },
+    });
+    state = gameReducer(state, { type: 'LOCK_VOTE', playerId: 1 });
+    state = gameReducer(state, {
+      type: 'SET_VOTE', playerId: 2, vote: { choice: 'abstain', amount: 0 },
+    });
+    state = gameReducer(state, { type: 'LOCK_VOTE', playerId: 2 });
+    expect(gameReducer(state, { type: 'NEXT_AGENDA' })).toBe(state);
+
+    state = gameReducer(state, { type: 'SET_SPEAKER_AGENDA_DECISION', choice: 'for' });
+    expect(state.politics.agendas[0].speakerDecision).toBe('for');
+    state = gameReducer(state, { type: 'NEXT_AGENDA' });
+    expect(state.politics.activeLaws.map((l) => l.id)).toEqual(['fleet_regulations']);
+  });
+
+  it('keeps peek deck order and discard across CONFIRM_STATUS_PHASE', () => {
+    let state = voting();
+    state = {
+      ...state,
+      politics: {
+        ...state.politics,
+        showModal: false,
+        step: 'SETUP',
+        agendaDeck: ['mutiny', 'arms_reduction', 'imperial_arbiter'],
+        agendaDiscard: ['ixthian_artifact'],
+        activeLaws: [{ id: 'fleet_regulations', title: 'Fleet', kind: 'law' }],
+        agendas: [emptyAgenda()],
+        currentAgendaIndex: 0,
+      },
+      statusPhase: {
+        ...state.statusPhase,
+        show: true,
+        scoring: { active: false, responses: {}, orderIds: [], currentIdx: 0 },
+      },
+    };
+
+    state = gameReducer(state, { type: 'CONFIRM_STATUS_PHASE' });
+    expect(state.politics.showModal).toBe(true);
+    expect(state.politics.agendaDeck[0]).toBe('mutiny');
+    expect(state.politics.agendaDeck).toEqual([
+      'mutiny',
+      'arms_reduction',
+      'imperial_arbiter',
+    ]);
+    expect(state.politics.agendaDiscard).toEqual(['ixthian_artifact']);
+    expect(state.politics.activeLaws.map((l) => l.id)).toEqual(['fleet_regulations']);
+    expect(state.politics.agendaDeck).not.toContain('fleet_regulations');
+  });
 });

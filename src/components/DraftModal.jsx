@@ -483,7 +483,7 @@ export function DraftModal({
                   type="button"
                   onClick={() => toggleMinimize('draft')}
                   aria-label="Свернуть драфт"
-                  className="draft-icon-btn max-md:hidden"
+                  className="draft-icon-btn"
                 >
                   <i className="fa-solid fa-window-minimize text-base" aria-hidden="true" />
                 </button>

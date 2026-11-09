@@ -2,9 +2,9 @@ import { useEffect, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import brandMark from '../assets/brand-mark.png';
 import { ALL_FACTIONS, PLAYER_COLORS } from '../data/gameData';
-import { ROLE_LABELS } from '../sync/permissions';
 import { HubHudBottom, HubHudTop } from './HubChromeFrame';
 import { HubCosmosBackdrop } from './HubCosmosBackdrop';
+import { RoomLiveBadge } from './GameHeader';
 
 const playerMotion = {
   initial: { opacity: 0, y: -10, scale: 0.98 },
@@ -40,6 +40,7 @@ export function SetupScreen({
   isColorTaken,
   handleStartGame,
   room,
+  roomShare = null,
   roomStatus,
   roomError,
   claimedSeats = [],
@@ -52,7 +53,6 @@ export function SetupScreen({
 }) {
   const [panel, setPanel] = useState('setup'); // setup | settings
   const [soonNote, setSoonNote] = useState('');
-  const [codeCopied, setCodeCopied] = useState(false);
 
   useEffect(() => {
     document.body.classList.add('hub-cinematic');
@@ -65,26 +65,8 @@ export function SetupScreen({
     return () => clearTimeout(t);
   }, [soonNote]);
 
-  useEffect(() => {
-    if (!codeCopied) return undefined;
-    const t = setTimeout(() => setCodeCopied(false), 1800);
-    return () => clearTimeout(t);
-  }, [codeCopied]);
-
-  const copyRoomCode = async () => {
-    const code = room?.roomId;
-    if (!code) return;
-    try {
-      await navigator.clipboard.writeText(code);
-      setCodeCopied(true);
-    } catch {
-      /* clipboard may be blocked */
-      setCodeCopied(true);
-    }
-  };
-
-  const roleLabel = room?.role ? (ROLE_LABELS[room.role] || room.role) : null;
   const inLiveRoom = roomStatus === 'live' && room?.roomId;
+  const badgeRoom = room?.roomId ? room : (roomShare?.roomId ? roomShare : null);
   const connectedCount = players.filter((p) =>
     claimedSeats.some((id) => String(id) === String(p.id)),
   ).length;
@@ -177,47 +159,16 @@ export function SetupScreen({
               </div>
 
               <div className="setup-top-meta">
-                {inLiveRoom && (
-                  <>
-                    <div className="setup-room-chip">
-                      <span className="setup-room-label">Код</span>
-                      <strong className="setup-room-code">{room.roomId}</strong>
-                      <button
-                        type="button"
-                        className={`setup-room-copy${codeCopied ? ' is-copied' : ''}`}
-                        onClick={copyRoomCode}
-                        aria-live="polite"
-                      >
-                        {codeCopied ? (
-                          <>
-                            <i className="fa-solid fa-check" aria-hidden="true" />
-                            Скопировано
-                          </>
-                        ) : (
-                          <>
-                            <i className="fa-regular fa-copy" aria-hidden="true" />
-                            Копировать
-                          </>
-                        )}
-                      </button>
-                    </div>
-                    {roleLabel && (
-                      <div className="setup-room-chip setup-room-chip--role">
-                        <span className="setup-room-role">
-                          <i className="fa-solid fa-crown" aria-hidden="true" />
-                          {roleLabel}
-                        </span>
-                      </div>
-                    )}
-                    {players.length > 0 && (
-                      <div className="setup-room-chip setup-room-chip--online">
-                        <span className="setup-room-online">
-                          <span className="setup-room-online-dot" aria-hidden="true" />
-                          Онлайн {connectedCount}/{players.length}
-                        </span>
-                      </div>
-                    )}
-                  </>
+                {badgeRoom && (
+                  <RoomLiveBadge room={badgeRoom} seatSecret={room?.seatSecret || null} />
+                )}
+                {inLiveRoom && players.length > 0 && (
+                  <div className="setup-room-chip setup-room-chip--online">
+                    <span className="setup-room-online">
+                      <span className="setup-room-online-dot" aria-hidden="true" />
+                      Онлайн {connectedCount}/{players.length}
+                    </span>
+                  </div>
                 )}
                 {isSolo && <div className="setup-solo-chip">Solo</div>}
               </div>

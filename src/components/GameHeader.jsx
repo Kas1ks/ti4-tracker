@@ -6,7 +6,7 @@ import { formatTime } from '../utils/game';
 const CTRL =
   'inline-flex items-center justify-center gap-1.5 h-9 px-3 rounded-xl text-xs font-bold transition border';
 
-function RoomLiveBadge({ room, seatSecret = null }) {
+export function RoomLiveBadge({ room, seatSecret = null }) {
   const [expanded, setExpanded] = useState(false);
   const [copied, setCopied] = useState(false);
   const [copiedRoom, setCopiedRoom] = useState(false);
@@ -29,10 +29,13 @@ function RoomLiveBadge({ room, seatSecret = null }) {
     };
   }, [expanded]);
 
-  const roleLabel = ROLE_LABELS[room.role] || room.role;
+  if (!room?.roomId) return null;
+
+  const roleLabel = ROLE_LABELS[room.role] || room.role || 'Комната';
   const hasSeatSecret = !!seatSecret;
   const hostKey = room?.hostKey || null;
-  const hasHostKey = !!hostKey && room?.role === 'admin';
+  // If we still have the key, show it — role may be missing on sticky share.
+  const hasHostKey = !!hostKey;
 
   const copyText = async (value, mark) => {
     if (!value) return;
@@ -51,11 +54,18 @@ function RoomLiveBadge({ room, seatSecret = null }) {
 
   return (
     <div className="relative flex-shrink-0 game-header-room" ref={rootRef}>
+      {/* Single always-visible control — no media-query hide/show pair. */}
       <button
         type="button"
         className="game-header-room-chip"
         aria-expanded={expanded}
-        aria-label={`${roleLabel}. Код комнаты ${room.roomId}`}
+        aria-label={
+          hasHostKey
+            ? `Подключение: ${roleLabel}. Код комнаты и код хоста`
+            : hasSeatSecret
+              ? `Подключение: ${roleLabel}. Код комнаты и код места`
+              : `Подключение: ${roleLabel}. Код комнаты ${room.roomId}`
+        }
         title={`Комната ${room.roomId}`}
         onClick={() => setExpanded((v) => !v)}
       >
@@ -65,25 +75,6 @@ function RoomLiveBadge({ room, seatSecret = null }) {
           className={`fa-solid fa-chevron-down text-[9px] opacity-70 transition ${expanded ? 'rotate-180' : ''}`}
           aria-hidden="true"
         />
-      </button>
-
-      <button
-        type="button"
-        className="game-header-room-btn"
-        aria-expanded={expanded}
-        aria-label={
-          expanded
-            ? `${roleLabel}, комната ${room.roomId}`
-            : hasHostKey
-              ? `Подключение: ${roleLabel}. Код комнаты и код хоста`
-              : hasSeatSecret
-                ? `Подключение: ${roleLabel}. Показать код комнаты и код места`
-                : `Подключение: ${roleLabel}. Показать код комнаты`
-        }
-        title="Подключение"
-        onClick={() => setExpanded((v) => !v)}
-      >
-        <i className="fa-solid fa-wifi" aria-hidden="true" />
       </button>
 
       {expanded && (
@@ -176,14 +167,18 @@ export function GameHeader({
   canUndo = false,
   onOpenCombat,
   room,
-  roomStatus,
+  roomShare = null,
+  roomStatus: _roomStatus,
   perms,
+  onRepublishRoom,
   compactBrand = false,
   onLeaveRoom,
   victoryLocked = false,
   canUsePush = false,
   onOpenPushSettings,
 }) {
+  // Live session OR sticky share codes after the room dies mid-game.
+  const badgeRoom = room?.roomId ? room : (roomShare?.roomId ? roomShare : null);
   const role = perms?.role || ROLES.ADMIN;
   const isAdmin = role === ROLES.ADMIN;
   const isViewer = role === ROLES.VIEWER;
@@ -195,8 +190,9 @@ export function GameHeader({
   const canPushSettings = !!canUsePush && typeof onOpenPushSettings === 'function';
   const canViewLaws = typeof onOpenActiveLaws === 'function';
 
+  const canRepublish = isAdmin && isGameActive && !room?.roomId && typeof onRepublishRoom === 'function';
   const hasMoreItems = canPhases || canExport || canEndGame || canUndoLast || canPushSettings
-    || canViewLaws || typeof onOpenScoredSecrets === 'function';
+    || canViewLaws || canRepublish || typeof onOpenScoredSecrets === 'function';
   const leaveButton = typeof onLeaveRoom === 'function' && isViewer ? (
     <button
       type="button"
@@ -244,8 +240,12 @@ export function GameHeader({
               TI4 TRACKER
             </span>
           </div>
-          {roomStatus === 'live' && room?.roomId && (
-            <RoomLiveBadge room={room} seatSecret={room?.seatSecret || null} />
+          {/* Left of round chip — always visible when we have codes (live or sticky). */}
+          {badgeRoom && (
+            <RoomLiveBadge
+              room={badgeRoom}
+              seatSecret={room?.seatSecret || null}
+            />
           )}
           {isGameActive && (
             <div className={`${CTRL} game-header-round hidden md:inline-flex !text-sm md:!text-base cursor-default flex-shrink-0 px-3.5 gap-2 md:gap-3`}>
@@ -359,6 +359,8 @@ export function GameHeader({
                     onOpenActiveLaws={onOpenActiveLaws}
                     activeLawsCount={activeLawsCount}
                     onOpenPushSettings={onOpenPushSettings}
+                    canRepublish={canRepublish}
+                    onRepublishRoom={onRepublishRoom}
                   />
                 )}
                 {undoButton}
@@ -473,6 +475,8 @@ export function GameHeader({
                   onOpenActiveLaws={onOpenActiveLaws}
                   activeLawsCount={activeLawsCount}
                   onOpenPushSettings={onOpenPushSettings}
+                  canRepublish={canRepublish}
+                  onRepublishRoom={onRepublishRoom}
                 />
               </div>
             </>
@@ -521,6 +525,8 @@ function HeaderMoreMenu({
   onOpenActiveLaws,
   activeLawsCount = 0,
   onOpenPushSettings,
+  canRepublish = false,
+  onRepublishRoom,
 }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef(null);
@@ -611,6 +617,24 @@ function HeaderMoreMenu({
                 <span className="hdr-more-desc">
                   {activeLawsCount > 0 ? `${activeLawsCount} в игре` : 'Пока пусто'}
                 </span>
+              </div>
+              <i className="fa-solid fa-chevron-right hdr-more-chev" aria-hidden="true" />
+            </button>
+          )}
+
+          {canRepublish && (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={runAndClose(onRepublishRoom)}
+              className="hdr-more-item"
+            >
+              <span className="hdr-more-ico is-teal" aria-hidden="true">
+                <i className="fa-solid fa-wifi" />
+              </span>
+              <div className="hdr-more-copy">
+                <span className="hdr-more-title">Опубликовать комнату</span>
+                <span className="hdr-more-desc">Новый код комнаты и хоста для этой партии</span>
               </div>
               <i className="fa-solid fa-chevron-right hdr-more-chev" aria-hidden="true" />
             </button>

@@ -28,6 +28,14 @@ import { directoryRemove, directoryUpsert } from './roomIndex.js';
 import { logRoomEvent, measureMs } from './roomLog.js';
 import { notifyNeedsAction, removePushSub, upsertPushSub } from './pushNotify.js';
 import { undoStackDepth } from '../../src/sync/undoStack';
+import { adminPinMatches } from '../jsonbin.js';
+import { buildAdminRoomSnapshot } from './adminRoomSnapshot.js';
+import {
+  noteAdminEventOnRoom,
+  roleConnectSummary,
+  roleDisconnectSummary,
+  summarizeActionType,
+} from './adminEvents.js';
 
 /**
  * One Durable Object = one live game room.
@@ -93,6 +101,41 @@ export class GameRoom {
     }
     this.sseClients.clear();
     await this.ctx.storage.deleteAll();
+  }
+
+  /** Persist admin ring-buffer without changing activity TTL. */
+  async noteAdminEvent(room, entry) {
+    if (!room) return room;
+    const next = noteAdminEventOnRoom(room, entry);
+    await this.ctx.storage.put('room', next);
+    return next;
+  }
+
+  /**
+   * Force-close room from admin monitor (wipe + notify clients).
+   * @returns {{ ok: true, roomId: string } | { ok: false, error: string }}
+   */
+  async adminForceClose() {
+    const room = await this.load();
+    if (!room) return { ok: false, error: 'not-found' };
+    const roomId = room.roomId;
+    this.broadcast({
+      type: 'state',
+      seq: room.seq,
+      state: room.state,
+      roomEnded: true,
+      adminClosed: true,
+    });
+    logRoomEvent('admin_close', {
+      backend: 'do',
+      roomId,
+      sseListeners: this.sseClients.size,
+    });
+    this.clearHostOfflineTimer();
+    this.ctx.waitUntil(directoryRemove(this.env, roomId));
+    this.sseClients.clear();
+    await this.ctx.storage.deleteAll();
+    return { ok: true, roomId };
   }
 
   trackInDirectory(room) {
@@ -266,6 +309,109 @@ export class GameRoom {
     if (method === 'GET' && path.endsWith('/snapshot')) {
       const token = String(url.searchParams.get('sessionToken') || '').trim();
       return Response.json(publicRoomView(room, token || null));
+    }
+
+    // Internal admin monitor — PIN required, no session secrets in the payload.
+    if ((method === 'GET' || method === 'POST') && path.endsWith('/admin/clients')) {
+      let pin = url.searchParams.get('pin') || '';
+      if (method === 'POST') {
+        try {
+          const body = await request.json();
+          if (body?.pin != null) pin = String(body.pin);
+        } catch {
+          /* keep query pin */
+        }
+      }
+      if (!adminPinMatches(this.env, pin)) {
+        return Response.json({ error: 'unauthorized' }, { status: 401 });
+      }
+      const clients = [...this.sseClients].map((c) => ({
+        role: c.role,
+        seatPlayerId: c.seatPlayerId ?? null,
+        isAdmin: !!c.isAdmin,
+      }));
+      return Response.json(buildAdminRoomSnapshot(room, clients, {
+        events: room.adminEvents,
+      }));
+    }
+
+    // Admin force-close — PIN already checked by roomsApi; DO path also verifies.
+    if (method === 'POST' && path.endsWith('/admin/close')) {
+      let pin = '';
+      try {
+        const body = await request.json();
+        if (body?.pin != null) pin = String(body.pin);
+      } catch {
+        /* empty */
+      }
+      if (!adminPinMatches(this.env, pin)) {
+        return Response.json({ error: 'unauthorized' }, { status: 401 });
+      }
+      const closed = await this.adminForceClose();
+      if (!closed.ok) {
+        return Response.json({ error: closed.error }, { status: 404 });
+      }
+      return Response.json({ ok: true, roomId: closed.roomId });
+    }
+
+    // Admin kick seat — frees claim via hostKey; PIN required.
+    if (method === 'POST' && path.endsWith('/admin/kick')) {
+      let body = null;
+      try {
+        body = await request.json();
+      } catch {
+        return Response.json({ error: 'invalid-body' }, { status: 400 });
+      }
+      if (!adminPinMatches(this.env, body?.pin != null ? String(body.pin) : '')) {
+        return Response.json({ error: 'unauthorized' }, { status: 401 });
+      }
+      const seatPlayerId = body?.seatPlayerId;
+      if (seatPlayerId == null || seatPlayerId === '') {
+        return Response.json({ error: 'seat-required' }, { status: 400 });
+      }
+      const released = releaseSeat(room, seatPlayerId, { hostKey: room.hostKey });
+      if (!released.ok) {
+        const status = released.error === 'unauthorized' || released.error === 'forbidden' ? 403 : 400;
+        return Response.json({ error: released.error }, { status });
+      }
+      let nextRoom = noteAdminEventOnRoom(released.room, {
+        kind: 'admin',
+        summary: `админ освободил место ${released.seatPlayerId}`,
+        seatPlayerId: released.seatPlayerId,
+        actionType: 'ADMIN_KICK',
+      });
+      if (isMiltyDrafting(nextRoom)) {
+        const unbound = await unbindMiltySeat(this.env, nextRoom, released.seatPlayerId);
+        nextRoom = unbound.room;
+      }
+      await this.save(nextRoom);
+      this.trackInDirectory(nextRoom);
+      const releasedView = publicRoomView(nextRoom);
+      this.broadcast({
+        type: 'seats',
+        claimedSeats: releasedView.claimedSeats,
+        securedSeats: releasedView.securedSeats,
+        reclaimed: true,
+        released: true,
+        adminKick: true,
+        seatPlayerId: released.seatPlayerId,
+        revokedSessionToken: released.revokedSessionToken || null,
+      });
+      if (isMiltyDrafting(nextRoom)) {
+        const snap = await getMiltyInEnv(this.env, nextRoom.milty.draftId);
+        if (snap?.ok) {
+          this.broadcast({ type: 'milty', draft: snap.draft, milty: releasedView.milty });
+        }
+      }
+      return Response.json({
+        ok: true,
+        seatPlayerId: released.seatPlayerId,
+        room: buildAdminRoomSnapshot(nextRoom, [...this.sseClients].map((c) => ({
+          role: c.role,
+          seatPlayerId: c.seatPlayerId ?? null,
+          isAdmin: !!c.isAdmin,
+        })), { events: nextRoom.adminEvents }),
+      });
     }
 
     if (method === 'POST' && path.endsWith('/join')) {
@@ -653,6 +799,17 @@ export class GameRoom {
       if (result.roomEnded) {
         saved = { ...saved, pushSubs: {} };
       }
+      const actorSession = sessionAuthFromRoom(saved, body?.sessionToken);
+      if (!result.noop) {
+        const actionType = body?.action?.type || null;
+        saved = noteAdminEventOnRoom(saved, {
+          kind: 'action',
+          summary: summarizeActionType(actionType),
+          actionType,
+          role: actorSession?.role || null,
+          seatPlayerId: actorSession?.seatPlayerId ?? null,
+        });
+      }
       await this.save(saved);
       if (!result.noop) {
         if (result.roomEnded) {
@@ -705,7 +862,6 @@ export class GameRoom {
         roomEnded: !!result.roomEnded,
       });
 
-      const actorSession = sessionAuthFromRoom(saved, body?.sessionToken);
       return Response.json({
         seq: saved.seq,
         state: redactStateForSession(saved.state, actorSession),
@@ -773,6 +929,14 @@ export class GameRoom {
       if (isAdminSse) {
         this.ctx.waitUntil(this.markHostOnline());
       }
+      this.ctx.waitUntil(
+        this.noteAdminEvent(room, {
+          kind: 'connect',
+          summary: roleConnectSummary(role, seatPlayerId),
+          role,
+          seatPlayerId,
+        }),
+      );
       logRoomEvent('sse_connect', {
         backend: 'do',
         roomId: room.roomId,
@@ -794,6 +958,17 @@ export class GameRoom {
         if (isAdminSse && this.adminSseWritesSize === 0) {
           this.scheduleHostOffline();
         }
+        this.ctx.waitUntil(
+          this.load().then((live) => {
+            if (!live) return null;
+            return this.noteAdminEvent(live, {
+              kind: 'disconnect',
+              summary: roleDisconnectSummary(role, seatPlayerId),
+              role,
+              seatPlayerId,
+            });
+          }).catch(() => null),
+        );
         logRoomEvent('sse_disconnect', {
           backend: 'do',
           roomId: room.roomId,

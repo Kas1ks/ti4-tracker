@@ -1,9 +1,16 @@
 import { describe, expect, it, beforeEach } from 'vitest';
 import {
   ROOM_SESSION_KEY,
+  ROOM_SHARE_KEY,
+  WAS_LIVE_ROOM_KEY,
   clearRoomSession,
+  clearRoomShare,
+  clearWasLiveRoom,
   loadRoomSession,
+  loadRoomShare,
+  loadWasLiveRoom,
   saveRoomSession,
+  saveRoomShare,
 } from './roomSession.js';
 
 function memoryStorage() {
@@ -59,5 +66,28 @@ describe('roomSession', () => {
   it('ignores garbage', () => {
     localStorage.setItem(ROOM_SESSION_KEY, '{nope');
     expect(loadRoomSession()).toBeNull();
+  });
+
+  it('stores share codes and marks was-live on session save', () => {
+    saveRoomSession({
+      roomId: 'rjan6y',
+      hostKey: 'host-secret',
+      sessionToken: 'tok',
+      role: 'admin',
+      seatPlayerId: null,
+    });
+    expect(loadWasLiveRoom()).toBe('RJAN6Y');
+    expect(localStorage.getItem(WAS_LIVE_ROOM_KEY)).toBe('RJAN6Y');
+
+    saveRoomShare({
+      roomId: 'rjan6y',
+      hostKey: 'host-secret',
+      role: 'admin',
+    });
+    expect(loadRoomShare()?.roomId).toBe('RJAN6Y');
+    clearRoomShare();
+    clearWasLiveRoom();
+    expect(loadRoomShare()).toBeNull();
+    expect(loadWasLiveRoom()).toBeNull();
   });
 });

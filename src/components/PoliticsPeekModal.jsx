@@ -18,11 +18,14 @@ export function PoliticsPeekModal({
   onClose,
 }) {
   const [entered, setEntered] = useState(false);
-  const initial = useMemo(
-    () => (cardIds || []).map((id) => ({ cardId: String(id), dest: 'top' })),
+  // Stable key so minimize/restore does not wipe top/bottom choices.
+  const cardKey = useMemo(
+    () => (cardIds || []).map((id) => String(id)).join('|'),
     [cardIds],
   );
-  const [rows, setRows] = useState(initial);
+  const [rows, setRows] = useState(() => (
+    (cardIds || []).map((id) => ({ cardId: String(id), dest: 'top' }))
+  ));
 
   const open = show && !minimized;
   useEscapeKey(open && (onMinimize || onClose));
@@ -30,7 +33,7 @@ export function PoliticsPeekModal({
 
   useEffect(() => {
     setRows((cardIds || []).map((id) => ({ cardId: String(id), dest: 'top' })));
-  }, [cardIds, show]);
+  }, [cardKey]); // eslint-disable-line react-hooks/exhaustive-deps -- reset only when peek set changes
 
   useEffect(() => {
     if (!open) {
@@ -80,7 +83,7 @@ export function PoliticsPeekModal({
             <div>
               <h2 id="politics-peek-title" className="pol-shell-title">Политика · просмотр</h2>
               <p className="pol-shell-sub">
-                2 верхние карты колоды. Положите каждую на верх или вниз (порядок в списке = порядок укладки).
+                2 верхние карты колоды. «На верх» — в порядке списка сверху вниз (первая сдаётся следующей). «Вниз» — в конец колоды в том же порядке.
               </p>
             </div>
           </div>

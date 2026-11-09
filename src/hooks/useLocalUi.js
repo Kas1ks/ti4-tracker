@@ -1,6 +1,9 @@
 import { useState } from 'react';
 
-/** Process modals that should not stack expanded at once. */
+/** Process modals that should not stack expanded at once.
+ *  Expedition is intentionally excluded — it stays open on the main screen
+ *  unless the user minimizes it manually.
+ */
 export const BLOCKING_MODAL_IDS = [
   'draft',
   'politics',
@@ -11,7 +14,6 @@ export const BLOCKING_MODAL_IDS = [
   'politicsPeek',
   'imperialClaim',
   'techResearch',
-  'expedition',
   'startingTechDraft',
   'startingTechPlayer',
   'secretDraft',
@@ -48,12 +50,13 @@ export function useLocalUi() {
     setMinimizedModals(prev => (prev[modalName] ? { ...prev, [modalName]: false } : prev));
   };
 
-  /** Expand one blocking modal; dock the rest so only one process fills the screen. */
+  /** Expand one blocking modal; dock the rest so only one process fills the screen.
+   *  Pass null to only dock blockers (e.g. when opening the persistent expedition dock). */
   const focusBlockingModal = (modalName) => {
     setMinimizedModals((prev) => {
       const next = { ...prev };
       for (const id of BLOCKING_MODAL_IDS) {
-        if (id === modalName) next[id] = false;
+        if (modalName && id === modalName) next[id] = false;
         else next[id] = true;
       }
       return next;

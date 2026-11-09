@@ -4,8 +4,13 @@ import { reduceGame } from '../game/gameEvents';
 import { can, ROLES, authorizeAction } from './permissions';
 import {
   clearRoomSession,
+  clearRoomShare,
+  clearWasLiveRoom,
   loadRoomSession,
+  loadRoomShare,
+  loadWasLiveRoom,
   saveRoomSession,
+  saveRoomShare,
 } from './roomSession';
 import {
   LOCAL_ONLY_ACTIONS,
@@ -68,8 +73,24 @@ function playerGateMessage(error) {
 /**
  * Solo or live-room session with roles (admin / player / viewer).
  */
+function loadInitialSyncedGame() {
+  const session = loadRoomSession();
+  const state = loadGameState();
+  const staleShare = !session?.roomId ? loadRoomShare() : null;
+  // Dead room left a local mid-game copy with no session — drop it.
+  // staleShare covers older "keep local solo" orphans before wasLive existed.
+  if (state?.isGameActive && !session?.roomId && (loadWasLiveRoom() || staleShare)) {
+    clearGameState();
+    clearRoomShare();
+    clearWasLiveRoom();
+    return loadGameState();
+  }
+  if (!session?.roomId) clearRoomShare();
+  return state;
+}
+
 export function useSyncedGame() {
-  const [game, setGame] = useReducer(syncedReducer, null, loadGameState);
+  const [game, setGame] = useReducer(syncedReducer, null, loadInitialSyncedGame);
   const [room, setRoom] = useState(() => {
     const saved = loadRoomSession();
     if (!saved?.roomId) return null;
@@ -85,6 +106,24 @@ export function useSyncedGame() {
     };
   });
   const [roomStatus, setRoomStatus] = useState(() => (loadRoomSession()?.roomId ? 'connecting' : 'solo'));
+  /** Wi‑Fi codes while a live session exists (cleared when the room dies). */
+  const [roomShare, setRoomShare] = useState(() => {
+    const saved = loadRoomSession();
+    if (!saved?.roomId) {
+      // Stale share without a session = dead room ghost — drop it.
+      clearRoomShare();
+      return null;
+    }
+    const existing = loadRoomShare();
+    if (existing?.roomId === saved.roomId) return existing;
+    const share = {
+      roomId: saved.roomId,
+      hostKey: saved.hostKey || null,
+      role: saved.role || null,
+    };
+    saveRoomShare(share);
+    return share;
+  });
   const [roomError, setRoomError] = useState(null);
   /** SSE link: 'idle' | 'open' | 'reconnecting' | 'closed' */
   const [syncLink, setSyncLink] = useState('idle');
@@ -171,6 +210,24 @@ export function useSyncedGame() {
     roomRef.current = room;
     if (room?.roomId) {
       saveRoomSession(room);
+      // Persist share codes whenever we know them (host key especially).
+      if (room.hostKey || room.role === ROLES.ADMIN || room.role === 'admin') {
+        const share = {
+          roomId: room.roomId,
+          hostKey: room.hostKey || null,
+          role: room.role || ROLES.ADMIN,
+        };
+        saveRoomShare(share);
+        setRoomShare(share);
+      } else if (room.roomId) {
+        const share = {
+          roomId: room.roomId,
+          hostKey: null,
+          role: room.role || null,
+        };
+        saveRoomShare(share);
+        setRoomShare(share);
+      }
     }
   }, [room]);
 
@@ -217,21 +274,19 @@ export function useSyncedGame() {
       })
       .catch((err) => {
         if (cancelled || sessionGenRef.current !== gen) return;
-        const wasAdmin = !!(saved.hostKey || saved.role === ROLES.ADMIN);
-        const localMidGame = !!(gameRef.current?.isGameActive);
+        // Room gone on server → wipe local session/game entirely (no zombie solo party).
         clearRoomSession();
+        clearRoomShare();
+        clearWasLiveRoom();
+        clearGameState();
+        clearSoloUndo();
         roomRef.current = null;
         setRoom(null);
+        setRoomShare(null);
         setRoomStatus('solo');
-        // Don't wipe a mid-game host local copy when the live room is gone.
-        if (!(wasAdmin && localMidGame)) {
-          setGame({ type: 'RESET_GAME' });
-        }
-        setRoomError(
-          wasAdmin && localMidGame
-            ? `Комната недоступна (${err.message || err}). Локальная партия сохранена — можно экспортировать код или продолжить соло.`
-            : `Комната недоступна: ${err.message || err}`,
-        );
+        setGame({ type: 'RESET_GAME' });
+        setSyncLink('idle');
+        setRoomError(`Комната недоступна: ${err.message || err}`);
       });
 
     return () => {
@@ -256,7 +311,10 @@ export function useSyncedGame() {
       sessionGenRef.current += 1;
       roomRef.current = null;
       clearRoomSession();
+      clearRoomShare();
+      clearWasLiveRoom();
       setRoom(null);
+      setRoomShare(null);
       setRoomStatus('solo');
       clearSoloUndo();
       setGame({ type: 'RESET_GAME' });
@@ -319,19 +377,9 @@ export function useSyncedGame() {
         }
         // Soft host-offline must never look like a party end.
         if (endedByHost && current?.role === ROLES.ADMIN && current.hostKey) {
-          // Keep local mid-game; drop live session only if server wiped party.
           if (msg.roomEnded || !msg.state?.isGameActive) {
-            const keepLocal = !!gameRef.current?.isGameActive;
-            clearRoomSession();
-            roomRef.current = null;
-            setRoom(null);
-            setRoomStatus('solo');
-            clearSoloUndo();
-            if (!keepLocal) setGame({ type: 'RESET_GAME' });
-            setRoomError(keepLocal
-              ? 'Партия на сервере завершена. Локальная копия сохранена.'
-              : 'Партия завершена.');
-            setSyncLink('idle');
+            clearGameState();
+            ejectStaleSession('Партия завершена — комната закрыта.');
           }
           return;
         }
@@ -595,7 +643,11 @@ export function useSyncedGame() {
           sessionGenRef.current += 1;
           roomRef.current = null;
           clearRoomSession();
+          clearRoomShare();
+          clearWasLiveRoom();
+          clearGameState();
           setRoom(null);
+          setRoomShare(null);
           setRoomStatus('solo');
           clearSoloUndo();
           setGame({ type: 'RESET_GAME' });
@@ -606,12 +658,40 @@ export function useSyncedGame() {
         setRoomError(message);
         fetchRoomSnapshot(roomId, { sessionToken: current.sessionToken })
           .then((snap) => {
+            if (!snap?.state || snap.partyEnded) {
+              clearGameState();
+              clearRoomSession();
+              clearRoomShare();
+              clearWasLiveRoom();
+              roomRef.current = null;
+              setRoom(null);
+              setRoomShare(null);
+              setRoomStatus('solo');
+              clearSoloUndo();
+              setGame({ type: 'RESET_GAME' });
+              setSyncLink('idle');
+              setRoomError('Комната недоступна — партия сброшена.');
+              return;
+            }
             applyAuthoritativeState(snap?.seq, snap?.state, {
               claimedSeats: snap?.claimedSeats,
               canUndo: typeof snap?.canUndo === 'boolean' ? snap.canUndo : undefined,
             });
           })
-          .catch(() => {});
+          .catch(() => {
+            clearGameState();
+            clearRoomSession();
+            clearRoomShare();
+            clearWasLiveRoom();
+            roomRef.current = null;
+            setRoom(null);
+            setRoomShare(null);
+            setRoomStatus('solo');
+            clearSoloUndo();
+            setGame({ type: 'RESET_GAME' });
+            setSyncLink('idle');
+            setRoomError('Комната недоступна — партия сброшена.');
+          });
       });
   }, [applyAuthoritativeState, clearSoloUndo]);
 
@@ -856,10 +936,13 @@ export function useSyncedGame() {
     sessionGenRef.current += 1;
     roomRef.current = null;
     clearRoomSession();
+    clearRoomShare();
+    clearWasLiveRoom();
     clearGameState();
     clearSoloUndo();
     setGame({ type: 'RESET_GAME' });
     setRoom(null);
+    setRoomShare(null);
     setMiltyLiveDraft(null);
     setRoomStatus('solo');
     setRoomError(null);
@@ -891,6 +974,7 @@ export function useSyncedGame() {
     game,
     dispatch,
     room,
+    roomShare,
     roomStatus,
     roomError,
     syncLink,

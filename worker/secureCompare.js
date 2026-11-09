@@ -1,3 +1,5 @@
+import { applyRateLimitHit } from './rateLimit/rateLimitCore.js';
+
 /**
  * Timing-safe string compare (UTF-16 code units). Length mismatch still iterates.
  * @param {string} a
@@ -16,7 +18,7 @@ export function timingSafeEqualString(a, b) {
   return mismatch === 0;
 }
 
-/** Simple per-isolate sliding-window rate limit. */
+/** Simple per-isolate sliding-window rate limit (dev / DO fallback). */
 const buckets = new Map();
 
 /**
@@ -25,17 +27,12 @@ const buckets = new Map();
  * @returns {{ ok: true } | { ok: false, retryAfterMs: number }}
  */
 export function consumeRateLimit(key, opts = {}) {
-  const limit = Math.max(1, opts.limit ?? 20);
-  const windowMs = Math.max(1000, opts.windowMs ?? 60_000);
   const now = Date.now();
-  let entry = buckets.get(key);
-  if (!entry || now - entry.windowStart >= windowMs) {
-    entry = { windowStart: now, count: 0 };
-    buckets.set(key, entry);
-  }
-  entry.count += 1;
-  if (entry.count > limit) {
-    return { ok: false, retryAfterMs: windowMs - (now - entry.windowStart) };
+  const prev = buckets.get(key) || null;
+  const hit = applyRateLimitHit(prev, now, opts);
+  buckets.set(key, hit.entry);
+  if (!hit.ok) {
+    return { ok: false, retryAfterMs: hit.retryAfterMs ?? 0 };
   }
   return { ok: true };
 }

@@ -215,7 +215,6 @@ export function PlayerMobileConsole({
             roundActive={roundActive}
             showPoliticsModal={showPoliticsModal}
             passed={passed}
-            statusPhaseShow={statusPhaseShow}
             isMyTurn={isMyTurn}
             onScoreSecret={onScoreSecret}
             uiConfirm={uiConfirm}

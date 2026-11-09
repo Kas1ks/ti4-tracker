@@ -15,11 +15,12 @@ import {
   isCloudStatsConfigured,
   putCloudSave,
 } from './stats/statsBin.js';
-import { handleRoomsApi } from './rooms/roomsApi.js';
+import { handleAdminRoomsApi, handleRoomsApi } from './rooms/roomsApi.js';
 import { handleMiltyApi } from './milty/miltyApi.js';
 import { assertRoomCreateAllowed, resolveRoomCreateSecret } from './rooms/roomCreateAuth.js';
 import { readVapidConfig } from './push/sendPush.js';
-import { clientKey, consumeRateLimit } from './secureCompare.js';
+import { clientKey } from './secureCompare.js';
+import { consumeRateLimitEnv } from './rateLimit/RateLimitGate.js';
 
 function json(data, status = 200, extraHeaders = {}) {
   return new Response(JSON.stringify(data), {
@@ -40,14 +41,14 @@ async function readJsonBody(request) {
   }
 }
 
-function rateLimited(request, bucket, opts) {
+async function rateLimited(request, env, bucket, opts) {
   const key = `${bucket}:${clientKey(request)}`;
-  const result = consumeRateLimit(key, opts);
+  const result = await consumeRateLimitEnv(env, key, opts);
   if (!result.ok) {
     return json(
       { error: 'rate-limited', retryAfterMs: result.retryAfterMs },
       429,
-      { 'Retry-After': String(Math.ceil(result.retryAfterMs / 1000)) },
+      { 'Retry-After': String(Math.ceil((result.retryAfterMs || 0) / 1000)) },
     );
   }
   return null;
@@ -127,10 +128,22 @@ export async function handleApi(request, env) {
     }
   }
 
+  // Before cloud-stats gate — admin rooms must work even if StatsStore is down.
+  if (pathname === '/api/admin/rooms' || pathname.startsWith('/api/admin/rooms/')) {
+    const limited = await rateLimited(request, env, 'admin-pin', { limit: 15, windowMs: 60_000 });
+    if (limited) return limited;
+    try {
+      return await handleAdminRoomsApi(request, env);
+    } catch (err) {
+      console.error('[admin-rooms]', err);
+      return json({ error: 'admin-rooms-error', message: String(err?.message || err) }, 500);
+    }
+  }
+
   if (pathname === '/api/milty' || pathname.startsWith('/api/milty/')) {
     try {
       if (method === 'POST' && pathname === '/api/milty') {
-        const limited = rateLimited(request, 'milty-create', { limit: 20, windowMs: 60_000 });
+        const limited = await rateLimited(request, env, 'milty-create', { limit: 20, windowMs: 60_000 });
         if (limited) return limited;
       }
       const miltyResponse = await handleMiltyApi(request, env);
@@ -142,7 +155,7 @@ export async function handleApi(request, env) {
   }
 
   if (method === 'POST' && pathname === '/api/host-unlock') {
-    const limited = rateLimited(request, 'host-unlock', { limit: 30, windowMs: 60_000 });
+    const limited = await rateLimited(request, env, 'host-unlock', { limit: 30, windowMs: 60_000 });
     if (limited) return limited;
     const body = await readJsonBody(request);
     const gate = assertRoomCreateAllowed(env, body?.createSecret);
@@ -168,7 +181,7 @@ export async function handleApi(request, env) {
     }
 
     if (method === 'POST' && (pathname === '/api/stats' || pathname === '/api/game')) {
-      const limited = rateLimited(request, 'cloud-write', { limit: 40, windowMs: 60_000 });
+      const limited = await rateLimited(request, env, 'cloud-write', { limit: 40, windowMs: 60_000 });
       if (limited) return limited;
       const body = await readJsonBody(request);
       const gate = assertCloudWrite(env, body);
@@ -180,7 +193,7 @@ export async function handleApi(request, env) {
     }
 
     if (method === 'POST' && pathname === '/api/saves') {
-      const limited = rateLimited(request, 'cloud-write', { limit: 40, windowMs: 60_000 });
+      const limited = await rateLimited(request, env, 'cloud-write', { limit: 40, windowMs: 60_000 });
       if (limited) return limited;
       const body = await readJsonBody(request);
       const gate = assertCloudWrite(env, body);
@@ -206,7 +219,7 @@ export async function handleApi(request, env) {
     }
 
     if (method === 'DELETE' && pathname === '/api/stats') {
-      const limited = rateLimited(request, 'admin-pin', { limit: 15, windowMs: 60_000 });
+      const limited = await rateLimited(request, env, 'admin-pin', { limit: 15, windowMs: 60_000 });
       if (limited) return limited;
       const body = await readJsonBody(request);
       if (!adminPinMatches(env, body?.pin)) {
@@ -218,7 +231,7 @@ export async function handleApi(request, env) {
 
     const gameMatch = pathname.match(/^\/api\/stats\/([^/]+)$/);
     if (method === 'DELETE' && gameMatch) {
-      const limited = rateLimited(request, 'admin-pin', { limit: 15, windowMs: 60_000 });
+      const limited = await rateLimited(request, env, 'admin-pin', { limit: 15, windowMs: 60_000 });
       if (limited) return limited;
       const body = await readJsonBody(request);
       if (!adminPinMatches(env, body?.pin)) {

@@ -1,0 +1,340 @@
+/* —— Admin rooms monitor (/admin/rooms) —— */
+.hub-extra-card--quiet {
+  opacity: 0.78;
+  border-style: dashed;
+}
+.hub-extra-card--quiet:hover {
+  opacity: 1;
+}
+.admin-rooms-stage {
+  max-width: 52rem;
+  width: 100%;
+  margin: 0 auto;
+  padding-bottom: 3rem;
+}
+.admin-rooms-lead {
+  margin: 0.35rem 0 0;
+  font-family: 'Montserrat', sans-serif;
+  font-size: 0.9rem;
+  color: var(--hub-muted);
+  line-height: 1.45;
+}
+.admin-rooms-pin {
+  margin-top: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+.admin-rooms-pin-label {
+  font-family: 'Orbitron', sans-serif;
+  font-size: 0.72rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--hub-gold-bright);
+}
+.admin-rooms-pin-row {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.admin-rooms-pin-input {
+  flex: 1 1 12rem;
+  min-width: 0;
+  height: 2.6rem;
+  padding: 0 0.85rem;
+  border-radius: 12px;
+  border: 1px solid var(--hub-border);
+  background: rgba(8, 10, 16, 0.85);
+  color: #f1f5f9;
+  font-family: 'Montserrat', sans-serif;
+  font-size: 0.95rem;
+}
+.admin-rooms-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  height: 2.6rem;
+  padding: 0 1rem;
+  border-radius: 12px;
+  border: 1px solid rgba(201, 162, 39, 0.45);
+  background: rgba(201, 162, 39, 0.18);
+  color: var(--hub-gold-bright);
+  font-family: 'Orbitron', sans-serif;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.admin-rooms-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.admin-rooms-btn.is-ghost {
+  background: transparent;
+  border-color: var(--hub-border-soft);
+  color: #cbd5e1;
+}
+.admin-rooms-error {
+  margin: 0.75rem 0 0;
+  color: #fca5a5;
+  font-family: 'Montserrat', sans-serif;
+  font-size: 0.88rem;
+}
+.admin-rooms-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin: 1.25rem 0 0.75rem;
+}
+.admin-rooms-meta {
+  font-family: 'Montserrat', sans-serif;
+  font-size: 0.78rem;
+  color: var(--hub-muted);
+}
+.admin-rooms-toolbar-actions {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+.admin-rooms-empty {
+  margin: 1.5rem 0 0;
+  color: var(--hub-muted);
+  font-family: 'Montserrat', sans-serif;
+}
+.admin-rooms-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+.admin-rooms-item {
+  border: 1px solid var(--hub-border-soft);
+  border-radius: var(--hub-radius);
+  background: var(--hub-panel);
+  padding: 0.85rem 1rem;
+}
+.admin-rooms-item-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 0.55rem;
+}
+.admin-rooms-code {
+  font-family: 'Orbitron', sans-serif;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  color: #f8fafc;
+  margin-right: 0.25rem;
+}
+.admin-rooms-badge {
+  font-family: 'Montserrat', sans-serif;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 0.2rem 0.45rem;
+  border-radius: 999px;
+  border: 1px solid var(--hub-border-soft);
+  color: #cbd5e1;
+}
+.admin-rooms-badge.is-on {
+  border-color: rgba(52, 211, 153, 0.45);
+  color: #6ee7b7;
+}
+.admin-rooms-badge.is-off {
+  border-color: rgba(248, 113, 113, 0.4);
+  color: #fca5a5;
+}
+.admin-rooms-badge.is-err {
+  border-color: rgba(248, 113, 113, 0.5);
+  color: #fecaca;
+}
+.admin-rooms-badge.is-warn {
+  border-color: rgba(251, 191, 36, 0.5);
+  color: #fde68a;
+}
+.admin-rooms-item-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 1rem;
+  margin-top: 0.55rem;
+  font-family: 'Montserrat', sans-serif;
+  font-size: 0.75rem;
+  color: var(--hub-muted);
+}
+.admin-rooms-clients {
+  margin: 0.55rem 0 0;
+  padding-left: 1.1rem;
+  font-family: 'Montserrat', sans-serif;
+  font-size: 0.85rem;
+  color: #e2e8f0;
+  line-height: 1.45;
+}
+.admin-rooms-empty-clients {
+  margin: 0.5rem 0 0;
+  font-family: 'Montserrat', sans-serif;
+  font-size: 0.8rem;
+  color: var(--hub-muted);
+}
+.admin-rooms-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem 0.85rem;
+  align-items: center;
+  margin: 0 0 0.85rem;
+}
+.admin-rooms-filter-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+.admin-rooms-chip {
+  height: 2rem;
+  padding: 0 0.7rem;
+  border-radius: 10px;
+  border: 1px solid var(--hub-border-soft);
+  background: transparent;
+  color: #94a3b8;
+  font-family: 'Montserrat', sans-serif;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  cursor: pointer;
+}
+.admin-rooms-chip.is-active {
+  border-color: rgba(201, 162, 39, 0.55);
+  color: var(--hub-gold-bright);
+  background: rgba(201, 162, 39, 0.12);
+}
+.admin-rooms-search {
+  flex: 1 1 10rem;
+  min-width: 8rem;
+  max-width: 16rem;
+  height: 2rem;
+  padding: 0 0.7rem;
+  border-radius: 10px;
+  border: 1px solid var(--hub-border);
+  background: rgba(8, 10, 16, 0.85);
+  color: #f1f5f9;
+  font-family: 'Montserrat', sans-serif;
+  font-size: 0.82rem;
+}
+.admin-rooms-expand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  padding: 0;
+  margin-right: 0.15rem;
+}
+.admin-rooms-expand:disabled {
+  cursor: default;
+  opacity: 0.85;
+}
+.admin-rooms-item.is-warn {
+  border-color: rgba(251, 191, 36, 0.35);
+}
+.admin-rooms-item.is-err {
+  border-color: rgba(248, 113, 113, 0.4);
+}
+.admin-rooms-item-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.65rem;
+}
+.admin-rooms-btn.is-danger {
+  border-color: rgba(248, 113, 113, 0.5);
+  background: rgba(248, 113, 113, 0.12);
+  color: #fecaca;
+}
+.admin-rooms-btn.is-compact {
+  height: 1.85rem;
+  padding: 0 0.65rem;
+  font-size: 0.65rem;
+}
+.admin-rooms-detail {
+  margin-top: 0.85rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--hub-border-soft);
+  display: grid;
+  gap: 0.85rem;
+}
+.admin-rooms-detail-block h3 {
+  margin: 0 0 0.35rem;
+  font-family: 'Orbitron', sans-serif;
+  font-size: 0.68rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--hub-gold-bright);
+}
+.admin-rooms-detail-list,
+.admin-rooms-seats,
+.admin-rooms-events {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-family: 'Montserrat', sans-serif;
+  font-size: 0.82rem;
+  color: #e2e8f0;
+  line-height: 1.45;
+}
+.admin-rooms-detail-list li + li,
+.admin-rooms-events li + li {
+  margin-top: 0.2rem;
+}
+.admin-rooms-seat {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.25rem 0;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+}
+.admin-rooms-seat-meta {
+  color: var(--hub-muted);
+  font-size: 0.75rem;
+}
+.admin-rooms-events li {
+  display: grid;
+  grid-template-columns: 7.5rem 5.5rem 1fr;
+  gap: 0.4rem;
+  align-items: baseline;
+}
+@media (max-width: 640px) {
+  .admin-rooms-events li {
+    grid-template-columns: 1fr;
+    gap: 0.1rem;
+    margin-bottom: 0.45rem;
+  }
+}
+.admin-rooms-event-time {
+  color: var(--hub-muted);
+  font-size: 0.72rem;
+}
+.admin-rooms-event-kind {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #94a3b8;
+}
+.admin-rooms-event-kind.is-admin,
+.admin-rooms-event-kind.is-disconnect {
+  color: #fca5a5;
+}
+.admin-rooms-event-kind.is-connect {
+  color: #6ee7b7;
+}
+.admin-rooms-event-kind.is-action {
+  color: #fde68a;
+}

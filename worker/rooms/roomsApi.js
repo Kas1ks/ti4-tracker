@@ -4,7 +4,11 @@ import {
   memoryGetRoom,
   memoryJoin,
   memoryClaimHost,
+  memoryListAllRoomIds,
   memoryListHubCards,
+  memoryAdminRoomSnapshot,
+  memoryAdminCloseRoom,
+  memoryAdminKickSeat,
   memoryMiltyPick,
   memoryMiltyPromote,
   memoryMiltyRegen,
@@ -30,6 +34,7 @@ import {
 import { assertRoomCreateAllowed } from './roomCreateAuth.js';
 import { directoryList, hasRoomDirectory } from './roomIndex.js';
 import { readVapidConfig } from '../push/sendPush.js';
+import { adminPinMatches } from '../jsonbin.js';
 
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -56,6 +61,190 @@ function hasDurableRooms(env) {
 async function stubFor(env, roomId) {
   const id = env.GAME_ROOMS.idFromName(String(roomId).toUpperCase());
   return env.GAME_ROOMS.get(id);
+}
+
+async function fetchDoAdminSnapshot(env, roomId, pin) {
+  const stub = await stubFor(env, roomId);
+  const res = await stub.fetch(new Request('https://room/admin/clients', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ pin }),
+  }));
+  if (res.status === 401) {
+    const err = new Error('unauthorized');
+    err.status = 401;
+    throw err;
+  }
+  if (res.status === 404) {
+    return { roomId: String(roomId).toUpperCase(), error: 'not-found' };
+  }
+  if (!res.ok) {
+    return { roomId: String(roomId).toUpperCase(), error: `http-${res.status}` };
+  }
+  return res.json();
+}
+
+async function fetchDoAdminAction(env, roomId, pathSuffix, body) {
+  const stub = await stubFor(env, roomId);
+  const res = await stub.fetch(new Request(`https://room${pathSuffix}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body || {}),
+  }));
+  const data = await res.json().catch(() => ({}));
+  if (res.status === 401) {
+    const err = new Error('unauthorized');
+    err.status = 401;
+    throw err;
+  }
+  return { status: res.status, data };
+}
+
+/**
+ * Admin monitor API — list live rooms + SSE clients (ADMIN_PIN).
+ * Also: detail, close room, kick seat.
+ * Caller must rate-limit and route `/api/admin/rooms`.
+ */
+export async function handleAdminRoomsApi(request, env) {
+  const url = new URL(request.url);
+  let { pathname } = url;
+  if (pathname.length > 1 && pathname.endsWith('/')) {
+    pathname = pathname.slice(0, -1);
+  }
+  const method = request.method.toUpperCase();
+  if (method !== 'POST') {
+    return json({ error: 'method-not-allowed' }, 405);
+  }
+
+  const body = await readJsonBody(request);
+  const pin = body?.pin != null ? String(body.pin) : '';
+  if (!adminPinMatches(env, pin)) {
+    return json({ error: 'unauthorized' }, 401);
+  }
+
+  const closeMatch = pathname.match(/^\/api\/admin\/rooms\/([^/]+)\/close$/);
+  if (closeMatch) {
+    const roomId = decodeURIComponent(closeMatch[1]).trim().toUpperCase();
+    if (!roomId) return json({ error: 'missing-room' }, 400);
+    if (hasDurableRooms(env)) {
+      try {
+        const { status, data } = await fetchDoAdminAction(env, roomId, '/admin/close', { pin });
+        return json(data, status);
+      } catch (err) {
+        if (err?.status === 401 || err?.message === 'unauthorized') {
+          return json({ error: 'unauthorized' }, 401);
+        }
+        return json({ error: String(err?.message || err) }, 500);
+      }
+    }
+    const closed = memoryAdminCloseRoom(roomId);
+    if (!closed.ok) return json({ error: closed.error }, 404);
+    return json({ ok: true, roomId: closed.roomId, backend: 'memory' });
+  }
+
+  const kickMatch = pathname.match(/^\/api\/admin\/rooms\/([^/]+)\/kick$/);
+  if (kickMatch) {
+    const roomId = decodeURIComponent(kickMatch[1]).trim().toUpperCase();
+    if (!roomId) return json({ error: 'missing-room' }, 400);
+    const seatPlayerId = body?.seatPlayerId;
+    if (seatPlayerId == null || seatPlayerId === '') {
+      return json({ error: 'seat-required' }, 400);
+    }
+    if (hasDurableRooms(env)) {
+      try {
+        const { status, data } = await fetchDoAdminAction(env, roomId, '/admin/kick', {
+          pin,
+          seatPlayerId,
+        });
+        return json(data, status);
+      } catch (err) {
+        if (err?.status === 401 || err?.message === 'unauthorized') {
+          return json({ error: 'unauthorized' }, 401);
+        }
+        return json({ error: String(err?.message || err) }, 500);
+      }
+    }
+    const kicked = await memoryAdminKickSeat(roomId, seatPlayerId, env);
+    if (!kicked.ok) {
+      const status = kicked.error === 'unauthorized' || kicked.error === 'forbidden' ? 403
+        : kicked.error === 'not-found' ? 404
+          : 400;
+      return json({ error: kicked.error }, status);
+    }
+    return json({
+      ok: true,
+      seatPlayerId: kicked.seatPlayerId,
+      room: kicked.room,
+      backend: 'memory',
+    });
+  }
+
+  const oneMatch = pathname.match(/^\/api\/admin\/rooms\/([^/]+)$/);
+  if (oneMatch) {
+    const roomId = decodeURIComponent(oneMatch[1]).trim().toUpperCase();
+    if (!roomId) return json({ error: 'missing-room' }, 400);
+    if (hasDurableRooms(env)) {
+      try {
+        const snap = await fetchDoAdminSnapshot(env, roomId, pin);
+        return json({ room: snap, backend: 'durable-object' });
+      } catch (err) {
+        if (err?.status === 401 || err?.message === 'unauthorized') {
+          return json({ error: 'unauthorized' }, 401);
+        }
+        return json({ room: { roomId, error: String(err?.message || err) }, backend: 'durable-object' });
+      }
+    }
+    const snap = memoryAdminRoomSnapshot(roomId);
+    if (!snap) return json({ room: { roomId, error: 'not-found' }, backend: 'memory' });
+    return json({ room: snap, backend: 'memory' });
+  }
+
+  if (pathname !== '/api/admin/rooms') {
+    return json({ error: 'not-found' }, 404);
+  }
+
+  if (hasDurableRooms(env)) {
+    const cards = hasRoomDirectory(env) ? await directoryList(env) : [];
+    const ids = [...new Set(
+      cards
+        .map((c) => String(c?.roomId || '').trim().toUpperCase())
+        .filter(Boolean),
+    )];
+    let rooms;
+    try {
+      rooms = await Promise.all(ids.map(async (roomId) => {
+        try {
+          return await fetchDoAdminSnapshot(env, roomId, pin);
+        } catch (err) {
+          if (err?.status === 401 || err?.message === 'unauthorized') throw err;
+          return { roomId, error: String(err?.message || err) };
+        }
+      }));
+    } catch (err) {
+      if (err?.status === 401 || err?.message === 'unauthorized') {
+        return json({ error: 'unauthorized' }, 401);
+      }
+      throw err;
+    }
+    rooms.sort((a, b) => {
+      const ta = Date.parse(a?.lastActivityAt || 0) || 0;
+      const tb = Date.parse(b?.lastActivityAt || 0) || 0;
+      return tb - ta;
+    });
+    return json({ rooms, backend: 'durable-object', indexed: hasRoomDirectory(env) });
+  }
+
+  const ids = memoryListAllRoomIds();
+  const rooms = ids.map((roomId) => {
+    const snap = memoryAdminRoomSnapshot(roomId);
+    return snap || { roomId, error: 'not-found' };
+  });
+  rooms.sort((a, b) => {
+    const ta = Date.parse(a?.lastActivityAt || 0) || 0;
+    const tb = Date.parse(b?.lastActivityAt || 0) || 0;
+    return tb - ta;
+  });
+  return json({ rooms, backend: 'memory', indexed: true });
 }
 
 /**
