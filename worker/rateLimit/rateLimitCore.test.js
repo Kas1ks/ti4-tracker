@@ -1,6 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { applyRateLimitHit, pruneRateLimitMap } from './rateLimitCore.js';
-import { consumeRateLimitEnv } from './RateLimitGate.js';
+import { consumeRateLimitEnv, FAIL_CLOSED_BUCKETS } from './RateLimitGate.js';
 
 describe('applyRateLimitHit', () => {
   it('allows up to limit then blocks within the window', () => {
@@ -49,5 +49,54 @@ describe('consumeRateLimitEnv', () => {
     }
     const blocked = await consumeRateLimitEnv({}, key, { limit: 2, windowMs: 60_000 });
     expect(blocked.ok).toBe(false);
+  });
+
+  it('failClosed denies when DO throws (no memory bypass)', async () => {
+    const env = {
+      RATE_LIMIT: {
+        idFromName: () => ({ toString: () => 'id' }),
+        get: () => ({
+          fetch: async () => {
+            throw new Error('do-down');
+          },
+        }),
+      },
+    };
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const hit = await consumeRateLimitEnv(env, 'host-secret:1.1.1.1', {
+      limit: 5,
+      windowMs: 60_000,
+      failClosed: true,
+    });
+    spy.mockRestore();
+    expect(hit).toEqual({ ok: false, retryAfterMs: 60_000, unavailable: true });
+  });
+
+  it('soft buckets fall back to memory when DO throws', async () => {
+    const env = {
+      RATE_LIMIT: {
+        idFromName: () => ({ toString: () => 'id' }),
+        get: () => ({
+          fetch: async () => {
+            throw new Error('do-down');
+          },
+        }),
+      },
+    };
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const key = `admin-poll:soft-${Math.random()}`;
+    const hit = await consumeRateLimitEnv(env, key, {
+      limit: 2,
+      windowMs: 60_000,
+      failClosed: false,
+    });
+    spy.mockRestore();
+    expect(hit.ok).toBe(true);
+  });
+
+  it('marks host-secret and admin-auth as fail-closed buckets', () => {
+    expect(FAIL_CLOSED_BUCKETS.has('host-secret')).toBe(true);
+    expect(FAIL_CLOSED_BUCKETS.has('admin-auth')).toBe(true);
+    expect(FAIL_CLOSED_BUCKETS.has('admin-poll')).toBe(false);
   });
 });

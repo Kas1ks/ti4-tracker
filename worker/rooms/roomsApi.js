@@ -31,19 +31,34 @@ import {
   adminSessionFromRoom,
   sessionAuthFromRoom,
 } from './roomCore.js';
-import { assertRoomCreateAllowed } from './roomCreateAuth.js';
+import { assertHostWriteAllowed } from './hostWriteToken.js';
 import { directoryList, hasRoomDirectory } from './roomIndex.js';
 import { readVapidConfig } from '../push/sendPush.js';
 import { adminPinMatches } from '../jsonbin.js';
+import { clientKey } from '../secureCompare.js';
+import { consumeRateLimitEnv } from '../rateLimit/RateLimitGate.js';
 
-function json(data, status = 200) {
+function json(data, status = 200, extraHeaders = undefined) {
   return new Response(JSON.stringify(data), {
     status,
     headers: {
       'Content-Type': 'application/json; charset=utf-8',
       'Cache-Control': 'no-store',
+      ...(extraHeaders || {}),
     },
   });
+}
+
+function rateLimitResponse(result) {
+  const status = result?.unavailable ? 503 : 429;
+  return json(
+    {
+      error: result?.unavailable ? 'rate-limit-unavailable' : 'rate-limited',
+      retryAfterMs: result?.retryAfterMs ?? 0,
+    },
+    status,
+    { 'Retry-After': String(Math.ceil((result?.retryAfterMs || 0) / 1000) || 60) },
+  );
 }
 
 async function readJsonBody(request) {
@@ -103,7 +118,11 @@ async function fetchDoAdminAction(env, roomId, pathSuffix, body) {
 /**
  * Admin monitor API — list live rooms + SSE clients (ADMIN_PIN).
  * Also: detail, close room, kick seat.
- * Caller must rate-limit and route `/api/admin/rooms`.
+ *
+ * Rate limits:
+ * - Wrong PIN → admin-auth (strict, fail-closed) — successes do not consume it.
+ * - List/poll → admin-poll (soft, generous).
+ * - close/kick → admin-action (soft).
  */
 export async function handleAdminRoomsApi(request, env) {
   const url = new URL(request.url);
@@ -118,9 +137,28 @@ export async function handleAdminRoomsApi(request, env) {
 
   const body = await readJsonBody(request);
   const pin = body?.pin != null ? String(body.pin) : '';
+  const ip = clientKey(request);
   if (!adminPinMatches(env, pin)) {
+    const authHit = await consumeRateLimitEnv(env, `admin-auth:${ip}`, {
+      limit: 15,
+      windowMs: 60_000,
+      failClosed: true,
+    });
+    if (!authHit.ok) return rateLimitResponse(authHit);
     return json({ error: 'unauthorized' }, 401);
   }
+
+  const isMutate = /\/(close|kick)$/.test(pathname);
+  const softHit = await consumeRateLimitEnv(
+    env,
+    `${isMutate ? 'admin-action' : 'admin-poll'}:${ip}`,
+    {
+      limit: isMutate ? 60 : 180,
+      windowMs: 60_000,
+      failClosed: false,
+    },
+  );
+  if (!softHit.ok) return rateLimitResponse(softHit);
 
   const closeMatch = pathname.match(/^\/api\/admin\/rooms\/([^/]+)\/close$/);
   if (closeMatch) {
@@ -134,7 +172,7 @@ export async function handleAdminRoomsApi(request, env) {
         if (err?.status === 401 || err?.message === 'unauthorized') {
           return json({ error: 'unauthorized' }, 401);
         }
-        return json({ error: String(err?.message || err) }, 500);
+        return json({ error: 'admin-close-failed' }, 500);
       }
     }
     const closed = memoryAdminCloseRoom(roomId);
@@ -161,7 +199,7 @@ export async function handleAdminRoomsApi(request, env) {
         if (err?.status === 401 || err?.message === 'unauthorized') {
           return json({ error: 'unauthorized' }, 401);
         }
-        return json({ error: String(err?.message || err) }, 500);
+        return json({ error: 'admin-kick-failed' }, 500);
       }
     }
     const kicked = await memoryAdminKickSeat(roomId, seatPlayerId, env);
@@ -191,7 +229,7 @@ export async function handleAdminRoomsApi(request, env) {
         if (err?.status === 401 || err?.message === 'unauthorized') {
           return json({ error: 'unauthorized' }, 401);
         }
-        return json({ room: { roomId, error: String(err?.message || err) }, backend: 'durable-object' });
+        return json({ room: { roomId, error: 'unavailable' }, backend: 'durable-object' });
       }
     }
     const snap = memoryAdminRoomSnapshot(roomId);
@@ -217,7 +255,7 @@ export async function handleAdminRoomsApi(request, env) {
           return await fetchDoAdminSnapshot(env, roomId, pin);
         } catch (err) {
           if (err?.status === 401 || err?.message === 'unauthorized') throw err;
-          return { roomId, error: String(err?.message || err) };
+          return { roomId, error: 'unavailable' };
         }
       }));
     } catch (err) {
@@ -275,7 +313,7 @@ export async function handleRoomsApi(request, env) {
 
   if (method === 'POST' && pathname === '/api/rooms') {
     const body = await readJsonBody(request);
-    const gate = assertRoomCreateAllowed(env, body?.createSecret);
+    const gate = await assertHostWriteAllowed(env, body);
     if (!gate.ok) return json({ error: gate.error }, gate.status);
 
     let createState = body?.state ?? null;

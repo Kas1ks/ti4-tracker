@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   adminCloseRoom,
   adminKickSeat,
@@ -193,9 +193,11 @@ export function AdminRoomsPage({ onBack }) {
   const [query, setQuery] = useState('');
   const [expandedId, setExpandedId] = useState(null);
 
+  const pollDelayRef = useRef(20_000);
+
   const refresh = useCallback(async (activePin) => {
     const usePin = activePin ?? pin;
-    if (!usePin) return;
+    if (!usePin) return { ok: false };
     setLoading(true);
     setError(null);
     try {
@@ -205,6 +207,8 @@ export function AdminRoomsPage({ onBack }) {
       setAuthed(true);
       savePin(usePin);
       setPin(usePin);
+      pollDelayRef.current = 20_000;
+      return { ok: true };
     } catch (err) {
       const code = String(err?.message || err);
       if (err?.status === 401 || code === 'unauthorized') {
@@ -213,9 +217,15 @@ export function AdminRoomsPage({ onBack }) {
         setPin('');
         setRooms([]);
         setError('Неверный ADMIN PIN');
-      } else {
-        setError(code);
+        return { ok: false, unauthorized: true };
       }
+      if (err?.status === 429 || code === 'rate-limited') {
+        pollDelayRef.current = Math.min(120_000, (pollDelayRef.current || 20_000) * 2);
+        setError('Слишком частые запросы — пауза, PIN сохранён');
+        return { ok: false, rateLimited: true };
+      }
+      setError(code);
+      return { ok: false };
     } finally {
       setLoading(false);
     }
@@ -223,9 +233,21 @@ export function AdminRoomsPage({ onBack }) {
 
   useEffect(() => {
     if (!pin) return undefined;
-    refresh(pin);
-    const t = setInterval(() => refresh(pin), 10_000);
-    return () => clearInterval(t);
+    let cancelled = false;
+    let timer = null;
+
+    const tick = async () => {
+      if (cancelled) return;
+      await refresh(pin);
+      if (cancelled) return;
+      timer = setTimeout(tick, pollDelayRef.current || 20_000);
+    };
+
+    tick();
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
   }, [pin, refresh]);
 
   const onSubmitPin = (event) => {

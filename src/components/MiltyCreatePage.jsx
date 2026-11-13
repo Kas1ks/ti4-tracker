@@ -14,6 +14,9 @@ function createSecretErrorMessage(code) {
   if (code === 'forbidden') {
     return 'Неверный код доступа.';
   }
+  if (code === 'token-expired') {
+    return 'Сессия хоста истекла. Введите код доступа снова.';
+  }
   return '';
 }
 

@@ -12,7 +12,7 @@ import {
   prunePendingAgainstCloud,
   savePendingStats,
 } from '../analytics/localStatsQueue';
-import { getHostWriteToken, setHostWriteToken } from '../sync/hostWriteToken';
+import { getHostWriteToken, getHostWriteTokenExpiresAt, setHostWriteToken } from '../sync/hostWriteToken';
 import { verifyHostSecret } from '../sync/roomApi';
 import {
   clearCloudStats,
@@ -35,7 +35,13 @@ export function useCloudGame({ game, dispatch, getPlayerScore, uiAlert, uiConfir
 
   const ensureWriteToken = async () => {
     const cached = getHostWriteToken();
-    if (cached) return cached;
+    if (cached) {
+      const exp = getHostWriteTokenExpiresAt();
+      const expMs = exp ? Date.parse(exp) : NaN;
+      // Trust cached session token until local expiry; avoid burning host-secret rate limit.
+      if (!Number.isFinite(expMs) || expMs > Date.now()) return cached;
+      setHostWriteToken('');
+    }
     const createSecret = await uiPrompt('Введите код доступа хоста для записи в облако:', {
       title: 'Код доступа',
       inputType: 'password',
@@ -49,9 +55,11 @@ export function useCloudGame({ game, dispatch, getPlayerScore, uiAlert, uiConfir
       return null;
     }
     try {
-      await verifyHostSecret(String(createSecret));
-      setHostWriteToken(String(createSecret));
-      return String(createSecret);
+      const data = await verifyHostSecret(String(createSecret));
+      const token = data?.writeToken;
+      if (!token) throw new Error('missing-write-token');
+      setHostWriteToken(token, data?.expiresAt || '');
+      return token;
     } catch (err) {
       await uiAlert(cloudErrorMessage(err, 'Неверный код доступа'), {
         title: 'Ошибка',

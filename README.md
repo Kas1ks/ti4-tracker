@@ -66,7 +66,7 @@ Vite serves `/api/*` via a local middleware that keeps secrets on the Node side.
 
 | Method | Path | Notes |
 |--------|------|-------|
-| GET | `/api/health` | Diagnostics (`rooms: memory \| durable-object`, bin / create-secret flags) |
+| GET | `/api/health` | Liveness (`ok`, `rooms: memory \| durable-object`) — no secret/config flags |
 | POST | `/api/rooms` | Create live room; body `{ state, createSecret }` → `{ roomId, hostKey, state, seq }` |
 | POST | `/api/host-unlock` | Verify host secret (solo / local); body `{ createSecret }` → `{ ok: true }` |
 | GET | `/api/rooms/:id/snapshot` | Current room state |

@@ -547,20 +547,23 @@ function App() {
 
   const hostSecretErrorMessage = (code) => {
     if (code === 'forbidden') return 'Неверный код доступа.';
+    if (code === 'token-expired') return 'Сессия хоста истекла. Введите код доступа снова.';
     if (code === 'create-secret-not-configured') {
       return 'На сервере не задан ROOM_CREATE_SECRET. Добавьте его в Worker Secrets (не Pages) / .dev.vars.';
     }
     return null;
   };
 
-  /** Prompt + server check for ROOM_CREATE_SECRET. Returns secret or null if cancelled/failed. */
+  /** Prompt + server check. Returns short-lived writeToken (not the master secret). */
   const unlockAsHost = async ({ title, forcePrompt = false, softSolo = false } = {}) => {
     const { getHostWriteToken, setHostWriteToken } = await import('./sync/hostWriteToken');
     const cached = getHostWriteToken();
     if (!forcePrompt && cached) {
       try {
-        await verifyHostSecret(cached);
-        return cached;
+        const data = await verifyHostSecret(cached);
+        const token = data?.writeToken || cached;
+        setHostWriteToken(token, data?.expiresAt || '');
+        return token;
       } catch {
         setHostWriteToken('');
       }
@@ -583,9 +586,11 @@ function App() {
       return null;
     }
     try {
-      await verifyHostSecret(String(createSecret));
-      setHostWriteToken(String(createSecret));
-      return String(createSecret);
+      const data = await verifyHostSecret(String(createSecret));
+      const token = data?.writeToken;
+      if (!token) throw new Error('missing-write-token');
+      setHostWriteToken(token, data?.expiresAt || '');
+      return token;
     } catch (err) {
       const code = String(err.message || err);
       await uiAlert(hostSecretErrorMessage(code) || `Не удалось проверить код: ${code}`, {

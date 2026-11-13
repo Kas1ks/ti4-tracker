@@ -1,22 +1,21 @@
 import { consumeRateLimit } from '../secureCompare.js';
-import { applyRateLimitHit, pruneRateLimitMap } from './rateLimitCore.js';
+import { applyRateLimitHit } from './rateLimitCore.js';
+
+const STORAGE_PREFIX = 'rl:';
+
+/** Buckets where DO failure must deny the request (no silent memory bypass). */
+export const FAIL_CLOSED_BUCKETS = new Set(['host-secret', 'admin-auth']);
 
 /**
  * Company-wide rate-limit counters (one DO: name "global").
- * Survives across Worker isolates — unlike the in-memory Map fallback.
+ * Each counter is stored under its own key — no full-map rewrite.
  */
 export class RateLimitGate {
   constructor(ctx, env) {
     this.ctx = ctx;
     this.env = env;
-  }
-
-  async loadMap() {
-    return (await this.ctx.storage.get('buckets')) || {};
-  }
-
-  async saveMap(map) {
-    await this.ctx.storage.put('buckets', map);
+    // Drop legacy blob map from earlier versions (best-effort, once per isolate wake).
+    this.ctx.storage.delete('buckets').catch(() => {});
   }
 
   async fetch(request) {
@@ -36,11 +35,14 @@ export class RateLimitGate {
       const limit = body?.limit;
       const windowMs = body?.windowMs ?? 60_000;
       const now = Date.now();
-      let map = await this.loadMap();
-      map = pruneRateLimitMap(map, now, Math.max(60_000, Number(windowMs) || 60_000));
-      const hit = applyRateLimitHit(map[key], now, { limit, windowMs });
-      map[key] = hit.entry;
-      await this.saveMap(map);
+      const storageKey = `${STORAGE_PREFIX}${key}`;
+      const prev = (await this.ctx.storage.get(storageKey)) || null;
+      const hit = applyRateLimitHit(prev, now, { limit, windowMs });
+
+      if (hit.ok) {
+        await this.ctx.storage.put(storageKey, hit.entry);
+      }
+      // Blocked: leave stored entry unchanged (no write amplification).
 
       if (!hit.ok) {
         return Response.json({ ok: false, retryAfterMs: hit.retryAfterMs ?? 0 });
@@ -53,12 +55,16 @@ export class RateLimitGate {
 }
 
 /**
- * Prefer Durable Object when bound; otherwise process-local Map.
+ * Prefer Durable Object when bound; memory only when binding is absent (local/dev).
  * @param {object} env
- * @param {string} key
- * @param {{ limit?: number, windowMs?: number }} [opts]
+ * @param {string} key  full bucket key, e.g. "host-secret:1.2.3.4"
+ * @param {{ limit?: number, windowMs?: number, failClosed?: boolean }} [opts]
+ * @returns {Promise<{ ok: true } | { ok: false, retryAfterMs: number, unavailable?: boolean }>}
  */
 export async function consumeRateLimitEnv(env, key, opts = {}) {
+  const windowMs = opts.windowMs ?? 60_000;
+  const failClosed = opts.failClosed === true;
+
   if (env?.RATE_LIMIT) {
     try {
       const id = env.RATE_LIMIT.idFromName('global');
@@ -69,16 +75,31 @@ export async function consumeRateLimitEnv(env, key, opts = {}) {
         body: JSON.stringify({
           key,
           limit: opts.limit,
-          windowMs: opts.windowMs,
+          windowMs,
         }),
       }));
       if (res.ok) {
         const data = await res.json();
         if (data && typeof data.ok === 'boolean') return data;
       }
+      console.error('[rate-limit] DO returned non-OK', res.status);
+      if (failClosed) {
+        return { ok: false, retryAfterMs: windowMs, unavailable: true };
+      }
     } catch (err) {
-      console.error('[rate-limit] DO failed, falling back to memory', err);
+      console.error('[rate-limit] DO failed', err);
+      if (failClosed) {
+        return { ok: false, retryAfterMs: windowMs, unavailable: true };
+      }
     }
+    // Soft buckets: fall through to isolate memory so reads/polls keep working.
   }
+
   return consumeRateLimit(key, opts);
+}
+
+/** Infer failClosed from bucket name prefix (before first ':'). */
+export function failClosedForKey(key) {
+  const bucket = String(key || '').split(':')[0];
+  return FAIL_CLOSED_BUCKETS.has(bucket);
 }

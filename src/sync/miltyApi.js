@@ -1,3 +1,5 @@
+import { hostAuthBody } from './hostWriteToken.js';
+
 async function readJson(res) {
   const text = await res.text();
   try {
@@ -7,11 +9,11 @@ async function readJson(res) {
   }
 }
 
-export async function createMiltyDraft(settings, { createSecret } = {}) {
+export async function createMiltyDraft(settings, { createSecret, writeToken } = {}) {
   const res = await fetch('/api/milty', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ settings, createSecret: createSecret ?? '' }),
+    body: JSON.stringify({ settings, ...hostAuthBody(writeToken || createSecret) }),
   });
   const data = await readJson(res);
   if (!res.ok) throw new Error(data?.error || data?.message || `HTTP ${res.status}`);

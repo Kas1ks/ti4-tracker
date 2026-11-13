@@ -1,5 +1,5 @@
 import { isCloudConfigured } from '../config';
-import { getHostWriteToken } from '../sync/hostWriteToken';
+import { getHostWriteToken, hostAuthBody } from '../sync/hostWriteToken';
 
 async function api(path, options = {}) {
   const response = await fetch(path, {
@@ -62,21 +62,21 @@ export async function fetchCloudStats() {
   return Array.isArray(data?.history) ? data.history : [];
 }
 
-export async function postGameRecord(record, { createSecret } = {}) {
+export async function postGameRecord(record, { createSecret, writeToken } = {}) {
   ensureCloud();
-  const token = requireWriteToken(createSecret);
+  const token = requireWriteToken(writeToken || createSecret);
   await api('/api/stats', {
     method: 'POST',
-    body: JSON.stringify({ record, createSecret: token }),
+    body: JSON.stringify({ record, ...hostAuthBody(token) }),
   });
 }
 
-export async function createCloudSave(state, { createSecret } = {}) {
+export async function createCloudSave(state, { createSecret, writeToken } = {}) {
   ensureCloud();
-  const token = requireWriteToken(createSecret);
+  const token = requireWriteToken(writeToken || createSecret);
   const data = await api('/api/saves', {
     method: 'POST',
-    body: JSON.stringify({ state, createSecret: token }),
+    body: JSON.stringify({ state, ...hostAuthBody(token) }),
   });
   return data.code;
 }

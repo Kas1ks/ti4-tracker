@@ -4,3 +4,7 @@ JSONBIN_BIN_ID=
 JSONBIN_MASTER_KEY=
 ADMIN_PIN=
 ROOM_CREATE_SECRET=
+# Optional: separate HMAC key for short-lived host write tokens (defaults to ROOM_CREATE_SECRET)
+# HOST_TOKEN_SECRET=
+# Optional TTL seconds (default 43200 = 12h)
+# HOST_TOKEN_TTL_SEC=43200

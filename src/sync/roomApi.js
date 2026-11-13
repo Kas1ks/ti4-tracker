@@ -1,4 +1,5 @@
 import { LOCAL_ONLY_ACTIONS } from './constants.js';
+import { hostAuthBody } from './hostWriteToken.js';
 
 async function readError(res) {
   try {
@@ -19,13 +20,13 @@ export async function claimHostSession(roomId, { hostKey }) {
   return res.json();
 }
 
-export async function createRoom(state, { createSecret, milty } = {}) {
+export async function createRoom(state, { createSecret, writeToken, milty } = {}) {
   const res = await fetch('/api/rooms', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       state: milty ? null : (state ?? null),
-      createSecret: createSecret ?? '',
+      ...hostAuthBody(writeToken || createSecret),
       milty: milty || undefined,
     }),
   });
@@ -90,12 +91,15 @@ export async function fetchActiveRooms() {
   };
 }
 
-/** Check host secret without creating a room (solo / local unlock). */
-export async function verifyHostSecret(createSecret) {
+/**
+ * Unlock host write access. Pass master ROOM_CREATE_SECRET or an existing writeToken.
+ * @returns {{ ok: true, writeToken: string, expiresAt: string, expiresInSec: number }}
+ */
+export async function verifyHostSecret(credential) {
   const res = await fetch('/api/host-unlock', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ createSecret: createSecret ?? '' }),
+    body: JSON.stringify(hostAuthBody(credential)),
   });
   if (!res.ok) throw new Error(await readError(res));
   return res.json();

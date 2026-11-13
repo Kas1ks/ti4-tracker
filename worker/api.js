@@ -1,26 +1,21 @@
 import {
   adminPinMatches,
-  isJsonBinConfigured,
   makeSaveCode,
-  resolveAdminPin,
-  resolveBinId,
-  resolveMasterKey,
 } from './jsonbin.js';
 import {
   appendGameRecord,
   clearCloudHistory,
   deleteCloudHistoryId,
   getCloudBin,
-  hasStatsStore,
   isCloudStatsConfigured,
   putCloudSave,
 } from './stats/statsBin.js';
 import { handleAdminRoomsApi, handleRoomsApi } from './rooms/roomsApi.js';
 import { handleMiltyApi } from './milty/miltyApi.js';
-import { assertRoomCreateAllowed, resolveRoomCreateSecret } from './rooms/roomCreateAuth.js';
+import { assertHostWriteAllowed, issueHostWriteToken } from './rooms/hostWriteToken.js';
 import { readVapidConfig } from './push/sendPush.js';
 import { clientKey } from './secureCompare.js';
-import { consumeRateLimitEnv } from './rateLimit/RateLimitGate.js';
+import { consumeRateLimitEnv, FAIL_CLOSED_BUCKETS } from './rateLimit/RateLimitGate.js';
 
 function json(data, status = 200, extraHeaders = {}) {
   return new Response(JSON.stringify(data), {
@@ -41,21 +36,77 @@ async function readJsonBody(request) {
   }
 }
 
-async function rateLimited(request, env, bucket, opts) {
+async function rateLimited(request, env, bucket, opts = {}) {
   const key = `${bucket}:${clientKey(request)}`;
-  const result = await consumeRateLimitEnv(env, key, opts);
+  const failClosed = opts.failClosed ?? FAIL_CLOSED_BUCKETS.has(bucket);
+  const result = await consumeRateLimitEnv(env, key, { ...opts, failClosed });
   if (!result.ok) {
+    const status = result.unavailable ? 503 : 429;
     return json(
-      { error: 'rate-limited', retryAfterMs: result.retryAfterMs },
-      429,
-      { 'Retry-After': String(Math.ceil((result.retryAfterMs || 0) / 1000)) },
+      {
+        error: result.unavailable ? 'rate-limit-unavailable' : 'rate-limited',
+        retryAfterMs: result.retryAfterMs,
+      },
+      status,
+      { 'Retry-After': String(Math.ceil((result.retryAfterMs || 0) / 1000) || 60) },
     );
   }
   return null;
 }
 
+/** Count only failed ADMIN_PIN attempts (successes must not burn the auth bucket). */
+async function rateLimitFailedAdminPin(request, env) {
+  return rateLimited(request, env, 'admin-auth', { limit: 15, windowMs: 60_000, failClosed: true });
+}
+
+/**
+ * Rate-limit live-room HTTP before handleRoomsApi.
+ * Host createSecret / claim-host share one strict bucket (brute-force surface).
+ * SSE /events is not limited here (long-lived stream).
+ * @returns {Promise<Response|null>}
+ */
+async function rateLimitRoomsPath(request, env, pathname, method) {
+  // Hub list — light read traffic
+  if (method === 'GET' && pathname === '/api/rooms') {
+    return rateLimited(request, env, 'room-read', { limit: 120, windowMs: 60_000 });
+  }
+
+  // Creating a room checks ROOM_CREATE_SECRET — same class as host-unlock
+  if (method === 'POST' && pathname === '/api/rooms') {
+    return rateLimited(request, env, 'host-secret', { limit: 15, windowMs: 60_000, failClosed: true });
+  }
+
+  const roomMatch = pathname.match(
+    /^\/api\/rooms\/([^/]+)(?:\/(snapshot|actions|events|join|claim-host|release-seat|claim-seat|push\/subscribe|push\/unsubscribe|milty\/promote|milty\/pick|milty\/undo|milty\/regen))?$/,
+  );
+  if (!roomMatch) return null;
+
+  const sub = roomMatch[2] || 'snapshot';
+
+  // Long-lived SSE — do not consume the write/read quotas
+  if (method === 'GET' && sub === 'events') return null;
+
+  if (method === 'POST' && sub === 'claim-host') {
+    return rateLimited(request, env, 'host-secret', { limit: 15, windowMs: 60_000, failClosed: true });
+  }
+  if (method === 'POST' && sub === 'join') {
+    return rateLimited(request, env, 'room-join', { limit: 40, windowMs: 60_000 });
+  }
+  if (method === 'POST' && sub === 'actions') {
+    return rateLimited(request, env, 'room-actions', { limit: 180, windowMs: 60_000 });
+  }
+  if (method === 'GET' && (sub === 'snapshot' || !roomMatch[2])) {
+    return rateLimited(request, env, 'room-read', { limit: 120, windowMs: 60_000 });
+  }
+  // release/claim seat, push, milty room helpers
+  if (method === 'POST') {
+    return rateLimited(request, env, 'room-misc', { limit: 60, windowMs: 60_000 });
+  }
+  return null;
+}
+
 function assertCloudWrite(env, body) {
-  return assertRoomCreateAllowed(env, body?.createSecret ?? body?.writeToken ?? '');
+  return assertHostWriteAllowed(env, body);
 }
 
 /** Strip auth fields from a flat game-record POST body. */
@@ -93,22 +144,10 @@ export async function handleApi(request, env) {
   }
 
   if (method === 'GET' && pathname === '/api/health') {
+    // Public liveness only — never advertise which secrets/bindings are set.
     return json({
       ok: true,
-      cloudConfigured: isCloudStatsConfigured(env),
-      statsStore: hasStatsStore(env) ? 'durable-object' : 'memory',
-      jsonbinConfigured: isJsonBinConfigured(env),
       rooms: Boolean(env?.GAME_ROOMS) ? 'durable-object' : 'memory',
-      roomDirectory: Boolean(env?.ROOM_DIRECTORY),
-      hasBinId: Boolean(resolveBinId(env)),
-      hasMasterKey: Boolean(resolveMasterKey(env)),
-      hasAdminPin: Boolean(resolveAdminPin(env)),
-      hasRoomCreateSecret: Boolean(resolveRoomCreateSecret(env)),
-      hasVapid: Boolean(readVapidConfig(env)),
-      roomCreateSecretKeys: {
-        ROOM_CREATE_SECRET: Boolean(env?.ROOM_CREATE_SECRET),
-        VITE_ROOM_CREATE_SECRET: Boolean(env?.VITE_ROOM_CREATE_SECRET),
-      },
     });
   }
 
@@ -119,24 +158,25 @@ export async function handleApi(request, env) {
   }
 
   if (pathname === '/api/rooms' || pathname.startsWith('/api/rooms/')) {
+    const limited = await rateLimitRoomsPath(request, env, pathname, method);
+    if (limited) return limited;
     try {
       const roomResponse = await handleRoomsApi(request, env);
       if (roomResponse) return roomResponse;
     } catch (err) {
       console.error('[rooms]', err);
-      return json({ error: 'room-error', message: String(err?.message || err) }, 500);
+      return json({ error: 'room-error' }, 500);
     }
   }
 
   // Before cloud-stats gate — admin rooms must work even if StatsStore is down.
+  // Auth vs poll buckets are applied inside handleAdminRoomsApi (failures-only for PIN).
   if (pathname === '/api/admin/rooms' || pathname.startsWith('/api/admin/rooms/')) {
-    const limited = await rateLimited(request, env, 'admin-pin', { limit: 15, windowMs: 60_000 });
-    if (limited) return limited;
     try {
       return await handleAdminRoomsApi(request, env);
     } catch (err) {
       console.error('[admin-rooms]', err);
-      return json({ error: 'admin-rooms-error', message: String(err?.message || err) }, 500);
+      return json({ error: 'admin-rooms-error' }, 500);
     }
   }
 
@@ -150,28 +190,28 @@ export async function handleApi(request, env) {
       if (miltyResponse) return miltyResponse;
     } catch (err) {
       console.error('[milty]', err);
-      return json({ error: 'milty-error', message: String(err?.message || err) }, 500);
+      return json({ error: 'milty-error' }, 500);
     }
   }
 
   if (method === 'POST' && pathname === '/api/host-unlock') {
-    const limited = await rateLimited(request, env, 'host-unlock', { limit: 30, windowMs: 60_000 });
+    // Same bucket as POST /api/rooms + claim-host — one IP cannot spray createSecret/hostKey.
+    const limited = await rateLimited(request, env, 'host-secret', {
+      limit: 15,
+      windowMs: 60_000,
+      failClosed: true,
+    });
     if (limited) return limited;
     const body = await readJsonBody(request);
-    const gate = assertRoomCreateAllowed(env, body?.createSecret);
+    const gate = await assertHostWriteAllowed(env, body);
     if (!gate.ok) return json({ error: gate.error }, gate.status);
-    return json({ ok: true });
+    const issued = await issueHostWriteToken(env);
+    if (!issued) return json({ error: 'create-secret-not-configured' }, 503);
+    return json({ ok: true, ...issued });
   }
 
   if (!isCloudStatsConfigured(env)) {
-    return json({
-      error: 'not-configured',
-      hasStatsStore: hasStatsStore(env),
-      hasBinId: Boolean(resolveBinId(env)),
-      hasMasterKey: Boolean(resolveMasterKey(env)),
-      hasAdminPin: Boolean(resolveAdminPin(env)),
-      hint: 'StatsStore Durable Object binding STATS_STORE is required in production.',
-    }, 503);
+    return json({ error: 'not-configured' }, 503);
   }
 
   try {
@@ -184,7 +224,7 @@ export async function handleApi(request, env) {
       const limited = await rateLimited(request, env, 'cloud-write', { limit: 40, windowMs: 60_000 });
       if (limited) return limited;
       const body = await readJsonBody(request);
-      const gate = assertCloudWrite(env, body);
+      const gate = await assertCloudWrite(env, body);
       if (!gate.ok) return json({ error: gate.error }, gate.status);
       const gameRecord = extractGameRecord(body);
       if (!gameRecord) return json({ error: 'invalid-body' }, 400);
@@ -196,7 +236,7 @@ export async function handleApi(request, env) {
       const limited = await rateLimited(request, env, 'cloud-write', { limit: 40, windowMs: 60_000 });
       if (limited) return limited;
       const body = await readJsonBody(request);
-      const gate = assertCloudWrite(env, body);
+      const gate = await assertCloudWrite(env, body);
       if (!gate.ok) return json({ error: gate.error }, gate.status);
       const snap = body?.state ?? null;
       if (!snap || typeof snap !== 'object' || Array.isArray(snap)) {
@@ -219,10 +259,10 @@ export async function handleApi(request, env) {
     }
 
     if (method === 'DELETE' && pathname === '/api/stats') {
-      const limited = await rateLimited(request, env, 'admin-pin', { limit: 15, windowMs: 60_000 });
-      if (limited) return limited;
       const body = await readJsonBody(request);
       if (!adminPinMatches(env, body?.pin)) {
+        const limited = await rateLimitFailedAdminPin(request, env);
+        if (limited) return limited;
         return json({ error: 'unauthorized' }, 401);
       }
       await clearCloudHistory(env);
@@ -231,10 +271,10 @@ export async function handleApi(request, env) {
 
     const gameMatch = pathname.match(/^\/api\/stats\/([^/]+)$/);
     if (method === 'DELETE' && gameMatch) {
-      const limited = await rateLimited(request, env, 'admin-pin', { limit: 15, windowMs: 60_000 });
-      if (limited) return limited;
       const body = await readJsonBody(request);
       if (!adminPinMatches(env, body?.pin)) {
+        const limited = await rateLimitFailedAdminPin(request, env);
+        if (limited) return limited;
         return json({ error: 'unauthorized' }, 401);
       }
       const gameIdRaw = decodeURIComponent(gameMatch[1]);
@@ -245,6 +285,6 @@ export async function handleApi(request, env) {
     return json({ error: 'not-found', method, pathname }, 404);
   } catch (err) {
     console.error('[api]', err);
-    return json({ error: 'upstream-error', message: String(err?.message || err) }, 502);
+    return json({ error: 'upstream-error' }, 502);
   }
 }
